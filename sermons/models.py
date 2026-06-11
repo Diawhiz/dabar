@@ -30,3 +30,22 @@ class Sermon(models.Model):
 
     def __str__(self):
         return self.title or self.youtube_url
+
+
+class TranscriptSegment(models.Model):
+    sermon = models.ForeignKey(
+        Sermon,
+        related_name="segments",
+        on_delete=models.CASCADE,
+    )
+    start_time = models.FloatField()
+    end_time = models.FloatField()
+    text = models.TextField()
+    segment_index = models.IntegerField()
+
+    class Meta:
+        ordering = ["segment_index"]
+        unique_together = ["sermon", "segment_index"]
+
+    def __str__(self):
+        return f"{self.sermon_id} segment {self.segment_index}"

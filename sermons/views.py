@@ -11,6 +11,16 @@ class SermonListCreateView(generics.ListCreateAPIView):
     queryset = Sermon.objects.all().order_by("-created_at")
     serializer_class = SermonSerializer
 
+    def perform_create(self, serializer):
+        sermon = serializer.save()
+        try:
+            from .tasks import process_sermon
+            process_sermon.delay(str(sermon.id))
+        except Exception:
+            import threading
+            from .tasks import process_sermon
+            threading.Thread(target=process_sermon, args=(str(sermon.id),), daemon=True).start()
+
 
 class SermonDetailView(generics.RetrieveAPIView):
     queryset = Sermon.objects.all()

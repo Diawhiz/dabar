@@ -1,50 +1,118 @@
-import { Clock3, Scissors } from "lucide-react";
+import { useState } from "react";
+import { Clock3, Scissors, Sparkles, Volume2, Play, Pause, Check } from "lucide-react";
 import { Link } from "react-router-dom";
 import Button from "../components/Button.jsx";
+import PageHeader from "../components/PageHeader.jsx";
 import { highlights } from "../data/mockData.js";
 
+const tones = ["All Tones", "Encouraging", "Reflective", "Hopeful", "Teaching", "Pastoral"];
+
 export default function Highlights() {
+  const [selectedTone, setSelectedTone] = useState("All Tones");
+  const [playingId, setPlayingId] = useState(null);
+
+  const filteredHighlights = selectedTone === "All Tones"
+    ? highlights
+    : highlights.filter((h) => h.tone === selectedTone);
+
+  function toggleAudio(id) {
+    setPlayingId(playingId === id ? null : id);
+  }
+
   return (
-    <div className="mx-auto max-w-6xl py-8">
-      <div className="mb-10 flex flex-col justify-between gap-4 md:flex-row md:items-end">
-        <div>
-          <p className="mb-3 text-xs font-bold uppercase tracking-[0.24em] text-gold">Highlights</p>
-          <h1 className="font-serif text-5xl font-semibold text-navy sm:text-6xl">5 moments found</h1>
-        </div>
-        <p className="max-w-md text-base leading-7 text-walnut">
-          Review each suggested moment with the same care you give the message itself.
-        </p>
+    <div className="mx-auto max-w-6xl py-6">
+      <PageHeader
+        eyebrow="AI Moment Detection"
+        title="5 Sermon Highlights Found"
+        description="Dabar scanned the sermon for key invitations, core theological truths, and memorable illustrations worth turning into short-form media."
+        action={
+          <Link to="/clips">
+            <Button variant="gold" className="px-7">
+              <Scissors size={18} />
+              Studio Clip Generator
+            </Button>
+          </Link>
+        }
+      />
+
+      {/* TONE FILTER CHIPS */}
+      <div className="mb-8 flex flex-wrap items-center gap-2 border-b border-linen pb-5">
+        <span className="mr-2 text-xs font-bold uppercase tracking-wider text-walnut">Filter by Tone:</span>
+        {tones.map((tone) => (
+          <button
+            key={tone}
+            onClick={() => setSelectedTone(tone)}
+            className={[
+              "rounded-full px-4 py-1.5 text-xs font-semibold transition-all duration-200",
+              selectedTone === tone
+                ? "bg-navy text-cream shadow-navyGlow"
+                : "bg-cream text-walnut hover:bg-parchment hover:text-navy border border-linen",
+            ].join(" ")}
+          >
+            {tone}
+          </button>
+        ))}
       </div>
 
-      <section>
-        {highlights.map((highlight) => (
-          <article
-            key={highlight.id}
-            className="grid gap-5 border-b border-linen py-7 last:border-b-0 lg:grid-cols-[11rem_1fr_auto] lg:items-center"
-          >
-            <div>
-              <span className="inline-flex items-center gap-2 rounded-full bg-parchment px-4 py-2 text-sm font-semibold text-navy">
-                <Clock3 size={15} className="text-gold" />
-                {highlight.timestamp}
-              </span>
-            </div>
-            <div>
-              <h2 className="font-serif text-2xl font-semibold leading-tight text-navy">{highlight.title}</h2>
-              <p className="mt-3 max-w-3xl text-base leading-7 text-walnut">"{highlight.transcript}"</p>
-              <p className="mt-3 text-xs font-bold uppercase tracking-[0.18em] text-gold">
-                {highlight.tone} · {highlight.score}% confidence
-              </p>
-            </div>
-            <div className="lg:justify-self-end">
-              <Link to="/clips">
-                <Button>
-                  <Scissors size={16} />
-                  Generate Clip
-                </Button>
-              </Link>
-            </div>
-          </article>
-        ))}
+      {/* HIGHLIGHTS CARDS LIST */}
+      <section className="space-y-6">
+        {filteredHighlights.map((highlight) => {
+          const isPlaying = playingId === highlight.id;
+
+          return (
+            <article
+              key={highlight.id}
+              className="group rounded-3xl border border-linen/90 bg-cream p-7 shadow-soft transition-all duration-300 hover:-translate-y-1 hover:border-gold/40 hover:shadow-warm"
+            >
+              <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+                {/* Header Meta */}
+                <div className="space-y-3 lg:max-w-3xl">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-navy/10 px-3.5 py-1 text-xs font-bold text-navy">
+                      <Clock3 size={14} className="text-gold" />
+                      {highlight.timestamp}
+                    </span>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-gold/15 px-3 py-1 text-xs font-bold text-gold-dark">
+                      <Sparkles size={13} />
+                      {highlight.score}% AI Confidence
+                    </span>
+                    <span className="rounded-full bg-parchment px-3 py-1 text-xs font-semibold text-walnut">
+                      {highlight.tone}
+                    </span>
+                  </div>
+
+                  <h2 className="font-serif text-2xl font-bold leading-snug text-navy transition-colors group-hover:text-gold-dark">
+                    {highlight.title}
+                  </h2>
+
+                  {/* Transcript quote block */}
+                  <blockquote className="rounded-2xl border-l-4 border-gold bg-parchment/60 p-4 text-base italic leading-relaxed text-umber">
+                    "{highlight.transcript}"
+                  </blockquote>
+                </div>
+
+                {/* Right Actions Block */}
+                <div className="flex flex-row items-center gap-3 lg:flex-col lg:items-end lg:justify-center">
+                  <button
+                    type="button"
+                    onClick={() => toggleAudio(highlight.id)}
+                    className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-linen bg-parchment px-4 text-xs font-bold text-navy transition-colors hover:bg-gold/20"
+                  >
+                    {isPlaying ? <Pause size={16} className="text-gold" /> : <Play size={16} className="text-gold" />}
+                    <span>{isPlaying ? "Pause Audio" : "Preview Audio"}</span>
+                  </button>
+
+                  <Link to="/clips">
+                    <Button className="h-11 px-6">
+                      <Scissors size={16} />
+                      Create 9:16 Clip
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+            </article>
+          );
+        })}
       </section>
     </div>
   );

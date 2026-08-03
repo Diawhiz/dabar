@@ -4,7 +4,8 @@ from pathlib import Path
 import yt_dlp
 from celery import shared_task
 
-from .models import Sermon
+from .models import Sermon, Transcript
+from .services.transcription import transcribe_sermon
 
 
 TMP_ROOT = Path("/tmp/dabar")
@@ -57,10 +58,17 @@ def process_sermon(self, sermon_id):
 
         audio_path = _download_audio(sermon)
 
-        sermon.status = Sermon.Status.READY
-        sermon.save(update_fields=["status", "updated_at"])
+        # Execute Whisper transcription pipeline stage
+        transcript = transcribe_sermon(sermon.id, audio_path=audio_path)
 
-        return {"sermon_id": str(sermon.id), "audio_path": str(audio_path)}
+        if transcript.status == Transcript.Status.FAILED:
+            raise RuntimeError(f"Transcription stage failed: {transcript.error_message}")
+
+        return {
+            "sermon_id": str(sermon.id),
+            "transcript_id": str(transcript.id),
+            "segments_count": len(transcript.segments),
+        }
     except Exception as exc:
         sermon.status = Sermon.Status.FAILED
         sermon.error_message = str(exc)

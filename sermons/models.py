@@ -29,7 +29,47 @@ class Sermon(models.Model):
         ordering = ["-created_at"]
 
     def __str__(self):
-        return self.title or self.youtube_url
+        return self.title or str(self.youtube_url)
+
+
+class Transcript(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        PROCESSING = "processing", "Processing"
+        COMPLETE = "complete", "Complete"
+        FAILED = "failed", "Failed"
+
+    class Backend(models.TextChoices):
+        GROQ = "groq", "Groq"
+        LOCAL = "local", "Local"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    sermon = models.ForeignKey(
+        Sermon,
+        related_name="transcripts",
+        on_delete=models.CASCADE,
+    )
+    raw_text = models.TextField(blank=True, default="")
+    segments = models.JSONField(default=list, blank=True)
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING,
+    )
+    backend_used = models.CharField(
+        max_length=20,
+        choices=Backend.choices,
+        default=Backend.GROQ,
+    )
+    error_message = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"Transcript ({self.backend_used}) - {self.sermon_id} [{self.status}]"
 
 
 class TranscriptSegment(models.Model):

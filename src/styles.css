@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Lora:wght@500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400..700;1,400..700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -23,28 +23,60 @@ body {
   min-width: 320px;
   min-height: 100vh;
   background: #faf7f2;
+  background-image: 
+    radial-gradient(at 0% 0%, rgba(212, 175, 55, 0.05) 0px, transparent 50%),
+    radial-gradient(at 100% 100%, rgba(27, 42, 74, 0.04) 0px, transparent 50%),
+    radial-gradient(at 50% 50%, rgba(245, 240, 232, 0.4) 0px, transparent 100%);
+  background-attachment: fixed;
 }
 
-button,
-input {
-  font: inherit;
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #f5f0e8;
+}
+::-webkit-scrollbar-thumb {
+  background: #d4af37;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #b8962e;
 }
 
-::selection {
-  background: rgba(184, 150, 46, 0.24);
+/* Gold Gradient Text */
+.gold-gradient-text {
+  background: linear-gradient(135deg, #B8962E 0%, #D4AF37 50%, #8A6E1C 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
-@keyframes soft-pulse {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 rgba(184, 150, 46, 0.28);
-  }
-
-  50% {
-    box-shadow: 0 0 0 12px rgba(184, 150, 46, 0);
-  }
+/* Glassmorphism Cards */
+.glass-card {
+  background: rgba(255, 253, 248, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(239, 230, 215, 0.8);
 }
 
+.glass-card-navy {
+  background: rgba(27, 42, 74, 0.92);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(212, 175, 55, 0.25);
+}
+
+/* Micro animations */
 .soft-pulse {
   animation: soft-pulse 2.4s ease-in-out infinite;
+}
+
+.hover-lift {
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.hover-lift:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 20px 40px rgba(82, 58, 30, 0.12);
 }

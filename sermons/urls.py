@@ -1,8 +1,15 @@
 from django.urls import path
 
-from .views import SermonDetailView, SermonListCreateView
+from .views import (
+    SermonDetailView,
+    SermonListCreateView,
+    SermonTranscribeView,
+    SermonTranscriptDetailView,
+)
 
 urlpatterns = [
     path("sermons/", SermonListCreateView.as_view(), name="sermon-list"),
     path("sermons/<uuid:pk>/", SermonDetailView.as_view(), name="sermon-detail"),
+    path("sermons/<uuid:pk>/transcribe/", SermonTranscribeView.as_view(), name="sermon-transcribe"),
+    path("sermons/<uuid:pk>/transcript/", SermonTranscriptDetailView.as_view(), name="sermon-transcript"),
 ]

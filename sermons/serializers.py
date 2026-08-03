@@ -2,7 +2,7 @@ from urllib.parse import urlparse
 
 from rest_framework import serializers
 
-from .models import Sermon
+from .models import Sermon, Transcript
 
 
 YOUTUBE_HOSTS = {
@@ -14,7 +14,36 @@ YOUTUBE_HOSTS = {
 }
 
 
+class TranscriptSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Transcript
+        fields = [
+            "id",
+            "sermon",
+            "raw_text",
+            "segments",
+            "status",
+            "backend_used",
+            "error_message",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "sermon",
+            "raw_text",
+            "segments",
+            "status",
+            "backend_used",
+            "error_message",
+            "created_at",
+            "updated_at",
+        ]
+
+
 class SermonSerializer(serializers.ModelSerializer):
+    transcripts = TranscriptSerializer(many=True, read_only=True)
+
     class Meta:
         model = Sermon
         fields = [
@@ -23,6 +52,7 @@ class SermonSerializer(serializers.ModelSerializer):
             "title",
             "status",
             "transcript",
+            "transcripts",
             "error_message",
             "created_at",
             "updated_at",
@@ -32,6 +62,7 @@ class SermonSerializer(serializers.ModelSerializer):
             "title",
             "status",
             "transcript",
+            "transcripts",
             "error_message",
             "created_at",
             "updated_at",

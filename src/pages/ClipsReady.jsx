@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { Download, Instagram, MessageCircle, Play, Pause, Send, Youtube, Sparkles, Check, Maximize2, Share2 } from "lucide-react";
+import { Download, Instagram, MessageCircle, Send, Youtube, Sparkles, Check, Maximize2, Share2, Loader2 } from "lucide-react";
 import Button from "../components/Button.jsx";
 import PageHeader from "../components/PageHeader.jsx";
-import { listSermons } from "../lib/api.js";
+import { listSermons, downloadClip } from "../lib/api.js";
 
 const formats = [
   { id: "9:16", label: "9:16 Vertical (Reels / Shorts)", aspect: "aspect-[9/16] max-w-[340px]" },
@@ -19,16 +19,17 @@ function formatSeconds(secs) {
 }
 
 function extractVideoId(url) {
-  if (!url) return "dQw4w9WgXcQ";
+  if (!url) return null;
   const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([a-zA-Z0-9_-]{11})/);
-  return match ? match[1] : "dQw4w9WgXcQ";
+  return match ? match[1] : null;
 }
 
 export default function ClipsReady() {
   const location = useLocation();
   const [selectedFormat, setSelectedFormat] = useState("9:16");
-  const [isPlaying, setIsPlaying] = useState(true);
+  const [downloading, setDownloading] = useState(false);
   const [downloaded, setDownloaded] = useState(false);
+  const [downloadError, setDownloadError] = useState(null);
   const [youtubeUrl, setYoutubeUrl] = useState(location.state?.youtube_url || "");
 
   const startSec = location.state?.start;
@@ -52,100 +53,109 @@ export default function ClipsReady() {
       })
       .catch((err) => console.warn("Could not fetch sermons for clips:", err.message));
 
-    return () => {
-      isMounted = false;
-    };
+    return () => { isMounted = false; };
   }, [location.state?.youtube_url]);
 
   const activeFormatObj = formats.find((f) => f.id === selectedFormat) ?? formats[0];
 
-  function handleDownload() {
-    setDownloaded(true);
-    setTimeout(() => setDownloaded(false), 3000);
+  async function handleDownload() {
+    if (!youtubeUrl) return;
+    setDownloading(true);
+    setDownloadError(null);
+    setDownloaded(false);
+
+    const s = startSec !== undefined ? Math.floor(startSec) : 0;
+    const e = endSec !== undefined ? Math.ceil(endSec) : s + 45;
+
+    try {
+      await downloadClip(youtubeUrl, s, e);
+      setDownloaded(true);
+      setTimeout(() => setDownloaded(false), 4000);
+    } catch (err) {
+      setDownloadError(err.message);
+      setTimeout(() => setDownloadError(null), 5000);
+    } finally {
+      setDownloading(false);
+    }
   }
 
   const videoId = extractVideoId(youtubeUrl);
   const startInt = startSec !== undefined ? Math.floor(startSec) : 0;
   const endInt = endSec !== undefined ? Math.ceil(endSec) : startInt + 45;
 
-  const embedUrl = `https://www.youtube-nocookie.com/embed/${videoId}?start=${startInt}&end=${endInt}&autoplay=1&controls=0&rel=0&modestbranding=1&loop=1&playlist=${videoId}&mute=${isPlaying ? 0 : 1}`;
+  // YouTube embed with controls enabled so users can actually play/pause/seek/hear audio
+  const embedUrl = videoId
+    ? `https://www.youtube-nocookie.com/embed/${videoId}?start=${startInt}&end=${endInt}&rel=0&modestbranding=1`
+    : null;
 
   return (
     <div className="mx-auto max-w-5xl py-6">
       <PageHeader
         eyebrow="Clip Studio"
-        title="Vertical Sermon Clip Ready"
-        description="Preview the live video clip, select format aspect ratios, and export high-impact 9:16 clips for social media."
+        title="Sermon Video Clip"
+        description="Preview the sermon clip, choose your format, and download as MP4 for social media."
         action={
-          <Button variant="gold" className="px-8 shadow-glow" onClick={handleDownload}>
-            {downloaded ? (
+          <Button variant="gold" className="px-8 shadow-glow" onClick={handleDownload} disabled={downloading}>
+            {downloading ? (
               <span className="inline-flex items-center gap-2">
-                <Check size={18} /> Exported MP4 Clip!
+                <Loader2 size={18} className="animate-spin" /> Downloading MP4…
+              </span>
+            ) : downloaded ? (
+              <span className="inline-flex items-center gap-2">
+                <Check size={18} /> Downloaded!
               </span>
             ) : (
               <span className="inline-flex items-center gap-2">
-                <Download size={18} /> Export Video Clip
+                <Download size={18} /> Download MP4 Clip
               </span>
             )}
           </Button>
         }
       />
 
+      {downloadError && (
+        <div className="mb-6 rounded-2xl border border-red-300 bg-red-50 px-5 py-3 text-sm font-semibold text-red-700">
+          {downloadError}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-10 lg:grid-cols-[1fr_360px]">
-        {/* VIDEO PREVIEW CANVAS */}
+        {/* VIDEO PREVIEW */}
         <section className="flex flex-col items-center justify-center rounded-3xl border border-linen bg-cream/80 p-8 shadow-warm">
-          {/* Format Aspect Ratio Container */}
           <div
             className={[
-              "relative mx-auto flex flex-col justify-between overflow-hidden rounded-3xl shadow-navyGlow transition-all duration-300",
+              "relative mx-auto overflow-hidden rounded-3xl shadow-navyGlow transition-all duration-300",
               activeFormatObj.aspect,
-              "w-full bg-navy text-cream p-5 text-center",
+              "w-full bg-navy",
             ].join(" ")}
           >
-            {/* Live YouTube Video Layer (Clean & Unobstructed) */}
-            <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none rounded-3xl">
+            {embedUrl ? (
               <iframe
                 src={embedUrl}
-                title="Sermon Live Video Clip"
-                className="h-full w-full object-cover scale-150 transform -translate-y-2 opacity-100"
+                title="Sermon Video Clip Preview"
+                className="absolute inset-0 h-full w-full"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
               />
-            </div>
+            ) : (
+              <div className="absolute inset-0 grid place-items-center text-cream/60 text-sm font-semibold">
+                No video URL available
+              </div>
+            )}
 
-            {/* Subtle Top Vignette for Duration Badge Contrast */}
-            <div className="absolute inset-0 z-0 bg-gradient-to-b from-navy/50 via-transparent to-navy/30 pointer-events-none" />
-
-            {/* Top Bar */}
-            <div className="relative z-10 flex items-center justify-between text-xs font-bold uppercase tracking-wider text-gold-light bg-navy/60 px-3.5 py-1.5 rounded-full backdrop-blur-md border border-cream/10">
-              <span className="flex items-center gap-1.5">
-                <Sparkles size={14} className="text-gold" /> Dabar Studio
-              </span>
+            {/* Duration badge */}
+            <div className="absolute top-3 left-3 z-10 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-gold-light bg-navy/70 px-3 py-1.5 rounded-full backdrop-blur-md border border-cream/10">
+              <Sparkles size={14} className="text-gold" />
               <span>{durationLabel}</span>
-            </div>
-
-            {/* Center Play/Mute Audio Toggle */}
-            <div className="relative z-10 my-auto flex flex-col items-center justify-center pointer-events-none">
-              <button
-                type="button"
-                onClick={() => setIsPlaying(!isPlaying)}
-                className="pointer-events-auto grid h-14 w-14 place-items-center rounded-full bg-gold/90 text-navy shadow-glow transition-transform hover:scale-110 active:scale-95 opacity-90 hover:opacity-100"
-              >
-                {isPlaying ? <Pause fill="currentColor" size={22} /> : <Play fill="currentColor" size={22} className="ml-0.5" />}
-              </button>
-            </div>
-
-            {/* Bottom Stream Badge */}
-            <div className="relative z-10 text-center text-[10px] font-bold uppercase tracking-widest text-cream/90 bg-navy/60 py-1 rounded-full backdrop-blur-sm border border-cream/10">
-              Live Sermon Stream • 1080x1920 HD
             </div>
           </div>
 
           <p className="mt-4 text-xs font-semibold text-walnut/70">
-            Playing clean video slice ({formatSeconds(startInt)} - {formatSeconds(endInt)})
+            Clip range: {formatSeconds(startInt)} – {formatSeconds(endInt)}
           </p>
         </section>
 
-        {/* CONTROLS & STYLING PANEL */}
+        {/* CONTROLS PANEL */}
         <section className="space-y-6">
           {/* Format Switcher */}
           <div className="rounded-3xl border border-linen bg-cream p-6 shadow-soft">
@@ -172,11 +182,11 @@ export default function ClipsReady() {
             </div>
           </div>
 
-          {/* Export to Social Platforms */}
+          {/* Share / Export */}
           <div className="rounded-3xl border border-linen bg-cream p-6 shadow-soft">
             <div className="mb-4 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-navy">
               <Share2 size={16} className="text-gold" />
-              <span>Direct Share Presets</span>
+              <span>Download & Share</span>
             </div>
             <div className="grid grid-cols-2 gap-2.5">
               {[
@@ -189,7 +199,8 @@ export default function ClipsReady() {
                   key={label}
                   type="button"
                   onClick={handleDownload}
-                  className="flex items-center gap-2 rounded-xl border border-linen bg-parchment/60 px-3 py-2.5 text-xs font-semibold text-navy transition-colors hover:bg-gold/20"
+                  disabled={downloading}
+                  className="flex items-center gap-2 rounded-xl border border-linen bg-parchment/60 px-3 py-2.5 text-xs font-semibold text-navy transition-colors hover:bg-gold/20 disabled:opacity-50"
                 >
                   <Icon size={16} className="text-gold-dark" />
                   <span>{label}</span>

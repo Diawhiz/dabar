@@ -47,3 +47,40 @@ export function triggerTranscription(sermonId, backend = "groq") {
     body: JSON.stringify({ backend }),
   });
 }
+
+/**
+ * Download a video clip segment as MP4 from the backend.
+ * Returns true on success, throws on failure.
+ */
+export async function downloadClip(youtubeUrl, start, end) {
+  const params = new URLSearchParams({
+    url: youtubeUrl,
+    start: String(start),
+    end: String(end),
+  });
+
+  const response = await fetch(`${API_BASE_URL}/api/clips/download/?${params}`);
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => null);
+    throw new Error(data?.detail ?? "Clip download failed.");
+  }
+
+  // Extract filename from Content-Disposition header or use a default
+  const disposition = response.headers.get("Content-Disposition") || "";
+  const filenameMatch = disposition.match(/filename="?([^";\n]+)"?/);
+  const filename = filenameMatch ? filenameMatch[1] : `dabar-clip-${Math.floor(start)}s.mp4`;
+
+  // Stream response as blob and trigger browser download
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+
+  return true;
+}

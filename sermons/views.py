@@ -52,6 +52,7 @@ class SermonTranscribeView(APIView):
         )
 
         return Response(serializer.data, status=response_status)
+        
 
 
 class SermonTranscriptDetailView(APIView):

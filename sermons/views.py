@@ -1,3 +1,4 @@
+import threading
 from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -13,13 +14,14 @@ class SermonListCreateView(generics.ListCreateAPIView):
 
     def perform_create(self, serializer):
         sermon = serializer.save()
-        try:
-            from .tasks import process_sermon
-            process_sermon.delay(str(sermon.id))
-        except Exception:
-            import threading
-            from .tasks import process_sermon
-            threading.Thread(target=process_sermon, args=(str(sermon.id),), daemon=True).start()
+        from .tasks import process_sermon
+
+        # Launch background processing thread so transcription starts immediately
+        threading.Thread(
+            target=process_sermon,
+            args=(str(sermon.id),),
+            daemon=True,
+        ).start()
 
 
 class SermonDetailView(generics.RetrieveAPIView):

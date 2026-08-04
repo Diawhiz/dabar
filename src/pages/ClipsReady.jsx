@@ -6,10 +6,10 @@ import PageHeader from "../components/PageHeader.jsx";
 import { listSermons, getTranscript } from "../lib/api.js";
 
 const captionStyles = [
-  { id: "gold", label: "Gold Focus", bg: "bg-navy/90 backdrop-blur-md border border-gold/30", text: "text-gold-light" },
-  { id: "kinetic", label: "Kinetic Bold", bg: "bg-amber-600/90 backdrop-blur-md", text: "text-white" },
-  { id: "minimal", label: "Minimal Dark", bg: "bg-black/90 backdrop-blur-md", text: "text-cream" },
-  { id: "clean", label: "Clean Light", bg: "bg-cream/90 backdrop-blur-md text-navy border border-linen", text: "text-navy" },
+  { id: "gold", label: "Gold Focus", bg: "bg-navy/85 backdrop-blur-md border border-gold/40 shadow-glow", text: "text-gold-light font-serif" },
+  { id: "kinetic", label: "Kinetic Bold", bg: "bg-amber-600/90 backdrop-blur-md border border-white/20 shadow-lg", text: "text-white font-sans uppercase tracking-wide" },
+  { id: "minimal", label: "Minimal Dark", bg: "bg-black/85 backdrop-blur-md border border-white/10 shadow-lg", text: "text-cream font-sans" },
+  { id: "clean", label: "Clean Light", bg: "bg-cream/90 backdrop-blur-md text-navy border border-linen shadow-lg", text: "text-navy font-sans" },
 ];
 
 const formats = [
@@ -121,7 +121,7 @@ export default function ClipsReady() {
             className={[
               "relative mx-auto flex flex-col justify-between overflow-hidden rounded-3xl shadow-navyGlow transition-all duration-300",
               activeFormatObj.aspect,
-              "w-full bg-navy text-cream p-6 text-center",
+              "w-full bg-navy text-cream p-5 text-center",
             ].join(" ")}
           >
             {/* Live YouTube Video Layer (Cropped to frame) */}
@@ -129,28 +129,38 @@ export default function ClipsReady() {
               <iframe
                 src={embedUrl}
                 title="Sermon Live Video Clip"
-                className="h-full w-full object-cover scale-150 transform -translate-y-2 opacity-85"
+                className="h-full w-full object-cover scale-150 transform -translate-y-2 opacity-95"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
               />
             </div>
 
-            {/* Dark Video Gradient Vignette Overlay */}
-            <div className="absolute inset-0 z-0 bg-gradient-to-b from-navy/60 via-transparent to-navy/80 pointer-events-none" />
+            {/* Subtle Top & Bottom Video Vignette for Contrast */}
+            <div className="absolute inset-0 z-0 bg-gradient-to-b from-navy/60 via-transparent to-navy/85 pointer-events-none" />
 
             {/* Top Bar */}
-            <div className="relative z-10 flex items-center justify-between text-xs font-bold uppercase tracking-wider text-gold-light bg-navy/40 px-3 py-1.5 rounded-full backdrop-blur-sm border border-cream/10">
+            <div className="relative z-10 flex items-center justify-between text-xs font-bold uppercase tracking-wider text-gold-light bg-navy/50 px-3.5 py-1.5 rounded-full backdrop-blur-md border border-cream/10">
               <span className="flex items-center gap-1.5">
-                <Sparkles size={14} className="text-gold" /> Dabar Studio Clip
+                <Sparkles size={14} className="text-gold" /> Dabar Studio
               </span>
               <span>{durationLabel}</span>
             </div>
 
-            {/* Middle Video Quote / Caption */}
-            <div className="relative z-10 my-auto space-y-6 py-4">
-              {/* Caption Overlay Box */}
+            {/* Center Open Space (Speaker's face remains 100% visible) */}
+            <div className="relative z-10 my-auto flex flex-col items-center justify-center pointer-events-none">
+              <button
+                type="button"
+                onClick={() => setIsPlaying(!isPlaying)}
+                className="pointer-events-auto grid h-13 w-13 place-items-center rounded-full bg-gold/90 text-navy shadow-glow transition-transform hover:scale-110 active:scale-95 opacity-80 hover:opacity-100"
+              >
+                {isPlaying ? <Pause fill="currentColor" size={20} /> : <Play fill="currentColor" size={20} className="ml-0.5" />}
+              </button>
+            </div>
+
+            {/* Lower-Third Subtitle Caption Overlay (Standard TikTok / Reels / Shorts Position) */}
+            <div className="relative z-10 mb-2 space-y-2">
               <div
                 className={[
-                  "mx-auto rounded-2xl p-4 shadow-navyGlow transition-all duration-300 relative group",
+                  "mx-auto max-w-[92%] rounded-2xl px-4 py-3 shadow-navyGlow transition-all duration-300 relative group",
                   activeCaptionObj.bg,
                 ].join(" ")}
               >
@@ -160,35 +170,26 @@ export default function ClipsReady() {
                     onChange={(e) => setQuoteText(e.target.value)}
                     onBlur={() => setIsEditing(false)}
                     autoFocus
-                    className={["w-full bg-transparent font-serif text-lg font-bold leading-snug outline-none border-b border-gold/40 resize-none", activeCaptionObj.text].join(" ")}
-                    rows={4}
+                    className={["w-full bg-transparent text-center font-bold text-sm leading-snug outline-none border-b border-gold/40 resize-none", activeCaptionObj.text].join(" ")}
+                    rows={3}
                   />
                 ) : (
                   <p
                     onClick={() => setIsEditing(true)}
-                    className={["font-serif text-lg font-bold leading-snug cursor-pointer", activeCaptionObj.text].join(" ")}
+                    className={["text-center font-bold text-sm leading-snug cursor-pointer drop-shadow-md", activeCaptionObj.text].join(" ")}
                   >
                     "{displayQuote}"
                   </p>
                 )}
-                <span className="mt-2 block text-[10px] uppercase font-sans font-semibold tracking-wider text-gold-light/80">
-                  Click text to edit captions
+                <span className="mt-1 block text-[9px] uppercase font-sans font-bold tracking-widest text-gold-light/70">
+                  Click text to edit subtitle
                 </span>
               </div>
 
-              {/* Mute/Play Toggle Button */}
-              <button
-                type="button"
-                onClick={() => setIsPlaying(!isPlaying)}
-                className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-gold text-navy shadow-glow transition-transform hover:scale-110 active:scale-95"
-              >
-                {isPlaying ? <Pause fill="currentColor" size={22} /> : <Play fill="currentColor" size={22} className="ml-1" />}
-              </button>
-            </div>
-
-            {/* Bottom Caption Pill */}
-            <div className="relative z-10 text-center text-[11px] font-bold uppercase tracking-widest text-cream/90 bg-navy/40 py-1 rounded-full backdrop-blur-sm border border-cream/10">
-              Live Video Preview • 1080x1920 HD
+              {/* Bottom Quality Pill */}
+              <div className="text-center text-[10px] font-bold uppercase tracking-widest text-cream/80 bg-navy/40 py-0.5 rounded-full backdrop-blur-sm border border-cream/10">
+                Auto-Synced Captions • 1080x1920 HD
+              </div>
             </div>
           </div>
 

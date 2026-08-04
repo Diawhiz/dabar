@@ -96,6 +96,8 @@ class ClipDownloadView(APIView):
     """Download a specific time-range clip from a YouTube sermon as MP4."""
 
     def get(self, request, format=None):
+        from django.http import HttpResponse
+
         youtube_url = request.query_params.get("url")
         start = request.query_params.get("start")
         end = request.query_params.get("end")
@@ -124,13 +126,18 @@ class ClipDownloadView(APIView):
             import yt_dlp
 
             options = {
-                "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+                # Use a single pre-merged stream: no ffmpeg merge step, ~10x faster.
+                # 720p mp4 is the sweet spot — good quality, small file, compatible.
+                "format": "best[ext=mp4][height<=720]/best[ext=mp4]/best",
                 "outtmpl": str(clip_dir / "clip.%(ext)s"),
-                "merge_output_format": "mp4",
                 "download_ranges": lambda info_dict, ydl: [
                     {"start_time": start_f, "end_time": end_f}
                 ],
-                "force_keyframes_at_cuts": True,
+                # Disabled: re-encode adds seconds of processing and is the #1
+                # cause of corrupted output when the merge fails mid-stream.
+                "force_keyframes_at_cuts": False,
+                # Prevent .part temp files being mistaken for complete files
+                "nopart": True,
                 "extractor_args": {
                     "youtube": {
                         "player_client": ["ios", "mweb", "android"],
@@ -144,37 +151,30 @@ class ClipDownloadView(APIView):
             with yt_dlp.YoutubeDL(options) as ydl:
                 info = ydl.extract_info(youtube_url, download=True)
 
-            # Find the downloaded mp4 file
-            mp4_files = list(clip_dir.glob("*.mp4"))
-            if not mp4_files:
-                # Fallback: any video file
-                mp4_files = list(clip_dir.glob("clip.*"))
+            # mp4 preferred; fall back to any output file
+            output_files = list(clip_dir.glob("*.mp4")) or list(clip_dir.glob("clip.*"))
 
-            if not mp4_files:
+            if not output_files:
                 return Response(
                     {"detail": "Clip download failed — no output file produced."},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
 
-            clip_path = mp4_files[0]
+            clip_path = output_files[0]
+
+            # Read entire file into memory BEFORE deleting temp dir.
+            # This eliminates the race condition where cleanup() was running
+            # while FileResponse was still mid-stream, corrupting the download.
+            clip_bytes = clip_path.read_bytes()
+            shutil.rmtree(clip_dir, ignore_errors=True)
+
             title_slug = (info.get("title") or "sermon-clip")[:50].replace(" ", "-").lower()
             filename = f"dabar-{title_slug}-{int(start_f)}s-{int(end_f)}s.mp4"
 
-            response = FileResponse(
-                open(clip_path, "rb"),
-                content_type="video/mp4",
-                as_attachment=True,
-                filename=filename,
-            )
-
-            # Schedule cleanup after response is sent
-            def cleanup():
-                import time
-                time.sleep(5)
-                shutil.rmtree(clip_dir, ignore_errors=True)
-
-            threading.Thread(target=cleanup, daemon=True).start()
-
+            response = HttpResponse(clip_bytes, content_type="video/mp4")
+            response["Content-Disposition"] = f'attachment; filename="{filename}"'
+            # Content-Length lets the browser show real download progress
+            response["Content-Length"] = str(len(clip_bytes))
             return response
 
         except Exception as exc:

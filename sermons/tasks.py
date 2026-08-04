@@ -221,6 +221,29 @@ def process_sermon(self, sermon_id):
                     "highlight_title": hl_title,
                 })
 
+            # Merge consecutive segments that share the same highlight title
+            # so one key moment doesn't get split across multiple cards
+            merged = []
+            for seg in final_segments:
+                if (
+                    merged
+                    and seg["is_highlight"]
+                    and merged[-1]["is_highlight"]
+                    and seg["highlight_title"]
+                    and seg["highlight_title"] == merged[-1].get("highlight_title")
+                ):
+                    # Extend the previous segment's time range and append text
+                    merged[-1]["end"] = seg["end"]
+                    merged[-1]["text"] = merged[-1]["text"] + " " + seg["text"]
+                else:
+                    merged.append(seg)
+
+            # Re-index after merging
+            for idx, seg in enumerate(merged):
+                seg["segment_index"] = idx
+
+            final_segments = merged
+
             # Create or update Master Transcript record
             master_transcript, _ = Transcript.objects.get_or_create(sermon=sermon)
             master_transcript.raw_text = full_text

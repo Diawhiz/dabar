@@ -16,7 +16,7 @@ except Exception:
     pass
 
 from youtube_transcript_api import YouTubeTranscriptApi
-from .models import Sermon, Transcript
+from .models import Sermon, Transcript, TranscriptSegment
 from .services.transcription import transcribe_sermon
 
 logger = logging.getLogger(__name__)
@@ -56,16 +56,16 @@ def _detect_highlights_with_llm(transcript_text):
     }
 
     prompt = (
-        "You are an expert sermon content strategist. Analyze the following transcript from a sermon. "
-        "Select up to 3 key highlights containing the most theological weight, conviction, or memorable illustrations. "
-        "Each highlight must be a contiguous range of time. Provide a short title and the exact start and end times in seconds. "
+        "You are an expert sermon content strategist. Analyze the following full transcript from a sermon. "
+        "Identify 4 to 6 key highlights containing the most theological depth, conviction, or memorable illustrations. "
+        "For each highlight, specify the start and end timestamp in seconds corresponding to the transcript. "
         "You MUST respond ONLY with a JSON object in this format:\n"
         "{\n"
         '  "highlights": [\n'
-        '    {"title": "Title of moment", "start": 120.0, "end": 180.0, "reason": "Description of why this is a good moment"}\n'
+        '    {"title": "Title of key moment", "start": 120.0, "end": 180.0, "reason": "Why this moment is powerful"}\n'
         "  ]\n"
         "}\n\n"
-        f"Transcript:\n{transcript_text}"
+        f"Transcript:\n{transcript_text[:12000]}" # Pass up to 12k chars to fit context window comfortably
     )
 
     data = {
@@ -89,32 +89,41 @@ def _detect_highlights_with_llm(transcript_text):
     return []
 
 
-def _download_audio_slice(sermon, start_time, end_time, index):
-    tmp_dir = _sermon_tmp_dir(sermon.id)
-    tmp_dir.mkdir(parents=True, exist_ok=True)
+def _group_youtube_transcript(yt_transcript):
+    """
+    Group raw 2-3 second YouTube subtitle snippets into coherent ~15-20 second sentence blocks.
+    """
+    grouped = []
+    current_text = []
+    current_start = None
+    current_end = 0.0
 
-    options = {
-        "format": "m4a/bestaudio/best",
-        "outtmpl": str(tmp_dir / f"slice_{index}.%(ext)s"),
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["ios", "mweb", "android"],
-            }
-        },
-        "nocheckcertificate": True,
-        "quiet": True,
-        "no_warnings": True,
-        "download_ranges": lambda info_dict, self: [{"start_time": start_time, "end_time": end_time}],
-    }
+    for item in yt_transcript:
+        if current_start is None:
+            current_start = float(item.start)
+        
+        current_text.append(item.text.replace("\n", " ").strip())
+        current_end = float(item.start) + float(item.duration)
 
-    with yt_dlp.YoutubeDL(options) as ydl:
-        ydl.extract_info(sermon.youtube_url, download=True)
+        # Create a segment block every ~15 seconds or at end of sentence
+        text_so_far = " ".join(current_text)
+        if (current_end - current_start >= 15.0) or text_so_far.endswith((".", "?", "!")):
+            grouped.append({
+                "start": current_start,
+                "end": current_end,
+                "text": text_so_far,
+            })
+            current_text = []
+            current_start = None
 
-    slice_files = list(tmp_dir.glob(f"slice_{index}.*"))
-    if not slice_files:
-        raise FileNotFoundError(f"Slice download failed for range {start_time}-{end_time}")
+    if current_text and current_start is not None:
+        grouped.append({
+            "start": current_start,
+            "end": current_end,
+            "text": " ".join(current_text),
+        })
 
-    return slice_files[0]
+    return grouped
 
 
 def _download_full_audio(sermon):
@@ -161,14 +170,14 @@ def process_sermon(self, sermon_id):
 
         if yt_id:
             try:
-                logger.info("Attempting to fetch YouTube transcript for video %s...", yt_id)
+                logger.info("Attempting to fetch full YouTube transcript for video %s...", yt_id)
                 api = YouTubeTranscriptApi()
                 youtube_transcript = api.fetch(yt_id, languages=["en"])
             except Exception as e:
                 logger.info("YouTube transcript unavailable: %s. Falling back to full download.", str(e))
 
         if youtube_transcript:
-            # Fetch metadata first to get video title
+            # Fetch metadata to get video title
             try:
                 with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True, "nocheckcertificate": True}) as ydl:
                     info = ydl.extract_info(sermon.youtube_url, download=False)
@@ -177,71 +186,72 @@ def process_sermon(self, sermon_id):
             except Exception as e:
                 logger.warning("Could not retrieve video metadata: %s", str(e))
 
-            logger.info("Successfully fetched YouTube transcript. Mapping text for LLM highlight detection...")
+            logger.info("Grouping YouTube subtitle segments for full sermon indexing...")
+            grouped_segments = _group_youtube_transcript(youtube_transcript)
+
+            # Generate full transcript text
+            full_text = " ".join([seg["text"] for seg in grouped_segments])
             
-            # Format text segments for LLM analysis
-            transcript_text = "\n".join(
-                f"[{item.start:.1f}s - {item.start + item.duration:.1f}s]: {item.text}"
-                for item in youtube_transcript
-            )
-
-            # Detect highlights/sections
-            highlights = _detect_highlights_with_llm(transcript_text)
-            if not highlights:
-                # Default to extracting first 60 seconds if LLM fails
-                highlights = [{"title": "Opening Clip", "start": 0.0, "end": 60.0}]
-
-            logger.info("Detected %d highlight windows. Proceeding with targeted audio download...", len(highlights))
+            # Use LLM to detect key highlights across the full transcript
+            highlights = _detect_highlights_with_llm(full_text)
             
-            merged_segments = []
-            merged_raw_text = []
+            final_segments = []
+            for idx, seg in enumerate(grouped_segments):
+                # Check if segment falls within any LLM detected highlight window
+                is_hl = False
+                hl_title = None
+                for hl in highlights:
+                    if seg["start"] >= hl.get("start", 0) - 5 and seg["end"] <= hl.get("end", 0) + 5:
+                        is_hl = True
+                        hl_title = hl.get("title")
+                        break
 
-            for idx, hl in enumerate(highlights):
-                start = hl["start"]
-                end = hl["end"]
-                title = hl["title"]
+                final_segments.append({
+                    "segment_index": idx,
+                    "start": seg["start"],
+                    "end": seg["end"],
+                    "text": seg["text"],
+                    "is_highlight": is_hl,
+                    "highlight_title": hl_title,
+                })
 
-                logger.info("Downloading targeted audio range for highlight '%s' (%s to %s seconds)...", title, start, end)
-                slice_path = _download_audio_slice(sermon, start, end, idx)
-
-                # Whisper-transcribe ONLY the sliced audio file to get high-fidelity punctuation & text
-                transcript_obj = transcribe_sermon(sermon.id, audio_path=slice_path)
-                
-                if transcript_obj.status == Transcript.Status.COMPLETE:
-                    # Adjust transcribed segment start/end times relative to actual video
-                    for seg in transcript_obj.segments:
-                        adjusted_start = start + seg["start"]
-                        adjusted_end = start + seg["end"]
-                        merged_segments.append({
-                            "segment_index": len(merged_segments),
-                            "start": adjusted_start,
-                            "end": adjusted_end,
-                            "text": seg["text"],
-                            "highlight_title": title,
-                        })
-                    merged_raw_text.append(transcript_obj.raw_text)
-
-            # Update master Transcript record with compiled targeted segments
+            # Create or update Master Transcript record
             master_transcript, _ = Transcript.objects.get_or_create(sermon=sermon)
-            master_transcript.raw_text = " ... ".join(merged_raw_text)
-            master_transcript.segments = merged_segments
+            master_transcript.raw_text = full_text
+            master_transcript.segments = final_segments
             master_transcript.status = Transcript.Status.COMPLETE
             master_transcript.save()
 
-            sermon.transcript = master_transcript.raw_text
+            # Sync Sermon record
+            sermon.transcript = full_text
             sermon.status = Sermon.Status.READY
             sermon.save(update_fields=["transcript", "status", "updated_at"])
 
-            logger.info("Hybrid Targeted Whisper pipeline completed successfully for sermon %s.", sermon.id)
+            # Populate TranscriptSegment relations
+            TranscriptSegment.objects.filter(sermon=sermon).delete()
+            segment_objs = [
+                TranscriptSegment(
+                    sermon=sermon,
+                    segment_index=idx,
+                    start_time=seg["start"],
+                    end_time=seg["end"],
+                    text=seg["text"],
+                )
+                for idx, seg in enumerate(final_segments)
+            ]
+            if segment_objs:
+                TranscriptSegment.objects.bulk_create(segment_objs)
+
+            logger.info("Successfully indexed full sermon %s (%d total segments).", sermon.id, len(final_segments))
             return {
                 "sermon_id": str(sermon.id),
                 "transcript_id": str(master_transcript.id),
-                "segments_count": len(merged_segments),
-                "hybrid": True,
+                "segments_count": len(final_segments),
+                "highlights_count": len(highlights),
             }
 
         else:
-            # Option Fallback: Full Audio Downloader + Whisper Transcription
+            # Fallback: Full Audio Downloader + Whisper Transcription
             logger.info("Starting fallback full audio download pipeline...")
             audio_path = _download_full_audio(sermon)
 
@@ -261,7 +271,6 @@ def process_sermon(self, sermon_id):
                 "sermon_id": str(sermon.id),
                 "transcript_id": str(transcript.id),
                 "segments_count": len(transcript.segments),
-                "hybrid": False,
             }
 
     except Exception as exc:

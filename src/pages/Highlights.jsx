@@ -14,6 +14,7 @@ function formatSeconds(secs) {
 export default function Highlights() {
   const [segments, setSegments] = useState([]);
   const [sermonTitle, setSermonTitle] = useState("");
+  const [sermonYoutubeUrl, setSermonYoutubeUrl] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [playingId, setPlayingId] = useState(null);
   const [filterMode, setFilterMode] = useState("all"); // 'all' | 'highlights'
@@ -32,6 +33,7 @@ export default function Highlights() {
 
         const latestSermon = sermons[0];
         setSermonTitle(latestSermon.title || latestSermon.youtube_url);
+        setSermonYoutubeUrl(latestSermon.youtube_url);
 
         try {
           const transcriptData = await getTranscript(latestSermon.id);
@@ -185,7 +187,16 @@ export default function Highlights() {
                       <span>{isPlaying ? "Pause" : "Preview Audio"}</span>
                     </button>
 
-                    <Link to="/clips" state={{ quote: seg.text }}>
+                    <Link
+                      to="/clips"
+                      state={{
+                        quote: seg.text,
+                        start: seg.start,
+                        end: seg.end,
+                        title: sermonTitle,
+                        youtube_url: sermonYoutubeUrl,
+                      }}
+                    >
                       <Button className="h-10 px-5 text-xs">
                         <Scissors size={15} />
                         Create Clip

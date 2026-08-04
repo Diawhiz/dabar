@@ -1,15 +1,15 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { Download, Instagram, MessageCircle, Play, Pause, Send, Youtube, Sparkles, Check, Maximize2, Type, Share2, Edit3 } from "lucide-react";
+import { Download, Instagram, MessageCircle, Play, Pause, Send, Youtube, Sparkles, Check, Maximize2, Type, Share2 } from "lucide-react";
 import Button from "../components/Button.jsx";
 import PageHeader from "../components/PageHeader.jsx";
 import { listSermons, getTranscript } from "../lib/api.js";
 
 const captionStyles = [
-  { id: "gold", label: "Gold Focus", bg: "bg-navy", text: "text-gold-light" },
-  { id: "kinetic", label: "Kinetic Bold", bg: "bg-amber-600", text: "text-white" },
-  { id: "minimal", label: "Minimal Dark", bg: "bg-black/90", text: "text-cream" },
-  { id: "clean", label: "Clean Light", bg: "bg-cream", text: "text-navy" },
+  { id: "gold", label: "Gold Focus", bg: "bg-navy/90 backdrop-blur-md border border-gold/30", text: "text-gold-light" },
+  { id: "kinetic", label: "Kinetic Bold", bg: "bg-amber-600/90 backdrop-blur-md", text: "text-white" },
+  { id: "minimal", label: "Minimal Dark", bg: "bg-black/90 backdrop-blur-md", text: "text-cream" },
+  { id: "clean", label: "Clean Light", bg: "bg-cream/90 backdrop-blur-md text-navy border border-linen", text: "text-navy" },
 ];
 
 const formats = [
@@ -25,14 +25,21 @@ function formatSeconds(secs) {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
+function extractVideoId(url) {
+  if (!url) return "dQw4w9WgXcQ";
+  const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([a-zA-Z0-9_-]{11})/);
+  return match ? match[1] : "dQw4w9WgXcQ";
+}
+
 export default function ClipsReady() {
   const location = useLocation();
   const [selectedFormat, setSelectedFormat] = useState("9:16");
   const [selectedCaption, setSelectedCaption] = useState("gold");
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(true);
   const [downloaded, setDownloaded] = useState(false);
   const [quoteText, setQuoteText] = useState(location.state?.quote || "");
   const [isEditing, setIsEditing] = useState(false);
+  const [youtubeUrl, setYoutubeUrl] = useState(location.state?.youtube_url || "");
 
   const startSec = location.state?.start;
   const endSec = location.state?.end;
@@ -43,6 +50,7 @@ export default function ClipsReady() {
   useEffect(() => {
     if (location.state?.quote) {
       setQuoteText(location.state.quote);
+      if (location.state.youtube_url) setYoutubeUrl(location.state.youtube_url);
       return;
     }
 
@@ -50,6 +58,7 @@ export default function ClipsReady() {
     listSermons()
       .then(async (sermons) => {
         if (!isMounted || !sermons.length) return;
+        setYoutubeUrl(sermons[0].youtube_url);
         try {
           const transcriptData = await getTranscript(sermons[0].id);
           if (isMounted && transcriptData?.segments?.length) {
@@ -66,7 +75,7 @@ export default function ClipsReady() {
     return () => {
       isMounted = false;
     };
-  }, [location.state?.quote]);
+  }, [location.state?.quote, location.state?.youtube_url]);
 
   const activeFormatObj = formats.find((f) => f.id === selectedFormat) ?? formats[0];
   const activeCaptionObj = captionStyles.find((c) => c.id === selectedCaption) ?? captionStyles[0];
@@ -77,22 +86,27 @@ export default function ClipsReady() {
   }
 
   const displayQuote = quoteText || "God develops depth before visibility.";
+  const videoId = extractVideoId(youtubeUrl);
+  const startInt = startSec !== undefined ? Math.floor(startSec) : 0;
+  const endInt = endSec !== undefined ? Math.ceil(endSec) : startInt + 45;
+
+  const embedUrl = `https://www.youtube-nocookie.com/embed/${videoId}?start=${startInt}&end=${endInt}&autoplay=1&controls=0&rel=0&modestbranding=1&loop=1&playlist=${videoId}&mute=${isPlaying ? 0 : 1}`;
 
   return (
     <div className="mx-auto max-w-5xl py-6">
       <PageHeader
         eyebrow="Clip Studio"
         title="Vertical Sermon Clip Ready"
-        description="Preview, customize captions, edit text, and export high-impact 9:16 video clips tailored for your church's social channels."
+        description="Preview the live video clip, customize captions, edit text, and export high-impact 9:16 clips for social channels."
         action={
           <Button variant="gold" className="px-8 shadow-glow" onClick={handleDownload}>
             {downloaded ? (
               <span className="inline-flex items-center gap-2">
-                <Check size={18} /> Exported!
+                <Check size={18} /> Exported MP4 Clip!
               </span>
             ) : (
               <span className="inline-flex items-center gap-2">
-                <Download size={18} /> Export MP4 Clip
+                <Download size={18} /> Export Video Clip
               </span>
             )}
           </Button>
@@ -107,34 +121,36 @@ export default function ClipsReady() {
             className={[
               "relative mx-auto flex flex-col justify-between overflow-hidden rounded-3xl shadow-navyGlow transition-all duration-300",
               activeFormatObj.aspect,
-              "w-full bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-navy-light via-navy to-navy-dark text-cream p-8 text-center",
+              "w-full bg-navy text-cream p-6 text-center",
             ].join(" ")}
           >
+            {/* Live YouTube Video Layer (Cropped to frame) */}
+            <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none rounded-3xl">
+              <iframe
+                src={embedUrl}
+                title="Sermon Live Video Clip"
+                className="h-full w-full object-cover scale-150 transform -translate-y-2 opacity-85"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              />
+            </div>
+
+            {/* Dark Video Gradient Vignette Overlay */}
+            <div className="absolute inset-0 z-0 bg-gradient-to-b from-navy/60 via-transparent to-navy/80 pointer-events-none" />
+
             {/* Top Bar */}
-            <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-gold-light">
+            <div className="relative z-10 flex items-center justify-between text-xs font-bold uppercase tracking-wider text-gold-light bg-navy/40 px-3 py-1.5 rounded-full backdrop-blur-sm border border-cream/10">
               <span className="flex items-center gap-1.5">
-                <Sparkles size={14} /> Dabar Studio Clip
+                <Sparkles size={14} className="text-gold" /> Dabar Studio Clip
               </span>
               <span>{durationLabel}</span>
             </div>
 
-            {/* Middle Video Quote / Soundwave */}
-            <div className="my-auto space-y-6 py-6">
-              {/* Animated Sound Wave Spectrum */}
-              <div className="flex items-center justify-center gap-1">
-                {[40, 75, 30, 90, 50, 85, 45, 95, 60, 35, 80, 50].map((h, i) => (
-                  <span
-                    key={i}
-                    style={{ height: isPlaying ? `${h}%` : '20%', minHeight: '8px' }}
-                    className="w-1.5 rounded-full bg-gold transition-all duration-300"
-                  />
-                ))}
-              </div>
-
+            {/* Middle Video Quote / Caption */}
+            <div className="relative z-10 my-auto space-y-6 py-4">
               {/* Caption Overlay Box */}
               <div
                 className={[
-                  "mx-auto rounded-2xl p-5 shadow-soft transition-all duration-300 relative group",
+                  "mx-auto rounded-2xl p-4 shadow-navyGlow transition-all duration-300 relative group",
                   activeCaptionObj.bg,
                 ].join(" ")}
               >
@@ -144,40 +160,40 @@ export default function ClipsReady() {
                     onChange={(e) => setQuoteText(e.target.value)}
                     onBlur={() => setIsEditing(false)}
                     autoFocus
-                    className={["w-full bg-transparent font-serif text-xl font-bold leading-snug outline-none border-b border-gold/40 resize-none", activeCaptionObj.text].join(" ")}
+                    className={["w-full bg-transparent font-serif text-lg font-bold leading-snug outline-none border-b border-gold/40 resize-none", activeCaptionObj.text].join(" ")}
                     rows={4}
                   />
                 ) : (
                   <p
                     onClick={() => setIsEditing(true)}
-                    className={["font-serif text-xl font-bold leading-snug cursor-pointer", activeCaptionObj.text].join(" ")}
+                    className={["font-serif text-lg font-bold leading-snug cursor-pointer", activeCaptionObj.text].join(" ")}
                   >
                     "{displayQuote}"
                   </p>
                 )}
-                <span className="mt-2 block text-[10px] uppercase font-sans font-semibold tracking-wider text-gold-light/60">
+                <span className="mt-2 block text-[10px] uppercase font-sans font-semibold tracking-wider text-gold-light/80">
                   Click text to edit captions
                 </span>
               </div>
 
-              {/* Play Toggle Button */}
+              {/* Mute/Play Toggle Button */}
               <button
                 type="button"
                 onClick={() => setIsPlaying(!isPlaying)}
-                className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-gold text-navy shadow-glow transition-transform hover:scale-110 active:scale-95"
+                className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-gold text-navy shadow-glow transition-transform hover:scale-110 active:scale-95"
               >
-                {isPlaying ? <Pause fill="currentColor" size={26} /> : <Play fill="currentColor" size={26} className="ml-1" />}
+                {isPlaying ? <Pause fill="currentColor" size={22} /> : <Play fill="currentColor" size={22} className="ml-1" />}
               </button>
             </div>
 
             {/* Bottom Caption Pill */}
-            <div className="text-center text-xs font-semibold tracking-wider text-cream/70">
-              Auto-Synced Captions • 1080x1920 HD
+            <div className="relative z-10 text-center text-[11px] font-bold uppercase tracking-widest text-cream/90 bg-navy/40 py-1 rounded-full backdrop-blur-sm border border-cream/10">
+              Live Video Preview • 1080x1920 HD
             </div>
           </div>
 
           <p className="mt-4 text-xs font-semibold text-walnut/70">
-            Click play to test live audio & caption rendering preview
+            Playing actual video slice from sermon ({formatSeconds(startInt)} - {formatSeconds(endInt)})
           </p>
         </section>
 

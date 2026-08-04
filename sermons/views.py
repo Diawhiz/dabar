@@ -1,9 +1,10 @@
 import logging
 import shutil
+import subprocess
 import threading
 from pathlib import Path
 
-from django.http import FileResponse
+from django.http import FileResponse, HttpResponse
 from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -66,7 +67,6 @@ class SermonTranscribeView(APIView):
         )
 
         return Response(serializer.data, status=response_status)
-        
 
 
 class SermonTranscriptDetailView(APIView):
@@ -93,11 +93,9 @@ class SermonTranscriptDetailView(APIView):
 
 
 class ClipDownloadView(APIView):
-    """Download a specific time-range clip from a YouTube sermon as MP4."""
+    """Download a specific time-range clip from a YouTube sermon as MP4 without fetching the full video."""
 
     def get(self, request, format=None):
-        from django.http import HttpResponse
-
         youtube_url = request.query_params.get("url")
         start = request.query_params.get("start")
         end = request.query_params.get("end")
@@ -125,22 +123,9 @@ class ClipDownloadView(APIView):
         try:
             import yt_dlp
 
+            # 1. Fetch direct YouTube stream HTTP URLs (takes <1 sec, zero video download)
             options = {
-                # DASH format is required for download_ranges to actually work.
-                # With progressive/pre-merged mp4 (best[ext=mp4]), yt-dlp has to
-                # download the ENTIRE video before it can cut — that's why it was
-                # downloading the whole thing. DASH streams let yt-dlp fetch only
-                # the byte segments for the requested time window.
-                "format": "bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best",
-                "outtmpl": str(clip_dir / "clip.%(ext)s"),
-                "merge_output_format": "mp4",
-                "download_ranges": lambda info_dict, ydl: [
-                    {"start_time": start_f, "end_time": end_f}
-                ],
-                # False = no re-encode, just mux the DASH segments → very fast
-                "force_keyframes_at_cuts": False,
-                # Prevent .part temp files being mistaken for complete files
-                "nopart": True,
+                "format": "bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/best[ext=mp4]/best",
                 "extractor_args": {
                     "youtube": {
                         "player_client": ["ios", "mweb", "android"],
@@ -152,23 +137,37 @@ class ClipDownloadView(APIView):
             }
 
             with yt_dlp.YoutubeDL(options) as ydl:
-                info = ydl.extract_info(youtube_url, download=True)
+                info = ydl.extract_info(youtube_url, download=False)
 
-            # mp4 preferred; fall back to any output file
-            output_files = list(clip_dir.glob("*.mp4")) or list(clip_dir.glob("clip.*"))
+            out_mp4 = clip_dir / "clip.mp4"
+            requested_formats = info.get("requested_formats")
 
-            if not output_files:
-                return Response(
-                    {"detail": "Clip download failed — no output file produced."},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                )
+            # 2. Slice ONLY the requested seconds via ffmpeg directly over HTTP stream
+            if requested_formats and len(requested_formats) >= 2:
+                v_url = requested_formats[0]["url"]
+                a_url = requested_formats[1]["url"]
+                cmd = [
+                    "ffmpeg", "-y",
+                    "-ss", str(start_f), "-to", str(end_f), "-i", v_url,
+                    "-ss", str(start_f), "-to", str(end_f), "-i", a_url,
+                    "-c", "copy",
+                    str(out_mp4)
+                ]
+            else:
+                stream_url = info.get("url")
+                cmd = [
+                    "ffmpeg", "-y",
+                    "-ss", str(start_f), "-to", str(end_f), "-i", stream_url,
+                    "-c", "copy",
+                    str(out_mp4)
+                ]
 
-            clip_path = output_files[0]
+            subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-            # Read entire file into memory BEFORE deleting temp dir.
-            # This eliminates the race condition where cleanup() was running
-            # while FileResponse was still mid-stream, corrupting the download.
-            clip_bytes = clip_path.read_bytes()
+            if not out_mp4.exists() or out_mp4.stat().st_size == 0:
+                raise FileNotFoundError("FFmpeg did not produce a valid MP4 clip")
+
+            clip_bytes = out_mp4.read_bytes()
             shutil.rmtree(clip_dir, ignore_errors=True)
 
             title_slug = (info.get("title") or "sermon-clip")[:50].replace(" ", "-").lower()
@@ -176,7 +175,6 @@ class ClipDownloadView(APIView):
 
             response = HttpResponse(clip_bytes, content_type="video/mp4")
             response["Content-Disposition"] = f'attachment; filename="{filename}"'
-            # Content-Length lets the browser show real download progress
             response["Content-Length"] = str(len(clip_bytes))
             return response
 

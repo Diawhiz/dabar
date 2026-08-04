@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { Copy, Instagram, MessageCircle, Send, Youtube, Sparkles, Check, Maximize2, Share2, Link2, ExternalLink } from "lucide-react";
+import { Download, Instagram, MessageCircle, Send, Youtube, Sparkles, Check, Maximize2, Share2, Link2, ExternalLink, Loader2 } from "lucide-react";
 import Button from "../components/Button.jsx";
 import PageHeader from "../components/PageHeader.jsx";
-import { listSermons } from "../lib/api.js";
+import { listSermons, downloadClip } from "../lib/api.js";
 
 const formats = [
   { id: "9:16", label: "9:16 Vertical (Reels / Shorts)", aspect: "aspect-[9/16] max-w-[340px]" },
@@ -27,6 +27,9 @@ function extractVideoId(url) {
 export default function ClipsReady() {
   const location = useLocation();
   const [selectedFormat, setSelectedFormat] = useState("9:16");
+  const [downloading, setDownloading] = useState(false);
+  const [downloaded, setDownloaded] = useState(false);
+  const [downloadError, setDownloadError] = useState(null);
   const [copied, setCopied] = useState(false);
   const [youtubeUrl, setYoutubeUrl] = useState(location.state?.youtube_url || "");
 
@@ -60,15 +63,31 @@ export default function ClipsReady() {
   const startInt = startSec !== undefined ? Math.floor(startSec) : 0;
   const endInt = endSec !== undefined ? Math.ceil(endSec) : startInt + 45;
 
-  // Timestamped YouTube share link — opens the video at exactly the right moment
   const shareUrl = videoId
     ? `https://youtu.be/${videoId}?t=${startInt}`
     : youtubeUrl;
 
-  // YouTube embed with controls so users can play/pause/seek/hear audio
   const embedUrl = videoId
     ? `https://www.youtube-nocookie.com/embed/${videoId}?start=${startInt}&end=${endInt}&rel=0&modestbranding=1`
     : null;
+
+  async function handleDownload() {
+    if (!youtubeUrl) return;
+    setDownloading(true);
+    setDownloadError(null);
+    setDownloaded(false);
+
+    try {
+      await downloadClip(youtubeUrl, startInt, endInt);
+      setDownloaded(true);
+      setTimeout(() => setDownloaded(false), 4000);
+    } catch (err) {
+      setDownloadError(err.message);
+      setTimeout(() => setDownloadError(null), 5000);
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   async function handleCopyLink() {
     try {
@@ -76,7 +95,6 @@ export default function ClipsReady() {
       setCopied(true);
       setTimeout(() => setCopied(false), 3000);
     } catch {
-      // Fallback for older browsers
       const textArea = document.createElement("textarea");
       textArea.value = shareUrl;
       document.body.appendChild(textArea);
@@ -111,21 +129,31 @@ export default function ClipsReady() {
       <PageHeader
         eyebrow="Clip Studio"
         title="Sermon Video Clip"
-        description="Preview the sermon clip and share the timestamped link directly to any social platform — zero downloads needed."
+        description="Preview the sermon clip, download the MP4 file, or share the timestamped link directly."
         action={
-          <Button variant="gold" className="px-8 shadow-glow" onClick={handleCopyLink}>
-            {copied ? (
+          <Button variant="gold" className="px-8 shadow-glow" onClick={handleDownload} disabled={downloading}>
+            {downloading ? (
               <span className="inline-flex items-center gap-2">
-                <Check size={18} /> Link Copied!
+                <Loader2 size={18} className="animate-spin" /> Slicing MP4 Clip…
+              </span>
+            ) : downloaded ? (
+              <span className="inline-flex items-center gap-2">
+                <Check size={18} /> Downloaded MP4!
               </span>
             ) : (
               <span className="inline-flex items-center gap-2">
-                <Link2 size={18} /> Copy Share Link
+                <Download size={18} /> Download MP4 Clip
               </span>
             )}
           </Button>
         }
       />
+
+      {downloadError && (
+        <div className="mb-6 rounded-2xl border border-red-300 bg-red-50 px-5 py-3 text-sm font-semibold text-red-700">
+          {downloadError}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-10 lg:grid-cols-[1fr_360px]">
         {/* VIDEO PREVIEW */}
@@ -182,7 +210,7 @@ export default function ClipsReady() {
           <div className="rounded-3xl border border-linen bg-cream p-6 shadow-soft">
             <div className="mb-4 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-navy">
               <Maximize2 size={16} className="text-gold" />
-              <span>Preview Format</span>
+              <span>Preview Aspect Ratio</span>
             </div>
             <div className="space-y-2">
               {formats.map((f) => (
@@ -203,11 +231,38 @@ export default function ClipsReady() {
             </div>
           </div>
 
+          {/* Download Action Card */}
+          <button
+            onClick={handleDownload}
+            disabled={downloading}
+            className="w-full rounded-3xl border border-gold/40 bg-gold/15 p-5 text-center shadow-soft transition-all duration-200 hover:bg-gold/25 hover:shadow-glow active:scale-[0.98] disabled:opacity-50"
+          >
+            <div className="flex items-center justify-center gap-2 text-sm font-bold text-navy">
+              {downloading ? (
+                <Loader2 size={18} className="animate-spin text-navy" />
+              ) : downloaded ? (
+                <Check size={18} className="text-green-600" />
+              ) : (
+                <Download size={18} className="text-gold-dark" />
+              )}
+              <span>
+                {downloading
+                  ? "Slicing Clip (2-4s)…"
+                  : downloaded
+                  ? "MP4 Clip Downloaded!"
+                  : "Download MP4 Video Clip"}
+              </span>
+            </div>
+            <p className="mt-1 text-[11px] text-walnut/70">
+              Slices only {formatSeconds(startInt)} – {formatSeconds(endInt)} directly from YouTube
+            </p>
+          </button>
+
           {/* Share Directly */}
           <div className="rounded-3xl border border-linen bg-cream p-6 shadow-soft">
             <div className="mb-4 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-navy">
               <Share2 size={16} className="text-gold" />
-              <span>Share Clip Directly</span>
+              <span>Share Timestamped Link</span>
             </div>
             <div className="grid grid-cols-2 gap-2.5">
               {[
@@ -229,20 +284,6 @@ export default function ClipsReady() {
               ))}
             </div>
           </div>
-
-          {/* Copy Link Card */}
-          <button
-            onClick={handleCopyLink}
-            className="w-full rounded-3xl border border-gold/30 bg-gold/10 p-5 text-center shadow-soft transition-all duration-200 hover:bg-gold/20 hover:shadow-glow active:scale-[0.98]"
-          >
-            <div className="flex items-center justify-center gap-2 text-sm font-bold text-navy">
-              {copied ? <Check size={18} className="text-green-600" /> : <Copy size={18} className="text-gold-dark" />}
-              <span>{copied ? "Link Copied to Clipboard!" : "Copy Timestamped Share Link"}</span>
-            </div>
-            <p className="mt-1 text-[11px] text-walnut/60">
-              Opens the sermon at exactly {formatSeconds(startInt)} — no download required
-            </p>
-          </button>
         </section>
       </div>
     </div>

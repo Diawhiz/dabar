@@ -126,15 +126,18 @@ class ClipDownloadView(APIView):
             import yt_dlp
 
             options = {
-                # Use a single pre-merged stream: no ffmpeg merge step, ~10x faster.
-                # 720p mp4 is the sweet spot — good quality, small file, compatible.
-                "format": "best[ext=mp4][height<=720]/best[ext=mp4]/best",
+                # DASH format is required for download_ranges to actually work.
+                # With progressive/pre-merged mp4 (best[ext=mp4]), yt-dlp has to
+                # download the ENTIRE video before it can cut — that's why it was
+                # downloading the whole thing. DASH streams let yt-dlp fetch only
+                # the byte segments for the requested time window.
+                "format": "bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best",
                 "outtmpl": str(clip_dir / "clip.%(ext)s"),
+                "merge_output_format": "mp4",
                 "download_ranges": lambda info_dict, ydl: [
                     {"start_time": start_f, "end_time": end_f}
                 ],
-                # Disabled: re-encode adds seconds of processing and is the #1
-                # cause of corrupted output when the merge fails mid-stream.
+                # False = no re-encode, just mux the DASH segments → very fast
                 "force_keyframes_at_cuts": False,
                 # Prevent .part temp files being mistaken for complete files
                 "nopart": True,

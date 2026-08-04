@@ -1,4 +1,5 @@
 .venv/
+venv/
 __pycache__/
 *.py[cod]
 .env
@@ -7,3 +8,5 @@ test.sqlite3
 .pytest_cache/
 node_modules/
 dist/
+tmp_audio/
+tmp_clips/

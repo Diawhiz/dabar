@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { Download, Instagram, MessageCircle, Send, Youtube, Sparkles, Check, Maximize2, Share2, Loader2 } from "lucide-react";
+import { Copy, Instagram, MessageCircle, Send, Youtube, Sparkles, Check, Maximize2, Share2, Link2, ExternalLink } from "lucide-react";
 import Button from "../components/Button.jsx";
 import PageHeader from "../components/PageHeader.jsx";
-import { listSermons, downloadClip } from "../lib/api.js";
+import { listSermons } from "../lib/api.js";
 
 const formats = [
   { id: "9:16", label: "9:16 Vertical (Reels / Shorts)", aspect: "aspect-[9/16] max-w-[340px]" },
@@ -27,13 +27,12 @@ function extractVideoId(url) {
 export default function ClipsReady() {
   const location = useLocation();
   const [selectedFormat, setSelectedFormat] = useState("9:16");
-  const [downloading, setDownloading] = useState(false);
-  const [downloaded, setDownloaded] = useState(false);
-  const [downloadError, setDownloadError] = useState(null);
+  const [copied, setCopied] = useState(false);
   const [youtubeUrl, setYoutubeUrl] = useState(location.state?.youtube_url || "");
 
   const startSec = location.state?.start;
   const endSec = location.state?.end;
+  const clipTitle = location.state?.title || "";
   const durationLabel = startSec !== undefined && endSec !== undefined
     ? formatSeconds(endSec - startSec)
     : "00:45";
@@ -57,67 +56,76 @@ export default function ClipsReady() {
   }, [location.state?.youtube_url]);
 
   const activeFormatObj = formats.find((f) => f.id === selectedFormat) ?? formats[0];
-
-  async function handleDownload() {
-    if (!youtubeUrl) return;
-    setDownloading(true);
-    setDownloadError(null);
-    setDownloaded(false);
-
-    const s = startSec !== undefined ? Math.floor(startSec) : 0;
-    const e = endSec !== undefined ? Math.ceil(endSec) : s + 45;
-
-    try {
-      await downloadClip(youtubeUrl, s, e);
-      setDownloaded(true);
-      setTimeout(() => setDownloaded(false), 4000);
-    } catch (err) {
-      setDownloadError(err.message);
-      setTimeout(() => setDownloadError(null), 5000);
-    } finally {
-      setDownloading(false);
-    }
-  }
-
   const videoId = extractVideoId(youtubeUrl);
   const startInt = startSec !== undefined ? Math.floor(startSec) : 0;
   const endInt = endSec !== undefined ? Math.ceil(endSec) : startInt + 45;
 
-  // YouTube embed with controls enabled so users can actually play/pause/seek/hear audio
+  // Timestamped YouTube share link — opens the video at exactly the right moment
+  const shareUrl = videoId
+    ? `https://youtu.be/${videoId}?t=${startInt}`
+    : youtubeUrl;
+
+  // YouTube embed with controls so users can play/pause/seek/hear audio
   const embedUrl = videoId
     ? `https://www.youtube-nocookie.com/embed/${videoId}?start=${startInt}&end=${endInt}&rel=0&modestbranding=1`
     : null;
+
+  async function handleCopyLink() {
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 3000);
+    } catch {
+      // Fallback for older browsers
+      const textArea = document.createElement("textarea");
+      textArea.value = shareUrl;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand("copy");
+      textArea.remove();
+      setCopied(true);
+      setTimeout(() => setCopied(false), 3000);
+    }
+  }
+
+  function handleShareOpen(platform) {
+    const text = clipTitle
+      ? `🔥 "${clipTitle}" — Watch this powerful sermon moment`
+      : "🔥 Watch this powerful sermon moment";
+
+    const encodedUrl = encodeURIComponent(shareUrl);
+    const encodedText = encodeURIComponent(text);
+
+    const urls = {
+      "WhatsApp": `https://wa.me/?text=${encodedText}%20${encodedUrl}`,
+      "Twitter / X": `https://twitter.com/intent/tweet?text=${encodedText}&url=${encodedUrl}`,
+      "Facebook": `https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}`,
+      "YouTube": shareUrl,
+    };
+
+    window.open(urls[platform] || shareUrl, "_blank", "noopener");
+  }
 
   return (
     <div className="mx-auto max-w-5xl py-6">
       <PageHeader
         eyebrow="Clip Studio"
         title="Sermon Video Clip"
-        description="Preview the sermon clip, choose your format, and download as MP4 for social media."
+        description="Preview the sermon clip and share the timestamped link directly to any social platform — zero downloads needed."
         action={
-          <Button variant="gold" className="px-8 shadow-glow" onClick={handleDownload} disabled={downloading}>
-            {downloading ? (
+          <Button variant="gold" className="px-8 shadow-glow" onClick={handleCopyLink}>
+            {copied ? (
               <span className="inline-flex items-center gap-2">
-                <Loader2 size={18} className="animate-spin" /> Downloading MP4…
-              </span>
-            ) : downloaded ? (
-              <span className="inline-flex items-center gap-2">
-                <Check size={18} /> Downloaded!
+                <Check size={18} /> Link Copied!
               </span>
             ) : (
               <span className="inline-flex items-center gap-2">
-                <Download size={18} /> Download MP4 Clip
+                <Link2 size={18} /> Copy Share Link
               </span>
             )}
           </Button>
         }
       />
-
-      {downloadError && (
-        <div className="mb-6 rounded-2xl border border-red-300 bg-red-50 px-5 py-3 text-sm font-semibold text-red-700">
-          {downloadError}
-        </div>
-      )}
 
       <div className="grid grid-cols-1 gap-10 lg:grid-cols-[1fr_360px]">
         {/* VIDEO PREVIEW */}
@@ -150,9 +158,22 @@ export default function ClipsReady() {
             </div>
           </div>
 
-          <p className="mt-4 text-xs font-semibold text-walnut/70">
-            Clip range: {formatSeconds(startInt)} – {formatSeconds(endInt)}
-          </p>
+          {/* Share Link Preview */}
+          <div className="mt-4 w-full max-w-md">
+            <div className="flex items-center gap-2 rounded-xl border border-linen bg-parchment/60 px-4 py-2.5">
+              <Link2 size={14} className="flex-shrink-0 text-gold-dark" />
+              <span className="truncate text-xs font-mono text-walnut/80">{shareUrl}</span>
+              <button
+                onClick={handleCopyLink}
+                className="ml-auto flex-shrink-0 rounded-lg bg-navy px-3 py-1 text-[11px] font-bold text-cream transition-colors hover:bg-gold hover:text-navy"
+              >
+                {copied ? "Copied!" : "Copy"}
+              </button>
+            </div>
+            <p className="mt-2 text-center text-xs font-semibold text-walnut/60">
+              Clip range: {formatSeconds(startInt)} – {formatSeconds(endInt)}
+            </p>
+          </div>
         </section>
 
         {/* CONTROLS PANEL */}
@@ -161,7 +182,7 @@ export default function ClipsReady() {
           <div className="rounded-3xl border border-linen bg-cream p-6 shadow-soft">
             <div className="mb-4 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-navy">
               <Maximize2 size={16} className="text-gold" />
-              <span>Video Aspect Ratio</span>
+              <span>Preview Format</span>
             </div>
             <div className="space-y-2">
               {formats.map((f) => (
@@ -182,32 +203,46 @@ export default function ClipsReady() {
             </div>
           </div>
 
-          {/* Share / Export */}
+          {/* Share Directly */}
           <div className="rounded-3xl border border-linen bg-cream p-6 shadow-soft">
             <div className="mb-4 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-navy">
               <Share2 size={16} className="text-gold" />
-              <span>Download & Share</span>
+              <span>Share Clip Directly</span>
             </div>
             <div className="grid grid-cols-2 gap-2.5">
               {[
-                { label: "Instagram Reels", icon: Instagram },
-                { label: "TikTok", icon: Send },
-                { label: "YouTube Shorts", icon: Youtube },
-                { label: "WhatsApp Status", icon: MessageCircle },
+                { label: "WhatsApp", icon: MessageCircle },
+                { label: "Twitter / X", icon: Send },
+                { label: "Facebook", icon: Instagram },
+                { label: "YouTube", icon: Youtube },
               ].map(({ label, icon: Icon }) => (
                 <button
                   key={label}
                   type="button"
-                  onClick={handleDownload}
-                  disabled={downloading}
-                  className="flex items-center gap-2 rounded-xl border border-linen bg-parchment/60 px-3 py-2.5 text-xs font-semibold text-navy transition-colors hover:bg-gold/20 disabled:opacity-50"
+                  onClick={() => handleShareOpen(label)}
+                  className="flex items-center gap-2 rounded-xl border border-linen bg-parchment/60 px-3 py-2.5 text-xs font-semibold text-navy transition-colors hover:bg-gold/20"
                 >
                   <Icon size={16} className="text-gold-dark" />
                   <span>{label}</span>
+                  <ExternalLink size={12} className="ml-auto text-walnut/40" />
                 </button>
               ))}
             </div>
           </div>
+
+          {/* Copy Link Card */}
+          <button
+            onClick={handleCopyLink}
+            className="w-full rounded-3xl border border-gold/30 bg-gold/10 p-5 text-center shadow-soft transition-all duration-200 hover:bg-gold/20 hover:shadow-glow active:scale-[0.98]"
+          >
+            <div className="flex items-center justify-center gap-2 text-sm font-bold text-navy">
+              {copied ? <Check size={18} className="text-green-600" /> : <Copy size={18} className="text-gold-dark" />}
+              <span>{copied ? "Link Copied to Clipboard!" : "Copy Timestamped Share Link"}</span>
+            </div>
+            <p className="mt-1 text-[11px] text-walnut/60">
+              Opens the sermon at exactly {formatSeconds(startInt)} — no download required
+            </p>
+          </button>
         </section>
       </div>
     </div>

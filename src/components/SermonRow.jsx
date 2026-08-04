@@ -1,8 +1,12 @@
-import { CalendarDays, Scissors, Clock, ArrowUpRight, PlayCircle } from "lucide-react";
+import { CalendarDays, ArrowUpRight, PlayCircle, Activity } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 export default function SermonRow({ sermon }) {
   const navigate = useNavigate();
+
+  const formattedDate = sermon.created_at
+    ? new Date(sermon.created_at).toLocaleDateString()
+    : "Recent";
 
   return (
     <div
@@ -16,13 +20,13 @@ export default function SermonRow({ sermon }) {
         <div>
           <div className="flex items-center gap-2">
             <span className="rounded-md bg-gold/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-gold">
-              {sermon.platform ?? "YouTube"}
+              YouTube
             </span>
             <span className="text-xs text-walnut/60">•</span>
-            <span className="text-xs font-semibold text-walnut/80">{sermon.speaker}</span>
+            <span className="text-xs font-semibold text-walnut/80">{sermon.youtube_url}</span>
           </div>
           <h3 className="mt-1 font-serif text-xl font-semibold leading-snug text-navy transition-colors group-hover:text-gold-dark">
-            {sermon.title}
+            {sermon.title || sermon.youtube_url}
           </h3>
         </div>
       </div>
@@ -31,15 +35,11 @@ export default function SermonRow({ sermon }) {
         <div className="flex items-center gap-4 text-xs font-semibold text-walnut">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-parchment px-3 py-1.5">
             <CalendarDays size={14} className="text-gold" />
-            {sermon.date}
+            {formattedDate}
           </span>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-parchment px-3 py-1.5">
-            <Clock size={14} className="text-gold" />
-            {sermon.duration}
-          </span>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-gold/15 px-3 py-1.5 font-bold text-navy">
-            <Scissors size={14} className="text-gold" />
-            {sermon.clipCount}
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-gold/15 px-3 py-1.5 font-bold uppercase text-navy">
+            <Activity size={14} className="text-gold" />
+            {sermon.status}
           </span>
         </div>
 

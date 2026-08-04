@@ -5,9 +5,9 @@ import Button from "../components/Button.jsx";
 import { getSermon } from "../lib/api.js";
 
 const stageDefinitions = [
-  { key: "downloading", label: "Downloading Audio", detail: "Extracting high-fidelity audio stream from YouTube source.", icon: Download },
-  { key: "transcribing", label: "Speech Transcription", detail: "Generating timestamped, punctuated transcript using AI.", icon: FileText },
-  { key: "detecting", label: "Highlight Detection", detail: "Scoring key teaching moments, invitations, and illustrations.", icon: Sparkles },
+  { key: "downloading", label: "Downloading Audio", detail: "Extracting audio stream from YouTube source.", icon: Download },
+  { key: "transcribing", label: "Speech Transcription", detail: "Generating timestamped Whisper transcript using AI.", icon: FileText },
+  { key: "ready", label: "Highlights Ready", detail: "Scoring key teaching moments, invitations, and illustrations.", icon: Sparkles },
 ];
 
 export default function Processing() {
@@ -15,56 +15,70 @@ export default function Processing() {
   const [sermon, setSermon] = useState(null);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(Boolean(sermonId));
-  const [progress, setProgress] = useState(45);
-
-  useEffect(() => {
-    // Simulated progress bar ticker
-    const timer = setInterval(() => {
-      setProgress((prev) => (prev >= 100 ? 100 : prev + 5));
-    }, 1200);
-    return () => clearInterval(timer);
-  }, []);
 
   useEffect(() => {
     if (!sermonId) return;
 
     let isMounted = true;
-    setIsLoading(true);
-    setError("");
 
-    getSermon(sermonId)
-      .then((data) => {
-        if (isMounted) setSermon(data);
-      })
-      .catch((requestError) => {
-        if (isMounted) setError(requestError.message);
-      })
-      .finally(() => {
-        if (isMounted) setIsLoading(false);
-      });
+    async function fetchSermonStatus() {
+      try {
+        const data = await getSermon(sermonId);
+        if (isMounted) {
+          setSermon(data);
+          setIsLoading(false);
+        }
+      } catch (requestError) {
+        if (isMounted) {
+          setError(requestError.message);
+          setIsLoading(false);
+        }
+      }
+    }
+
+    fetchSermonStatus();
+
+    // Poll every 3 seconds while sermon status is processing
+    const interval = setInterval(() => {
+      if (sermon?.status !== "ready" && sermon?.status !== "failed") {
+        fetchSermonStatus();
+      }
+    }, 3000);
 
     return () => {
       isMounted = false;
+      clearInterval(interval);
     };
-  }, [sermonId]);
+  }, [sermonId, sermon?.status]);
 
   const stages = useMemo(() => {
-    const activeIndex = stageDefinitions.findIndex((stage) => stage.key === sermon?.status);
+    const statusMap = {
+      queued: 0,
+      downloading: 0,
+      transcribing: 1,
+      detecting: 2,
+      ready: 3,
+    };
+
+    const currentIdx = statusMap[sermon?.status] ?? 0;
 
     return stageDefinitions.map((stage, index) => {
-      if (sermon?.status === "ready" || progress === 100) return { ...stage, state: "complete" };
+      if (sermon?.status === "ready") return { ...stage, state: "complete" };
       if (sermon?.status === "failed") return { ...stage, state: "upcoming" };
-      if (activeIndex === -1) return { ...stage, state: index <= 1 ? (index === 1 ? "active" : "complete") : "upcoming" };
-      if (index < activeIndex) return { ...stage, state: "complete" };
-      if (index === activeIndex) return { ...stage, state: "active" };
+      if (index < currentIdx) return { ...stage, state: "complete" };
+      if (index === currentIdx) return { ...stage, state: "active" };
       return { ...stage, state: "upcoming" };
     });
-  }, [sermon?.status, progress]);
+  }, [sermon?.status]);
 
-  const heading = sermon?.title || "Faith for the Waiting Season";
+  const progress = sermon?.status === "ready" ? 100 : sermon?.status === "transcribing" ? 65 : sermon?.status === "downloading" ? 30 : 15;
+
+  const heading = sermon?.title || sermon?.youtube_url || "Sermon Submitted";
   const description =
     sermon?.status === "queued"
       ? "Dabar has received the link and queued it for processing."
+      : sermon?.status === "ready"
+      ? "Transcription complete! Your sermon highlights are ready for review."
       : "Dabar is analyzing speech cadence, identifying high-impact teaching quotes, and assembling social clips.";
 
   return (
@@ -74,7 +88,8 @@ export default function Processing() {
         <div className="flex flex-col justify-between gap-6 md:flex-row md:items-center">
           <div>
             <div className="inline-flex items-center gap-2 rounded-full bg-gold/20 px-3 py-1 text-xs font-bold uppercase tracking-wider text-gold-light">
-              <Wand2 size={14} className="animate-spin" /> Processing Pipeline Active
+              <Wand2 size={14} className={sermon?.status === "ready" ? "" : "animate-spin"} />
+              Status: {sermon?.status || "Processing"}
             </div>
             <h1 className="mt-3 font-serif text-3xl font-bold leading-snug sm:text-4xl">
               {isLoading ? "Loading sermon..." : heading}
@@ -84,7 +99,9 @@ export default function Processing() {
 
           <div className="shrink-0 text-center md:text-right">
             <p className="font-serif text-5xl font-bold text-gold-light">{progress}%</p>
-            <p className="mt-1 text-xs font-bold uppercase tracking-widest text-cream/60">Estimated ~25s</p>
+            <p className="mt-1 text-xs font-bold uppercase tracking-widest text-cream/60">
+              {sermon?.status === "ready" ? "Complete" : "In Progress"}
+            </p>
           </div>
         </div>
 
@@ -97,19 +114,27 @@ export default function Processing() {
         </div>
       </div>
 
-      {/* Live AI Speech Ticker */}
-      <div className="my-8 rounded-2xl border border-linen bg-cream p-5 shadow-soft">
-        <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-gold">
-          <span className="h-2 w-2 rounded-full bg-emerald-500 animate-ping" />
-          <span>Live Speech Recognition Stream</span>
+      {error && (
+        <div className="my-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
+          {error}
         </div>
-        <p className="mt-2 font-serif text-lg italic text-walnut">
-          "...Sometimes the waiting season is not punishment. It is preparation. God is building roots deep enough to hold the fruit you keep praying for..."
-        </p>
-      </div>
+      )}
+
+      {/* Live AI Speech Ticker */}
+      {sermon?.transcript && (
+        <div className="my-8 rounded-2xl border border-linen bg-cream p-5 shadow-soft">
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-gold">
+            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-ping" />
+            <span>Extracted Sermon Transcript</span>
+          </div>
+          <p className="mt-2 font-serif text-lg italic text-walnut">
+            "{sermon.transcript.slice(0, 300)}..."
+          </p>
+        </div>
+      )}
 
       {/* Processing Stages Breakdown */}
-      <section className="rounded-3xl border border-linen bg-cream px-6 py-8 shadow-warm sm:px-10">
+      <section className="mt-8 rounded-3xl border border-linen bg-cream px-6 py-8 shadow-warm sm:px-10">
         <div className="space-y-0">
           {stages.map(({ label, detail, icon: Icon, state }, index) => (
             <div key={label} className="grid grid-cols-[3.5rem_1fr] gap-5">

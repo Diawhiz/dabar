@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { Download, Instagram, MessageCircle, Play, Pause, Send, Youtube, Sparkles, Check, Maximize2, Type, Share2 } from "lucide-react";
 import Button from "../components/Button.jsx";
 import PageHeader from "../components/PageHeader.jsx";
-import { clips } from "../data/mockData.js";
+import { listSermons, getTranscript } from "../lib/api.js";
 
 const captionStyles = [
   { id: "gold", label: "Gold Focus", bg: "bg-navy", text: "text-gold-light" },
@@ -18,12 +19,41 @@ const formats = [
 ];
 
 export default function ClipsReady() {
+  const location = useLocation();
   const [selectedFormat, setSelectedFormat] = useState("9:16");
   const [selectedCaption, setSelectedCaption] = useState("gold");
   const [isPlaying, setIsPlaying] = useState(false);
   const [downloaded, setDownloaded] = useState(false);
+  const [quoteText, setQuoteText] = useState(location.state?.quote || "");
 
-  const featuredClip = clips[0];
+  useEffect(() => {
+    if (location.state?.quote) {
+      setQuoteText(location.state.quote);
+      return;
+    }
+
+    let isMounted = true;
+    listSermons()
+      .then(async (sermons) => {
+        if (!isMounted || !sermons.length) return;
+        try {
+          const transcriptData = await getTranscript(sermons[0].id);
+          if (isMounted && transcriptData?.segments?.length) {
+            setQuoteText(transcriptData.segments[0].text);
+          } else if (isMounted && transcriptData?.raw_text) {
+            setQuoteText(transcriptData.raw_text.slice(0, 80) + "...");
+          }
+        } catch (err) {
+          console.warn("Could not fetch transcript quote:", err.message);
+        }
+      })
+      .catch((err) => console.warn("Could not fetch sermons for clips:", err.message));
+
+    return () => {
+      isMounted = false;
+    };
+  }, [location.state?.quote]);
+
   const activeFormatObj = formats.find((f) => f.id === selectedFormat) ?? formats[0];
   const activeCaptionObj = captionStyles.find((c) => c.id === selectedCaption) ?? captionStyles[0];
 
@@ -31,6 +61,8 @@ export default function ClipsReady() {
     setDownloaded(true);
     setTimeout(() => setDownloaded(false), 3000);
   }
+
+  const displayQuote = quoteText || "God develops depth before visibility.";
 
   return (
     <div className="mx-auto max-w-5xl py-6">
@@ -93,7 +125,7 @@ export default function ClipsReady() {
                 ].join(" ")}
               >
                 <p className={["font-serif text-2xl font-bold leading-snug", activeCaptionObj.text].join(" ")}>
-                  "God develops depth before visibility."
+                  "{displayQuote}"
                 </p>
               </div>
 

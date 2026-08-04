@@ -1,49 +1,63 @@
-import { Search, X, Filter, BookOpen } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Search, X, BookOpen } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import PageHeader from "../components/PageHeader.jsx";
 import SermonRow from "../components/SermonRow.jsx";
-import { archiveSermons } from "../data/mockData.js";
-
-const speakers = ["All Speakers", "Pastor Daniel Okoye", "Pastor Miriam Cole", "Rev. Samuel Hart"];
+import { listSermons } from "../lib/api.js";
 
 export default function Archive() {
   const [query, setQuery] = useState("");
-  const [selectedSpeaker, setSelectedSpeaker] = useState("All Speakers");
+  const [sermons, setSermons] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+    setIsLoading(true);
+
+    listSermons()
+      .then((data) => {
+        if (isMounted && Array.isArray(data)) {
+          setSermons(data);
+        }
+      })
+      .catch((err) => {
+        console.warn("Could not fetch sermon archive:", err.message);
+      })
+      .finally(() => {
+        if (isMounted) setIsLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const filtered = useMemo(() => {
     const normalized = query.toLowerCase().trim();
+    if (!normalized) return sermons;
 
-    return archiveSermons.filter((sermon) => {
-      const matchesSpeaker =
-        selectedSpeaker === "All Speakers" || sermon.speaker === selectedSpeaker;
-
-      const matchesQuery =
-        !normalized ||
-        [sermon.title, sermon.speaker, sermon.clipCount, sermon.date].some((value) =>
-          value.toLowerCase().includes(normalized),
-        );
-
-      return matchesSpeaker && matchesQuery;
-    });
-  }, [query, selectedSpeaker]);
+    return sermons.filter((sermon) =>
+      [sermon.title, sermon.youtube_url, sermon.status].some(
+        (val) => val && String(val).toLowerCase().includes(normalized)
+      )
+    );
+  }, [query, sermons]);
 
   return (
     <div className="mx-auto max-w-5xl py-6">
       <PageHeader
         eyebrow="Media Library"
         title="Past Sermon Projects"
-        description="Browse, search, and access all sermon teachings and clip packages created for your church channels."
+        description="Browse, search, and access all sermon teachings and transcript packages created for your church channels."
       />
 
-      {/* SEARCH AND FILTER CONTROLS */}
-      <section className="mb-8 space-y-4">
-        {/* Search Bar */}
+      {/* SEARCH CONTROL */}
+      <section className="mb-8">
         <div className="relative">
           <Search className="pointer-events-none absolute left-5 top-1/2 -translate-y-1/2 text-gold" size={20} />
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search by title, speaker, date, or keyword..."
+            placeholder="Search by title, YouTube URL, or status..."
             className="h-14 w-full rounded-2xl border border-linen bg-cream pl-13 pr-12 text-base font-medium text-umber shadow-soft outline-none transition-all focus:border-gold/50 focus:shadow-glow"
           />
           {query && (
@@ -55,28 +69,6 @@ export default function Archive() {
             </button>
           )}
         </div>
-
-        {/* Speaker Filter Chips */}
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="mr-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-walnut">
-            <Filter size={14} className="text-gold" />
-            <span>Speaker:</span>
-          </div>
-          {speakers.map((speaker) => (
-            <button
-              key={speaker}
-              onClick={() => setSelectedSpeaker(speaker)}
-              className={[
-                "rounded-full px-4 py-1.5 text-xs font-semibold transition-all duration-200",
-                selectedSpeaker === speaker
-                  ? "bg-navy text-cream shadow-navyGlow"
-                  : "bg-cream text-walnut hover:bg-parchment hover:text-navy border border-linen",
-              ].join(" ")}
-            >
-              {speaker}
-            </button>
-          ))}
-        </div>
       </section>
 
       {/* RESULTS LIST */}
@@ -86,22 +78,25 @@ export default function Archive() {
           <span>Sorted by recent date</span>
         </div>
 
-        {filtered.length > 0 ? (
+        {isLoading ? (
+          <div className="rounded-3xl border border-linen bg-cream p-12 text-center text-sm font-semibold text-walnut">
+            Loading sermon archive from database...
+          </div>
+        ) : filtered.length > 0 ? (
           filtered.map((sermon) => <SermonRow key={sermon.id} sermon={sermon} />)
         ) : (
           <div className="rounded-3xl border border-linen bg-cream px-6 py-16 text-center shadow-soft">
             <BookOpen size={36} className="mx-auto text-gold/60" />
-            <p className="mt-4 font-serif text-xl font-semibold text-navy">No sermons match your criteria</p>
-            <p className="mt-1 text-sm text-walnut">Try clearing your search term or selecting "All Speakers".</p>
-            <button
-              onClick={() => {
-                setQuery("");
-                setSelectedSpeaker("All Speakers");
-              }}
-              className="mt-4 rounded-full bg-parchment px-5 py-2 text-xs font-bold text-navy hover:bg-gold/20"
-            >
-              Reset Filters
-            </button>
+            <p className="mt-4 font-serif text-xl font-semibold text-navy">No sermons match your search</p>
+            <p className="mt-1 text-sm text-walnut">Try clearing your search term or processing a new sermon.</p>
+            {query && (
+              <button
+                onClick={() => setQuery("")}
+                className="mt-4 rounded-full bg-parchment px-5 py-2 text-xs font-bold text-navy hover:bg-gold/20"
+              >
+                Reset Search
+              </button>
+            )}
           </div>
         )}
       </section>

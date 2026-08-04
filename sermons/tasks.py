@@ -57,15 +57,16 @@ def _detect_highlights_with_llm(transcript_text):
 
     prompt = (
         "You are an expert sermon content strategist. Analyze the following full transcript from a sermon. "
-        "Identify 4 to 6 key highlights containing the most theological depth, conviction, or memorable illustrations. "
-        "For each highlight, specify the start and end timestamp in seconds corresponding to the transcript. "
+        "Identify 3 to 5 substantial, high-impact key moments (each between 30 and 75 seconds long) containing "
+        "complete theological thoughts, invitations, or memorable illustrations suitable for 9:16 social media clips. "
+        "Avoid short 2-second snippets; ensure start and end span a complete 30-75 second preaching passage. "
         "You MUST respond ONLY with a JSON object in this format:\n"
         "{\n"
         '  "highlights": [\n'
-        '    {"title": "Title of key moment", "start": 120.0, "end": 180.0, "reason": "Why this moment is powerful"}\n'
+        '    {"title": "Title of key moment", "start": 120.0, "end": 175.0, "reason": "Why this moment is powerful"}\n'
         "  ]\n"
         "}\n\n"
-        f"Transcript:\n{transcript_text[:12000]}" # Pass up to 12k chars to fit context window comfortably
+        f"Transcript:\n{transcript_text[:15000]}"
     )
 
     data = {
@@ -91,7 +92,8 @@ def _detect_highlights_with_llm(transcript_text):
 
 def _group_youtube_transcript(yt_transcript):
     """
-    Group raw 2-3 second YouTube subtitle snippets into coherent ~15-20 second sentence blocks.
+    Group short raw YouTube subtitle snippets into substantial ~35-45 second paragraph blocks
+    representing complete sermon thoughts rather than fragmented 2-second lines.
     """
     grouped = []
     current_text = []
@@ -102,12 +104,14 @@ def _group_youtube_transcript(yt_transcript):
         if current_start is None:
             current_start = float(item.start)
         
-        current_text.append(item.text.replace("\n", " ").strip())
+        cleaned_snippet = item.text.replace("\n", " ").strip()
+        if cleaned_snippet:
+            current_text.append(cleaned_snippet)
         current_end = float(item.start) + float(item.duration)
 
-        # Create a segment block every ~15 seconds or at end of sentence
+        # Create substantial sermon blocks (~35-45s)
         text_so_far = " ".join(current_text)
-        if (current_end - current_start >= 15.0) or text_so_far.endswith((".", "?", "!")):
+        if (current_end - current_start >= 35.0) and text_so_far.endswith((".", "?", "!", ";")):
             grouped.append({
                 "start": current_start,
                 "end": current_end,
@@ -186,13 +190,13 @@ def process_sermon(self, sermon_id):
             except Exception as e:
                 logger.warning("Could not retrieve video metadata: %s", str(e))
 
-            logger.info("Grouping YouTube subtitle segments for full sermon indexing...")
+            logger.info("Grouping YouTube subtitle segments into substantial 35-45s sermon blocks...")
             grouped_segments = _group_youtube_transcript(youtube_transcript)
 
             # Generate full transcript text
             full_text = " ".join([seg["text"] for seg in grouped_segments])
             
-            # Use LLM to detect key highlights across the full transcript
+            # Use LLM to detect substantial 30-75s key highlights across the transcript
             highlights = _detect_highlights_with_llm(full_text)
             
             final_segments = []
@@ -201,7 +205,9 @@ def process_sermon(self, sermon_id):
                 is_hl = False
                 hl_title = None
                 for hl in highlights:
-                    if seg["start"] >= hl.get("start", 0) - 5 and seg["end"] <= hl.get("end", 0) + 5:
+                    hl_start = hl.get("start", 0)
+                    hl_end = hl.get("end", 0)
+                    if (seg["start"] >= hl_start - 10 and seg["start"] <= hl_end) or (seg["end"] >= hl_start and seg["end"] <= hl_end + 10):
                         is_hl = True
                         hl_title = hl.get("title")
                         break

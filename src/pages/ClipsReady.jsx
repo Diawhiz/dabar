@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { Download, Instagram, MessageCircle, Play, Pause, Send, Youtube, Sparkles, Check, Maximize2, Type, Share2 } from "lucide-react";
+import { Download, Instagram, MessageCircle, Play, Pause, Send, Youtube, Sparkles, Check, Maximize2, Type, Share2, Edit3 } from "lucide-react";
 import Button from "../components/Button.jsx";
 import PageHeader from "../components/PageHeader.jsx";
 import { listSermons, getTranscript } from "../lib/api.js";
@@ -18,6 +18,13 @@ const formats = [
   { id: "16:9", label: "16:9 Landscape (YouTube)", aspect: "aspect-[16/9] max-w-[540px]" },
 ];
 
+function formatSeconds(secs) {
+  if (!secs && secs !== 0) return "00:45";
+  const m = Math.floor(secs / 60);
+  const s = Math.floor(secs % 60);
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
 export default function ClipsReady() {
   const location = useLocation();
   const [selectedFormat, setSelectedFormat] = useState("9:16");
@@ -25,6 +32,13 @@ export default function ClipsReady() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [downloaded, setDownloaded] = useState(false);
   const [quoteText, setQuoteText] = useState(location.state?.quote || "");
+  const [isEditing, setIsEditing] = useState(false);
+
+  const startSec = location.state?.start;
+  const endSec = location.state?.end;
+  const durationLabel = startSec !== undefined && endSec !== undefined
+    ? formatSeconds(endSec - startSec)
+    : "00:45";
 
   useEffect(() => {
     if (location.state?.quote) {
@@ -41,7 +55,7 @@ export default function ClipsReady() {
           if (isMounted && transcriptData?.segments?.length) {
             setQuoteText(transcriptData.segments[0].text);
           } else if (isMounted && transcriptData?.raw_text) {
-            setQuoteText(transcriptData.raw_text.slice(0, 80) + "...");
+            setQuoteText(transcriptData.raw_text.slice(0, 120) + "...");
           }
         } catch (err) {
           console.warn("Could not fetch transcript quote:", err.message);
@@ -69,12 +83,12 @@ export default function ClipsReady() {
       <PageHeader
         eyebrow="Clip Studio"
         title="Vertical Sermon Clip Ready"
-        description="Preview, customize captions, and export high-impact 9:16 video clips tailored for your church's social engagement."
+        description="Preview, customize captions, edit text, and export high-impact 9:16 video clips tailored for your church's social channels."
         action={
           <Button variant="gold" className="px-8 shadow-glow" onClick={handleDownload}>
             {downloaded ? (
               <span className="inline-flex items-center gap-2">
-                <Check size={18} /> Downloaded!
+                <Check size={18} /> Exported!
               </span>
             ) : (
               <span className="inline-flex items-center gap-2">
@@ -99,9 +113,9 @@ export default function ClipsReady() {
             {/* Top Bar */}
             <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-gold-light">
               <span className="flex items-center gap-1.5">
-                <Sparkles size={14} /> Dabar HD Clip
+                <Sparkles size={14} /> Dabar Studio Clip
               </span>
-              <span>00:48</span>
+              <span>{durationLabel}</span>
             </div>
 
             {/* Middle Video Quote / Soundwave */}
@@ -120,13 +134,30 @@ export default function ClipsReady() {
               {/* Caption Overlay Box */}
               <div
                 className={[
-                  "mx-auto rounded-2xl p-5 shadow-soft transition-all duration-300",
+                  "mx-auto rounded-2xl p-5 shadow-soft transition-all duration-300 relative group",
                   activeCaptionObj.bg,
                 ].join(" ")}
               >
-                <p className={["font-serif text-2xl font-bold leading-snug", activeCaptionObj.text].join(" ")}>
-                  "{displayQuote}"
-                </p>
+                {isEditing ? (
+                  <textarea
+                    value={quoteText}
+                    onChange={(e) => setQuoteText(e.target.value)}
+                    onBlur={() => setIsEditing(false)}
+                    autoFocus
+                    className={["w-full bg-transparent font-serif text-xl font-bold leading-snug outline-none border-b border-gold/40 resize-none", activeCaptionObj.text].join(" ")}
+                    rows={4}
+                  />
+                ) : (
+                  <p
+                    onClick={() => setIsEditing(true)}
+                    className={["font-serif text-xl font-bold leading-snug cursor-pointer", activeCaptionObj.text].join(" ")}
+                  >
+                    "{displayQuote}"
+                  </p>
+                )}
+                <span className="mt-2 block text-[10px] uppercase font-sans font-semibold tracking-wider text-gold-light/60">
+                  Click text to edit captions
+                </span>
               </div>
 
               {/* Play Toggle Button */}

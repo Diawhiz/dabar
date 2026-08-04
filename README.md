@@ -1,17 +1,39 @@
 # Dabar (דָּבָר) 🎙️✨
 
-Dabar is a premium AI-powered sermon transcription and highlight extraction pipeline built using a **Django REST Framework** backend and a **React + Vite + TailwindCSS** frontend. Dabar automatically downloads YouTube audio, transcribes it using high-accuracy **Whisper (via Groq)**, identifies key teaching moments, and prepares beautifully formatted 9:16 vertical clips ready for social media dissemination (Instagram Reels, YouTube Shorts, TikTok).
+Dabar is a premium AI-powered sermon transcription, highlight extraction, and social clip creation platform built using a **Django REST Framework** backend and a **React + Vite + TailwindCSS** frontend. 
+
+Dabar uses a **Hybrid YouTube & Targeted Whisper Pipeline**: it instantly ingests full video transcripts via `youtube-transcript-api`, uses **Groq Llama 3.1 LLM** to analyze key conviction moments across the preaching message, and automatically formats substantial 30–60 second social clips ready for Instagram Reels, YouTube Shorts, and TikTok.
+
+---
+
+## How Dabar Works 🔄
+
+```mermaid
+flowchart TD
+    A[User pastes YouTube Sermon URL] --> B[YouTube Transcript API Ingestion]
+    B -->|Fast Subtitle Parsing <1s| C[Group Subtitles into 35-45s Sermon Blocks]
+    C --> D[Groq Llama 3.1 LLM Semantic Analysis]
+    D -->|Detect 30-75s Conviction Highlights| E[Index Master Transcript & AI Key Moments]
+    E --> F[Full Sermon & Highlights Dashboard]
+    F -->|User Clicks Create Clip| G[Targeted Audio Slice Download via yt_dlp + static-ffmpeg]
+    G --> H[Groq Whisper-large-v3 Transcription Refinement]
+    H --> I[Interactive 9:16 / 1:1 / 16:9 Clip Studio Canvas & Export]
+
+    B -->|Subtitles Unavailable Fallback| J[yt-dlp Full Audio Stream Download]
+    J --> K[Groq Whisper-large-v3 Full Speech Recognition]
+    K --> E
+```
 
 ---
 
 ## Features 🚀
 
-- **Automated YouTube Pipeline**: Paste any sermon link; Dabar downloads and extracts high-fidelity audio streams bypassing anti-bot measures.
-- **Whisper Transcription Engine**: Uses Groq's high-speed Whisper Large (`whisper-large-v3`) API to generate detailed, timestamped transcripts.
-- **AI Moment & Highlight Detection**: Segments teachings into thematic points and conviction-heavy passages.
+- **Instant Full Sermon Indexing**: Ingests and indexes entire 1-hour sermon transcripts in under 1 second using YouTube subtitle data.
+- **Targeted Whisper Refinement**: Runs high-fidelity Whisper (`whisper-large-v3`) transcription on targeted clip slices for accurate spelling, casing, and punctuation.
+- **Llama 3.1 Moment Detection**: Groq Llama 3.1 AI identifies 30–75 second preaching moments containing complete theological thoughts, invitations, or illustrations.
+- **Zero-Dependency Portable FFmpeg**: Bundles `static-ffmpeg` so audio range extraction works out of the box on Windows, macOS, and Linux without manual PATH setup.
 - **Interactive Clip Studio**: Customize captions with dynamic visual themes (Gold Focus, Kinetic Bold, Minimal Dark, Clean Light) and resize output aspect ratios (9:16 vertical, 1:1 square, 16:9 landscape).
-- **Graceful Async Processing**: Processes sermons in Celery task queues in production, with an automatic background-thread fallback for zero-dependency local development.
-- **Vibrant & Elevated Aesthetics**: Glassmorphic dashboards, live progress tracking indicators, gold gradient typography, and audio previewers.
+- **Full Transcript Search**: Search through the entire sermon message for specific key terms (*"faith"*, *"grace"*, *"waiting"*).
 
 ---
 
@@ -19,9 +41,10 @@ Dabar is a premium AI-powered sermon transcription and highlight extraction pipe
 
 ### Backend
 - **Core**: Django 5.0, Django REST Framework (DRF)
-- **AI/Transcription**: Groq API (Whisper-large-v3)
-- **Background Tasks**: Celery, Redis (with daemon Thread fallbacks)
-- **Audio Extraction**: yt-dlp
+- **AI/LLM**: Groq Chat Completions API (`llama-3.1-8b-instant`)
+- **Transcription**: Groq Audio API (`whisper-large-v3`)
+- **Audio Extraction & Slicing**: `yt-dlp`, `static-ffmpeg`
+- **Transcript Ingestion**: `youtube-transcript-api`
 
 ### Frontend
 - **Core**: React 19, React Router DOM v7
@@ -91,15 +114,6 @@ Dabar is a premium AI-powered sermon transcription and highlight extraction pipe
    ```bash
    npm run build
    ```
-
----
-
-## CLI Management Commands 💻
-
-You can also run transcription manually from the terminal:
-```bash
-python manage.py transcribe_sermon <sermon_id_or_youtube_url>
-```
 
 ---
 

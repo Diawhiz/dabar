@@ -68,7 +68,7 @@ export default function ClipsReady() {
     : youtubeUrl;
 
   const embedUrl = videoId
-    ? `https://www.youtube-nocookie.com/embed/${videoId}?start=${startInt}&end=${endInt}&rel=0&modestbranding=1`
+    ? `https://www.youtube.com/embed/${videoId}?start=${startInt}&end=${endInt}&autoplay=1&enablejsapi=1&rel=0&modestbranding=1`
     : null;
 
   async function handleDownload() {
@@ -170,7 +170,7 @@ export default function ClipsReady() {
                 src={embedUrl}
                 title="Sermon Video Clip Preview"
                 className="absolute inset-0 h-full w-full"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                 allowFullScreen
               />
             ) : (

@@ -47,24 +47,13 @@ def _extract_youtube_id(url):
 
 def _detect_highlights_with_llm(timestamped_segments):
     """
-    Use a large LLM to identify the most powerful key moments in a sermon.
-
-    Previous approach failed because:
-    1. The LLM received flat text with NO timestamps, so it guessed start/end values
-    2. The 8B model was too small for nuanced sermon understanding
-    3. Transcript was truncated at 15K chars, missing the second half
-
-    Fix:
-    - Send timestamped [start-end] segments so the LLM can cite real timestamps
-    - Use llama-3.3-70b-versatile (free on Groq, 128K context, much smarter)
-    - Send the full transcript
+    Use gpt-oss-120b via Groq to identify the most powerful key moments in a sermon.
+    Send timestamped [start-end] segments so the LLM can cite real timestamps.
     """
     api_key = config("GROQ_API_KEY", default=None)
     if not api_key or not timestamped_segments:
         return []
 
-    # Build a timestamped transcript the LLM can reference precisely
-    # Format: "[00:00 - 00:35] The text of this segment..."
     lines = []
     for seg in timestamped_segments:
         s_min, s_sec = divmod(int(seg["start"]), 60)
@@ -131,10 +120,6 @@ def _detect_highlights_with_llm(timestamped_segments):
 
 
 def _group_youtube_transcript(yt_transcript):
-    """
-    Group short raw YouTube subtitle snippets into substantial ~35-45 second paragraph blocks
-    representing complete sermon thoughts rather than fragmented 2-second lines.
-    """
     grouped = []
     current_text = []
     current_start = None
@@ -149,7 +134,47 @@ def _group_youtube_transcript(yt_transcript):
             current_text.append(cleaned_snippet)
         current_end = float(item.start) + float(item.duration)
 
-        # Create substantial sermon blocks (~35-45s)
+        text_so_far = " ".join(current_text)
+        if (current_end - current_start >= 35.0) and text_so_far.endswith((".", "?", "!", ";")):
+            grouped.append({
+                "start": current_start,
+                "end": current_end,
+                "text": text_so_far,
+            })
+            current_text = []
+            current_start = None
+
+    if current_text and current_start is not None:
+        grouped.append({
+            "start": current_start,
+            "end": current_end,
+            "text": " ".join(current_text),
+        })
+
+    return grouped
+
+
+def _group_whisper_segments(whisper_segments):
+    """Group raw Whisper segments into ~35-45 second paragraph blocks."""
+    grouped = []
+    current_text = []
+    current_start = None
+    current_end = 0.0
+
+    for seg in whisper_segments:
+        start_t = float(seg.get("start", 0.0))
+        end_t = float(seg.get("end", 0.0))
+        text = str(seg.get("text", "")).strip()
+
+        if not text:
+            continue
+
+        if current_start is None:
+            current_start = start_t
+
+        current_text.append(text)
+        current_end = end_t
+
         text_so_far = " ".join(current_text)
         if (current_end - current_start >= 35.0) and text_so_far.endswith((".", "?", "!", ";")):
             grouped.append({
@@ -171,11 +196,12 @@ def _group_youtube_transcript(yt_transcript):
 
 
 def _download_full_audio(sermon):
+    """Download lightweight audio-only file (~5-15MB) for Whisper transcription."""
     tmp_dir = _sermon_tmp_dir(sermon.id)
     tmp_dir.mkdir(parents=True, exist_ok=True)
 
     options = {
-        "format": "m4a/bestaudio/best",
+        "format": "bestaudio[ext=m4a]/bestaudio/best",
         "outtmpl": str(tmp_dir / "audio.%(ext)s"),
         "extractor_args": {
             "youtube": {
@@ -214,20 +240,18 @@ def process_sermon(self, sermon_id):
 
         if yt_id:
             try:
-                logger.info("Attempting to fetch full YouTube transcript for video %s...", yt_id)
+                logger.info("Attempting to fetch YouTube transcript for video %s...", yt_id)
                 api = YouTubeTranscriptApi()
-                # Try multiple language codes — YouTube labels auto-generated
-                # captions inconsistently (en, en-US, en-GB, a]en, etc.)
                 try:
                     youtube_transcript = api.fetch(yt_id, languages=["en"])
                 except Exception:
-                    # Fallback: let the API pick any available transcript
                     youtube_transcript = api.fetch(yt_id)
             except Exception as e:
-                logger.warning("YouTube transcript unavailable for %s: %s", yt_id, str(e))
+                logger.info("YouTube transcript unavailable for %s: %s. Using Whisper audio transcription.", yt_id, str(e))
+
+        raw_segments = []
 
         if youtube_transcript:
-            # Fetch metadata to get video title
             try:
                 with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True, "nocheckcertificate": True}) as ydl:
                     info = ydl.extract_info(sermon.youtube_url, download=False)
@@ -236,103 +260,107 @@ def process_sermon(self, sermon_id):
             except Exception as e:
                 logger.warning("Could not retrieve video metadata: %s", str(e))
 
-            logger.info("Grouping YouTube subtitle segments into substantial 35-45s sermon blocks...")
+            logger.info("Grouping YouTube subtitle segments into 35-45s sermon blocks...")
             grouped_segments = _group_youtube_transcript(youtube_transcript)
 
-            # Generate full transcript text
-            full_text = " ".join([seg["text"] for seg in grouped_segments])
-            
-            # Use 70B LLM with timestamped segments to detect key moments accurately
-            highlights = _detect_highlights_with_llm(grouped_segments)
-            
-            final_segments = []
-            for idx, seg in enumerate(grouped_segments):
-                # Check if segment falls within any LLM detected highlight window
-                is_hl = False
-                hl_title = None
-                for hl in highlights:
-                    hl_start = hl.get("start", 0)
-                    hl_end = hl.get("end", 0)
-                    if (seg["start"] >= hl_start - 10 and seg["start"] <= hl_end) or (seg["end"] >= hl_start and seg["end"] <= hl_end + 10):
-                        is_hl = True
-                        hl_title = hl.get("title")
-                        break
-
-                final_segments.append({
-                    "segment_index": idx,
-                    "start": seg["start"],
-                    "end": seg["end"],
-                    "text": seg["text"],
-                    "is_highlight": is_hl,
-                    "highlight_title": hl_title,
-                })
-
-            # Merge consecutive segments that share the same highlight title
-            # so one key moment doesn't get split across multiple cards
-            merged = []
-            for seg in final_segments:
-                if (
-                    merged
-                    and seg["is_highlight"]
-                    and merged[-1]["is_highlight"]
-                    and seg["highlight_title"]
-                    and seg["highlight_title"] == merged[-1].get("highlight_title")
-                ):
-                    # Extend the previous segment's time range and append text
-                    merged[-1]["end"] = seg["end"]
-                    merged[-1]["text"] = merged[-1]["text"] + " " + seg["text"]
-                else:
-                    merged.append(seg)
-
-            # Re-index after merging
-            for idx, seg in enumerate(merged):
-                seg["segment_index"] = idx
-
-            final_segments = merged
-
-            # Create or update Master Transcript record
-            master_transcript, _ = Transcript.objects.get_or_create(sermon=sermon)
-            master_transcript.raw_text = full_text
-            master_transcript.segments = final_segments
-            master_transcript.status = Transcript.Status.COMPLETE
-            master_transcript.save()
-
-            # Sync Sermon record
-            sermon.transcript = full_text
-            sermon.status = Sermon.Status.READY
-            sermon.save(update_fields=["transcript", "status", "updated_at"])
-
-            # Populate TranscriptSegment relations
-            TranscriptSegment.objects.filter(sermon=sermon).delete()
-            segment_objs = [
-                TranscriptSegment(
-                    sermon=sermon,
-                    segment_index=idx,
-                    start_time=seg["start"],
-                    end_time=seg["end"],
-                    text=seg["text"],
-                )
-                for idx, seg in enumerate(final_segments)
-            ]
-            if segment_objs:
-                TranscriptSegment.objects.bulk_create(segment_objs)
-
-            logger.info("Successfully indexed full sermon %s (%d total segments).", sermon.id, len(final_segments))
-            return {
-                "sermon_id": str(sermon.id),
-                "transcript_id": str(master_transcript.id),
-                "segments_count": len(final_segments),
-                "highlights_count": len(highlights),
-            }
-
         else:
-            # No transcript available — do NOT download the full video.
-            # Dabar is transcript-first; gracefully inform the user.
-            raise RuntimeError(
-                "This video does not have subtitles or auto-generated captions available. "
-                "Dabar requires YouTube transcripts to process sermons. "
-                "Please try a video that has captions enabled."
+            # Whisper Audio Transcription Pipeline (Fast, audio-only ~10MB)
+            logger.info("Downloading lightweight audio file for sermon %s...", sermon.id)
+            audio_path = _download_full_audio(sermon)
+
+            sermon.status = Sermon.Status.TRANSCRIBING
+            sermon.save(update_fields=["status", "updated_at"])
+
+            logger.info("Transcribing audio via Groq Whisper (whisper-large-v3-turbo)...")
+            transcript_record = transcribe_sermon(sermon.id, audio_path=audio_path)
+
+            if transcript_record.status == Transcript.Status.FAILED:
+                raise RuntimeError(f"Whisper transcription failed: {transcript_record.error_message}")
+
+            whisper_segments = transcript_record.segments or []
+            grouped_segments = _group_whisper_segments(whisper_segments)
+
+        # Generate full transcript text
+        full_text = " ".join([seg["text"] for seg in grouped_segments])
+        
+        # Use gpt-oss-120b with timestamped segments to detect key moments accurately
+        highlights = _detect_highlights_with_llm(grouped_segments)
+        
+        final_segments = []
+        for idx, seg in enumerate(grouped_segments):
+            is_hl = False
+            hl_title = None
+            for hl in highlights:
+                hl_start = hl.get("start", 0)
+                hl_end = hl.get("end", 0)
+                if (seg["start"] >= hl_start - 10 and seg["start"] <= hl_end) or (seg["end"] >= hl_start and seg["end"] <= hl_end + 10):
+                    is_hl = True
+                    hl_title = hl.get("title")
+                    break
+
+            final_segments.append({
+                "segment_index": idx,
+                "start": seg["start"],
+                "end": seg["end"],
+                "text": seg["text"],
+                "is_highlight": is_hl,
+                "highlight_title": hl_title,
+            })
+
+        # Merge consecutive segments that share the same highlight title
+        merged = []
+        for seg in final_segments:
+            if (
+                merged
+                and seg["is_highlight"]
+                and merged[-1]["is_highlight"]
+                and seg["highlight_title"]
+                and seg["highlight_title"] == merged[-1].get("highlight_title")
+            ):
+                merged[-1]["end"] = seg["end"]
+                merged[-1]["text"] = merged[-1]["text"] + " " + seg["text"]
+            else:
+                merged.append(seg)
+
+        for idx, seg in enumerate(merged):
+            seg["segment_index"] = idx
+
+        final_segments = merged
+
+        # Create or update Master Transcript record
+        master_transcript, _ = Transcript.objects.get_or_create(sermon=sermon)
+        master_transcript.raw_text = full_text
+        master_transcript.segments = final_segments
+        master_transcript.status = Transcript.Status.COMPLETE
+        master_transcript.save()
+
+        # Sync Sermon record
+        sermon.transcript = full_text
+        sermon.status = Sermon.Status.READY
+        sermon.save(update_fields=["transcript", "status", "updated_at"])
+
+        # Populate TranscriptSegment relations
+        TranscriptSegment.objects.filter(sermon=sermon).delete()
+        segment_objs = [
+            TranscriptSegment(
+                sermon=sermon,
+                segment_index=idx,
+                start_time=seg["start"],
+                end_time=seg["end"],
+                text=seg["text"],
             )
+            for idx, seg in enumerate(final_segments)
+        ]
+        if segment_objs:
+            TranscriptSegment.objects.bulk_create(segment_objs)
+
+        logger.info("Successfully indexed sermon %s (%d segments, %d highlights).", sermon.id, len(final_segments), len(highlights))
+        return {
+            "sermon_id": str(sermon.id),
+            "transcript_id": str(master_transcript.id),
+            "segments_count": len(final_segments),
+            "highlights_count": len(highlights),
+        }
 
     except Exception as exc:
         sermon.status = Sermon.Status.FAILED

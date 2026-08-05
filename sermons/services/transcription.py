@@ -1,5 +1,6 @@
 import logging
 import os
+import subprocess
 from abc import ABC, abstractmethod
 from pathlib import Path
 import requests
@@ -10,6 +11,7 @@ from sermons.models import Sermon, Transcript, TranscriptSegment
 logger = logging.getLogger(__name__)
 
 GROQ_TRANSCRIPTION_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
+MAX_FILE_SIZE_BYTES = 24 * 1024 * 1024  # 24 MB Groq file limit
 
 
 class BaseTranscriptionBackend(ABC):
@@ -31,23 +33,13 @@ class BaseTranscriptionBackend(ABC):
 
 
 class GroqWhisperBackend(BaseTranscriptionBackend):
-    """Groq API implementation for Whisper transcription (whisper-large-v3)."""
+    """Groq API implementation for Whisper transcription (whisper-large-v3-turbo)."""
 
-    def __init__(self, api_key: str = None, model: str = "whisper-large-v3"):
+    def __init__(self, api_key: str = None, model: str = "whisper-large-v3-turbo"):
         self.api_key = api_key or config("GROQ_API_KEY", default=None)
         self.model = model
 
-    def transcribe(self, audio_file_path: Path) -> dict:
-        if not self.api_key:
-            raise ValueError(
-                "GROQ_API_KEY environment variable is not configured. "
-                "Please set GROQ_API_KEY in your .env file."
-            )
-
-        audio_file_path = Path(audio_file_path)
-        if not audio_file_path.exists():
-            raise FileNotFoundError(f"Audio file not found at: {audio_file_path}")
-
+    def _transcribe_single_file(self, audio_path: Path, time_offset: float = 0.0) -> dict:
         headers = {
             "Authorization": f"Bearer {self.api_key}",
         }
@@ -55,13 +47,14 @@ class GroqWhisperBackend(BaseTranscriptionBackend):
         data = {
             "model": self.model,
             "response_format": "verbose_json",
+            "language": "en",
         }
 
-        with open(audio_file_path, "rb") as audio_file:
+        with open(audio_path, "rb") as audio_file:
             files = {
-                "file": (audio_file_path.name, audio_file, "audio/mpeg"),
+                "file": (audio_path.name, audio_file, "audio/m4a"),
             }
-            logger.info("Sending audio to Groq Whisper API model %s...", self.model)
+            logger.info("Sending audio chunk %s to Groq Whisper (%s)...", audio_path.name, self.model)
             response = requests.post(
                 GROQ_TRANSCRIPTION_URL,
                 headers=headers,
@@ -83,14 +76,73 @@ class GroqWhisperBackend(BaseTranscriptionBackend):
         for idx, seg in enumerate(raw_segments):
             segments.append({
                 "segment_index": idx,
-                "start": float(seg.get("start", 0.0)),
-                "end": float(seg.get("end", 0.0)),
+                "start": round(float(seg.get("start", 0.0)) + time_offset, 2),
+                "end": round(float(seg.get("end", 0.0)) + time_offset, 2),
                 "text": str(seg.get("text", "")).strip(),
             })
 
         return {
             "text": raw_text,
             "segments": segments,
+        }
+
+    def transcribe(self, audio_file_path: Path) -> dict:
+        if not self.api_key:
+            raise ValueError(
+                "GROQ_API_KEY environment variable is not configured. "
+                "Please set GROQ_API_KEY in your .env file."
+            )
+
+        audio_file_path = Path(audio_file_path)
+        if not audio_file_path.exists():
+            raise FileNotFoundError(f"Audio file not found at: {audio_file_path}")
+
+        file_size = audio_file_path.stat().st_size
+
+        # If audio is under 24MB, transcribe directly in 1 request
+        if file_size <= MAX_FILE_SIZE_BYTES:
+            return self._transcribe_single_file(audio_file_path)
+
+        # Large audio > 24MB: split into 10-minute chunks using ffmpeg
+        logger.info("Audio file size (%d MB) exceeds 24MB limit. Chunking with ffmpeg...", file_size // (1024 * 1024))
+        chunks_dir = audio_file_path.parent / "chunks"
+        chunks_dir.mkdir(parents=True, exist_ok=True)
+
+        chunk_pattern = str(chunks_dir / "chunk_%03d.m4a")
+        cmd = [
+            "ffmpeg", "-y", "-i", str(audio_file_path),
+            "-f", "segment", "-segment_time", "600",
+            "-c", "copy", chunk_pattern
+        ]
+        subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+        chunk_files = sorted(list(chunks_dir.glob("chunk_*.m4a")))
+        all_text = []
+        all_segments = []
+        current_offset = 0.0
+
+        for chunk_path in chunk_files:
+            res = self._transcribe_single_file(chunk_path, time_offset=current_offset)
+            all_text.append(res["text"])
+            all_segments.extend(res["segments"])
+
+            # Find duration of chunk to advance offset
+            if res["segments"]:
+                current_offset = res["segments"][-1]["end"]
+            else:
+                current_offset += 600.0
+
+        # Clean up chunk directory
+        import shutil
+        shutil.rmtree(chunks_dir, ignore_errors=True)
+
+        # Re-index merged segments
+        for idx, seg in enumerate(all_segments):
+            seg["segment_index"] = idx
+
+        return {
+            "text": " ".join(all_text),
+            "segments": all_segments,
         }
 
 
@@ -118,15 +170,6 @@ def get_transcription_backend(backend_name: str = None) -> BaseTranscriptionBack
 
 
 def transcribe_sermon(sermon_id, audio_path: Path = None, backend_name: str = None) -> Transcript:
-    """
-    Service entry point to transcribe a sermon:
-    1. Fetches Sermon record.
-    2. Instantiates/updates Transcript record (status=PROCESSING).
-    3. Runs configured transcription backend.
-    4. Saves raw_text and segment JSON to Transcript (status=COMPLETE).
-    5. Syncs Sermon.transcript and TranscriptSegment models for compatibility.
-    6. Handles and logs failures gracefully without crashing.
-    """
     sermon = Sermon.objects.get(id=sermon_id)
 
     backend_type = (backend_name or config("TRANSCRIPTION_BACKEND", default="groq")).lower().strip()

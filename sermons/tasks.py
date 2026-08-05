@@ -45,10 +45,32 @@ def _extract_youtube_id(url):
     return None
 
 
+def _parse_timestamp(val):
+    """Parse a timestamp value from LLM into float seconds (handles 135.0 or '02:15' or '135')."""
+    if val is None:
+        return 0.0
+    if isinstance(val, (int, float)):
+        return float(val)
+    val_str = str(val).strip()
+    if ":" in val_str:
+        parts = val_str.split(":")
+        try:
+            if len(parts) == 2:
+                return float(parts[0]) * 60 + float(parts[1])
+            elif len(parts) == 3:
+                return float(parts[0]) * 3600 + float(parts[1]) * 60 + float(parts[2])
+        except ValueError:
+            return 0.0
+    try:
+        return float(val_str.rstrip("s"))
+    except ValueError:
+        return 0.0
+
+
 def _detect_highlights_with_llm(timestamped_segments):
     """
-    Use gpt-oss-120b via Groq to identify the most powerful key moments in a sermon.
-    Send timestamped [start-end] segments so the LLM can cite real timestamps.
+    Use llama-3.3-70b-versatile via Groq to identify the most powerful key moments in a sermon.
+    Send timestamped [start_seconds - end_seconds] segments so the LLM can cite real timestamps.
     """
     api_key = config("GROQ_API_KEY", default=None)
     if not api_key or not timestamped_segments:
@@ -56,9 +78,11 @@ def _detect_highlights_with_llm(timestamped_segments):
 
     lines = []
     for seg in timestamped_segments:
-        s_min, s_sec = divmod(int(seg["start"]), 60)
-        e_min, e_sec = divmod(int(seg["end"]), 60)
-        ts = f"[{s_min:02d}:{s_sec:02d} - {e_min:02d}:{e_sec:02d}]"
+        s_sec = round(float(seg["start"]), 1)
+        e_sec = round(float(seg["end"]), 1)
+        s_min, s_rem = divmod(int(s_sec), 60)
+        e_min, e_rem = divmod(int(e_sec), 60)
+        ts = f"[{s_sec}s - {e_sec}s] ({s_min:02d}:{s_rem:02d} - {e_min:02d}:{e_rem:02d})"
         lines.append(f"{ts} {seg['text']}")
 
     timestamped_text = "\n\n".join(lines)
@@ -70,7 +94,7 @@ def _detect_highlights_with_llm(timestamped_segments):
 
     prompt = (
         "You are a senior church media strategist who produces viral sermon clips for social media.\n\n"
-        "Below is a FULL sermon transcript with timestamps. Your job is to find the 3 to 6 most "
+        "Below is a FULL sermon transcript with exact timestamps in seconds. Your job is to find the 3 to 6 most "
         "powerful, shareable moments — the kind that make someone stop scrolling and share.\n\n"
         "Look for these types of moments:\n"
         "- **Core Message / Main Point**: The central thesis or revelation the preacher drives home\n"
@@ -81,11 +105,9 @@ def _detect_highlights_with_llm(timestamped_segments):
         "- **Worship Transitions**: When preaching flows into worship or prayer\n\n"
         "RULES:\n"
         "- Each highlight MUST be 30-90 seconds long (a complete thought, not a fragment)\n"
-        "- Use the EXACT timestamps from the transcript — do NOT invent timestamps\n"
-        "- Pick the start timestamp of the FIRST segment and end timestamp of the LAST segment "
-        "that together form the complete moment\n"
-        "- The highlights should cover the MAIN message of the sermon, not just random side points\n"
-        "- If the preacher repeats a key phrase multiple times, pick the most impactful delivery\n\n"
+        "- Output exact numerical float values for start and end in SECONDS (e.g. start: 120.0, end: 180.0)\n"
+        "- Pick start from the FIRST segment and end from the LAST segment that form the moment\n"
+        "- The highlights should cover the MAIN message of the sermon\n\n"
         "Respond ONLY with this JSON format:\n"
         '{"highlights": [\n'
         '  {"title": "Short Clip Title", "start": 120.0, "end": 185.0, '
@@ -95,7 +117,7 @@ def _detect_highlights_with_llm(timestamped_segments):
     )
 
     data = {
-        "model": "gpt-oss-120b",
+        "model": "llama-3.3-70b-versatile",
         "messages": [
             {"role": "system", "content": "You are a JSON assistant. Respond with valid JSON only."},
             {"role": "user", "content": prompt}
@@ -105,15 +127,27 @@ def _detect_highlights_with_llm(timestamped_segments):
     }
 
     try:
+        logger.info("Calling Groq LLM (llama-3.3-70b-versatile) for highlight detection...")
         response = requests.post(GROQ_COMPLETIONS_URL, headers=headers, json=data, timeout=60)
         if response.ok:
             content = response.json()["choices"][0]["message"]["content"]
             result = json.loads(content)
-            highlights = result.get("highlights", [])
-            logger.info("LLM detected %d key moments in sermon.", len(highlights))
-            return highlights
+            raw_highlights = result.get("highlights", [])
+            
+            # Clean and normalize timestamps
+            parsed_highlights = []
+            for hl in raw_highlights:
+                parsed_highlights.append({
+                    "title": hl.get("title", "Key Moment"),
+                    "start": _parse_timestamp(hl.get("start")),
+                    "end": _parse_timestamp(hl.get("end")),
+                    "reason": hl.get("reason", ""),
+                })
+
+            logger.info("LLM detected %d key moments in sermon.", len(parsed_highlights))
+            return parsed_highlights
         else:
-            logger.warning("LLM API returned %d: %s", response.status_code, response.text[:200])
+            logger.warning("Groq LLM API returned HTTP %d: %s", response.status_code, response.text[:300])
     except Exception as e:
         logger.warning("LLM highlight detection failed: %s", str(e))
     return []

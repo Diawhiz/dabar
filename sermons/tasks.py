@@ -106,7 +106,7 @@ def _detect_highlights_with_llm(timestamped_segments):
     )
 
     data = {
-        "model": "llama-3.3-70b-versatile",
+        "model": "gpt-oss-120b",
         "messages": [
             {"role": "system", "content": "You are a JSON assistant. Respond with valid JSON only."},
             {"role": "user", "content": prompt}

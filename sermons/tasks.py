@@ -216,9 +216,15 @@ def process_sermon(self, sermon_id):
             try:
                 logger.info("Attempting to fetch full YouTube transcript for video %s...", yt_id)
                 api = YouTubeTranscriptApi()
-                youtube_transcript = api.fetch(yt_id, languages=["en"])
+                # Try multiple language codes — YouTube labels auto-generated
+                # captions inconsistently (en, en-US, en-GB, a]en, etc.)
+                try:
+                    youtube_transcript = api.fetch(yt_id, languages=["en"])
+                except Exception:
+                    # Fallback: let the API pick any available transcript
+                    youtube_transcript = api.fetch(yt_id)
             except Exception as e:
-                logger.info("YouTube transcript unavailable: %s. Falling back to full download.", str(e))
+                logger.warning("YouTube transcript unavailable for %s: %s", yt_id, str(e))
 
         if youtube_transcript:
             # Fetch metadata to get video title
@@ -320,27 +326,13 @@ def process_sermon(self, sermon_id):
             }
 
         else:
-            # Fallback: Full Audio Downloader + Whisper Transcription
-            logger.info("Starting fallback full audio download pipeline...")
-            audio_path = _download_full_audio(sermon)
-
-            sermon.status = Sermon.Status.TRANSCRIBING
-            sermon.save(update_fields=["status", "updated_at"])
-
-            transcript = transcribe_sermon(sermon.id, audio_path=audio_path)
-
-            if transcript.status == Transcript.Status.FAILED:
-                raise RuntimeError(f"Transcription failed: {transcript.error_message}")
-
-            sermon.status = Sermon.Status.READY
-            sermon.transcript = transcript.raw_text
-            sermon.save(update_fields=["status", "transcript", "updated_at"])
-
-            return {
-                "sermon_id": str(sermon.id),
-                "transcript_id": str(transcript.id),
-                "segments_count": len(transcript.segments),
-            }
+            # No transcript available — do NOT download the full video.
+            # Dabar is transcript-first; gracefully inform the user.
+            raise RuntimeError(
+                "This video does not have subtitles or auto-generated captions available. "
+                "Dabar requires YouTube transcripts to process sermons. "
+                "Please try a video that has captions enabled."
+            )
 
     except Exception as exc:
         sermon.status = Sermon.Status.FAILED

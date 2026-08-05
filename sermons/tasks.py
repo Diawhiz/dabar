@@ -45,10 +45,34 @@ def _extract_youtube_id(url):
     return None
 
 
-def _detect_highlights_with_llm(transcript_text):
+def _detect_highlights_with_llm(timestamped_segments):
+    """
+    Use a large LLM to identify the most powerful key moments in a sermon.
+
+    Previous approach failed because:
+    1. The LLM received flat text with NO timestamps, so it guessed start/end values
+    2. The 8B model was too small for nuanced sermon understanding
+    3. Transcript was truncated at 15K chars, missing the second half
+
+    Fix:
+    - Send timestamped [start-end] segments so the LLM can cite real timestamps
+    - Use llama-3.3-70b-versatile (free on Groq, 128K context, much smarter)
+    - Send the full transcript
+    """
     api_key = config("GROQ_API_KEY", default=None)
-    if not api_key:
+    if not api_key or not timestamped_segments:
         return []
+
+    # Build a timestamped transcript the LLM can reference precisely
+    # Format: "[00:00 - 00:35] The text of this segment..."
+    lines = []
+    for seg in timestamped_segments:
+        s_min, s_sec = divmod(int(seg["start"]), 60)
+        e_min, e_sec = divmod(int(seg["end"]), 60)
+        ts = f"[{s_min:02d}:{s_sec:02d} - {e_min:02d}:{e_sec:02d}]"
+        lines.append(f"{ts} {seg['text']}")
+
+    timestamped_text = "\n\n".join(lines)
 
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -56,35 +80,51 @@ def _detect_highlights_with_llm(transcript_text):
     }
 
     prompt = (
-        "You are an expert sermon content strategist. Analyze the following full transcript from a sermon. "
-        "Identify 3 to 5 substantial, high-impact key moments (each between 30 and 75 seconds long) containing "
-        "complete theological thoughts, invitations, or memorable illustrations suitable for 9:16 social media clips. "
-        "Avoid short 2-second snippets; ensure start and end span a complete 30-75 second preaching passage. "
-        "You MUST respond ONLY with a JSON object in this format:\n"
-        "{\n"
-        '  "highlights": [\n'
-        '    {"title": "Title of key moment", "start": 120.0, "end": 175.0, "reason": "Why this moment is powerful"}\n'
-        "  ]\n"
-        "}\n\n"
-        f"Transcript:\n{transcript_text[:15000]}"
+        "You are a senior church media strategist who produces viral sermon clips for social media.\n\n"
+        "Below is a FULL sermon transcript with timestamps. Your job is to find the 3 to 6 most "
+        "powerful, shareable moments — the kind that make someone stop scrolling and share.\n\n"
+        "Look for these types of moments:\n"
+        "- **Core Message / Main Point**: The central thesis or revelation the preacher drives home\n"
+        "- **Conviction Moments**: When the preacher challenges the congregation directly\n"
+        "- **Gospel Invitations**: Altar calls, salvation prayers, calls to surrender\n"
+        "- **Powerful Illustrations**: Stories, analogies, or metaphors that land emotionally\n"
+        "- **Declaration / Prophetic Words**: Bold faith declarations the audience repeats\n"
+        "- **Worship Transitions**: When preaching flows into worship or prayer\n\n"
+        "RULES:\n"
+        "- Each highlight MUST be 30-90 seconds long (a complete thought, not a fragment)\n"
+        "- Use the EXACT timestamps from the transcript — do NOT invent timestamps\n"
+        "- Pick the start timestamp of the FIRST segment and end timestamp of the LAST segment "
+        "that together form the complete moment\n"
+        "- The highlights should cover the MAIN message of the sermon, not just random side points\n"
+        "- If the preacher repeats a key phrase multiple times, pick the most impactful delivery\n\n"
+        "Respond ONLY with this JSON format:\n"
+        '{"highlights": [\n'
+        '  {"title": "Short Clip Title", "start": 120.0, "end": 185.0, '
+        '"reason": "Why this moment is powerful and shareable"}\n'
+        "]}\n\n"
+        f"SERMON TRANSCRIPT:\n\n{timestamped_text}"
     )
 
     data = {
-        "model": "llama-3.1-8b-instant",
+        "model": "llama-3.3-70b-versatile",
         "messages": [
             {"role": "system", "content": "You are a JSON assistant. Respond with valid JSON only."},
             {"role": "user", "content": prompt}
         ],
         "response_format": {"type": "json_object"},
-        "temperature": 0.2,
+        "temperature": 0.3,
     }
 
     try:
-        response = requests.post(GROQ_COMPLETIONS_URL, headers=headers, json=data, timeout=30)
+        response = requests.post(GROQ_COMPLETIONS_URL, headers=headers, json=data, timeout=60)
         if response.ok:
             content = response.json()["choices"][0]["message"]["content"]
             result = json.loads(content)
-            return result.get("highlights", [])
+            highlights = result.get("highlights", [])
+            logger.info("LLM detected %d key moments in sermon.", len(highlights))
+            return highlights
+        else:
+            logger.warning("LLM API returned %d: %s", response.status_code, response.text[:200])
     except Exception as e:
         logger.warning("LLM highlight detection failed: %s", str(e))
     return []
@@ -196,8 +236,8 @@ def process_sermon(self, sermon_id):
             # Generate full transcript text
             full_text = " ".join([seg["text"] for seg in grouped_segments])
             
-            # Use LLM to detect substantial 30-75s key highlights across the transcript
-            highlights = _detect_highlights_with_llm(full_text)
+            # Use 70B LLM with timestamped segments to detect key moments accurately
+            highlights = _detect_highlights_with_llm(grouped_segments)
             
             final_segments = []
             for idx, seg in enumerate(grouped_segments):

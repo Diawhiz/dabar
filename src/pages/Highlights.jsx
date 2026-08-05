@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Clock3, Scissors, Sparkles, Play, Pause, PlayCircle, Search, Filter } from "lucide-react";
+import { Clock3, Scissors, Sparkles, Play, Pause, Search, Volume2, X } from "lucide-react";
 import { Link } from "react-router-dom";
 import Button from "../components/Button.jsx";
 import PageHeader from "../components/PageHeader.jsx";
@@ -11,12 +11,18 @@ function formatSeconds(secs) {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
+function extractVideoId(url) {
+  if (!url) return null;
+  const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([a-zA-Z0-9_-]{11})/);
+  return match ? match[1] : null;
+}
+
 export default function Highlights() {
   const [segments, setSegments] = useState([]);
   const [sermonTitle, setSermonTitle] = useState("");
   const [sermonYoutubeUrl, setSermonYoutubeUrl] = useState("");
   const [isLoading, setIsLoading] = useState(true);
-  const [playingId, setPlayingId] = useState(null);
+  const [playingSegment, setPlayingSegment] = useState(null);
   const [filterMode, setFilterMode] = useState("all"); // 'all' | 'highlights'
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -56,6 +62,8 @@ export default function Highlights() {
     };
   }, []);
 
+  const videoId = extractVideoId(sermonYoutubeUrl);
+
   const filteredSegments = useMemo(() => {
     let result = segments;
 
@@ -71,21 +79,25 @@ export default function Highlights() {
     return result;
   }, [segments, filterMode, searchQuery]);
 
-  function toggleAudio(id) {
-    setPlayingId(playingId === id ? null : id);
+  function toggleAudio(seg) {
+    if (playingSegment && playingSegment.start === seg.start) {
+      setPlayingSegment(null);
+    } else {
+      setPlayingSegment(seg);
+    }
   }
 
   const highlightCount = useMemo(() => segments.filter((s) => s.is_highlight).length, [segments]);
 
   return (
-    <div className="mx-auto max-w-6xl py-6">
+    <div className="mx-auto max-w-6xl py-6 pb-24">
       <PageHeader
         eyebrow="Sermon Transcript & Moments"
         title={sermonTitle ? `Transcript: ${sermonTitle}` : "Sermon Highlights & Transcript"}
         description="Search through the full timestamped sermon transcript or view AI-detected conviction moments ready for short-form clips."
         action={
           <Link to="/clips">
-            <Button variant="gold" className="px-7">
+            <Button variant="gold" className="px-7 shadow-glow">
               <Scissors size={18} />
               Studio Clip Generator
             </Button>
@@ -141,7 +153,7 @@ export default function Highlights() {
       ) : filteredSegments.length > 0 ? (
         <section className="space-y-4">
           {filteredSegments.map((seg, idx) => {
-            const isPlaying = playingId === idx;
+            const isPlaying = playingSegment && playingSegment.start === seg.start;
             const timestamp = `${formatSeconds(seg.start)} - ${formatSeconds(seg.end)}`;
 
             return (
@@ -168,7 +180,7 @@ export default function Highlights() {
                         </span>
                       )}
                       <span className="text-xs font-semibold text-walnut/60">
-                        Segment #{seg.segment_index ?? idx + 1}
+                        Segment #{seg.segment_index !== undefined ? seg.segment_index + 1 : idx + 1}
                       </span>
                     </div>
 
@@ -180,11 +192,16 @@ export default function Highlights() {
                   <div className="flex flex-row items-center gap-3 lg:flex-col lg:items-end lg:justify-center">
                     <button
                       type="button"
-                      onClick={() => toggleAudio(idx)}
-                      className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-linen bg-parchment px-4 text-xs font-bold text-navy transition-colors hover:bg-gold/20"
+                      onClick={() => toggleAudio(seg)}
+                      className={[
+                        "inline-flex h-10 items-center justify-center gap-2 rounded-full border border-linen px-4 text-xs font-bold transition-all duration-200",
+                        isPlaying
+                          ? "bg-navy text-cream shadow-navyGlow"
+                          : "bg-parchment text-navy hover:bg-gold/20",
+                      ].join(" ")}
                     >
                       {isPlaying ? <Pause size={15} className="text-gold" /> : <Play size={15} className="text-gold" />}
-                      <span>{isPlaying ? "Pause" : "Preview Audio"}</span>
+                      <span>{isPlaying ? "Stop Audio" : "Preview Audio"}</span>
                     </button>
 
                     <Link
@@ -209,10 +226,45 @@ export default function Highlights() {
           })}
         </section>
       ) : (
-        <div className="rounded-3xl border border-linen bg-cream p-12 text-center">
-          <PlayCircle size={36} className="mx-auto text-gold/60" />
-          <p className="mt-4 font-serif text-xl font-semibold text-navy">No matching transcript segments found</p>
-          <p className="mt-1 text-sm text-walnut">Try clearing your search query or switching to "Full Sermon".</p>
+        <div className="rounded-3xl border border-linen bg-cream p-12 text-center text-sm font-semibold text-walnut">
+          No matching transcript segments found.
+        </div>
+      )}
+
+      {/* FLOATING AUDIO PREVIEW PLAYER BAR */}
+      {playingSegment && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-4 rounded-2xl border border-gold/40 bg-navy px-6 py-4 text-cream shadow-navyGlow backdrop-blur-md transition-all animate-in fade-in slide-in-from-bottom-5">
+          <div className="flex items-center gap-3">
+            <div className="grid h-10 w-10 place-items-center rounded-full bg-gold text-navy font-bold">
+              <Volume2 size={20} className="animate-pulse" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-cream">
+                Previewing Segment #{playingSegment.segment_index !== undefined ? playingSegment.segment_index + 1 : 1}
+              </p>
+              <p className="text-[11px] text-gold-light">
+                {formatSeconds(playingSegment.start)} – {formatSeconds(playingSegment.end)}
+              </p>
+            </div>
+          </div>
+
+          {/* YouTube Embed Audio Engine */}
+          {videoId && (
+            <iframe
+              src={`https://www.youtube.com/embed/${videoId}?start=${Math.floor(playingSegment.start)}&end=${Math.ceil(playingSegment.end)}&autoplay=1&enablejsapi=1`}
+              title="Segment Audio Preview"
+              className="h-0 w-0 opacity-0 pointer-events-none"
+              allow="autoplay; encrypted-media"
+            />
+          )}
+
+          <button
+            onClick={() => setPlayingSegment(null)}
+            className="ml-2 rounded-full bg-cream/10 p-2 text-cream hover:bg-cream/20 transition-colors"
+            title="Stop Audio"
+          >
+            <X size={16} />
+          </button>
         </div>
       )}
     </div>

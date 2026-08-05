@@ -129,20 +129,20 @@ export default function ClipsReady() {
       <PageHeader
         eyebrow="Clip Studio"
         title="Sermon Video Clip"
-        description="Preview the sermon clip, download the MP4 file, or share the timestamped link directly."
+        description="Preview the sermon clip, download the MP4 file via FFmpeg stream slicing, or share the timestamped link."
         action={
-          <Button variant="gold" className="px-8 shadow-glow" onClick={handleDownload} disabled={downloading}>
+          <Button variant="gold" className="px-7 shadow-pulse" onClick={handleDownload} disabled={downloading}>
             {downloading ? (
               <span className="inline-flex items-center gap-2">
-                <Loader2 size={18} className="animate-spin" /> Slicing MP4 Clip…
+                <Loader2 size={16} className="animate-spin text-signal-bg" /> Slicing MP4 Clip…
               </span>
             ) : downloaded ? (
               <span className="inline-flex items-center gap-2">
-                <Check size={18} /> Downloaded MP4!
+                <Check size={16} /> Downloaded MP4!
               </span>
             ) : (
               <span className="inline-flex items-center gap-2">
-                <Download size={18} /> Download MP4 Clip
+                <Download size={16} /> Download MP4 Clip
               </span>
             )}
           </Button>
@@ -150,19 +150,19 @@ export default function ClipsReady() {
       />
 
       {downloadError && (
-        <div className="mb-6 rounded-2xl border border-red-300 bg-red-50 px-5 py-3 text-sm font-semibold text-red-700">
+        <div className="mb-6 rounded-2xl border border-red-500/30 bg-red-500/10 px-5 py-3 font-mono text-xs font-semibold text-red-400">
           {downloadError}
         </div>
       )}
 
       <div className="grid grid-cols-1 gap-10 lg:grid-cols-[1fr_360px]">
         {/* VIDEO PREVIEW */}
-        <section className="flex flex-col items-center justify-center rounded-3xl border border-linen bg-cream/80 p-8 shadow-warm">
+        <section className="flex flex-col items-center justify-center rounded-3xl border border-signal-border bg-signal-panel p-8 shadow-signal">
           <div
             className={[
-              "relative mx-auto overflow-hidden rounded-3xl shadow-navyGlow transition-all duration-300",
+              "relative mx-auto overflow-hidden rounded-2xl border border-signal-border shadow-signal transition-all duration-300",
               activeFormatObj.aspect,
-              "w-full bg-navy",
+              "w-full bg-signal-bg",
             ].join(" ")}
           >
             {embedUrl ? (
@@ -174,31 +174,31 @@ export default function ClipsReady() {
                 allowFullScreen
               />
             ) : (
-              <div className="absolute inset-0 grid place-items-center text-cream/60 text-sm font-semibold">
+              <div className="absolute inset-0 grid place-items-center text-text-muted font-mono text-xs font-semibold">
                 No video URL available
               </div>
             )}
 
             {/* Duration badge */}
-            <div className="absolute top-3 left-3 z-10 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-gold-light bg-navy/70 px-3 py-1.5 rounded-full backdrop-blur-md border border-cream/10">
-              <Sparkles size={14} className="text-gold" />
+            <div className="absolute top-3 left-3 z-10 flex items-center gap-1.5 font-mono text-xs font-bold uppercase tracking-wider text-pulse-gold bg-signal-bg/80 px-3 py-1.5 rounded-xl backdrop-blur-md border border-pulse-gold/30">
+              <Sparkles size={13} className="text-pulse-gold" />
               <span>{durationLabel}</span>
             </div>
           </div>
 
           {/* Share Link Preview */}
-          <div className="mt-4 w-full max-w-md">
-            <div className="flex items-center gap-2 rounded-xl border border-linen bg-parchment/60 px-4 py-2.5">
-              <Link2 size={14} className="flex-shrink-0 text-gold-dark" />
-              <span className="truncate text-xs font-mono text-walnut/80">{shareUrl}</span>
+          <div className="mt-5 w-full max-w-md">
+            <div className="flex items-center gap-2 rounded-xl border border-signal-border bg-signal-bg px-4 py-2.5">
+              <Link2 size={14} className="flex-shrink-0 text-pulse-gold" />
+              <span className="truncate font-mono text-xs text-text-secondary">{shareUrl}</span>
               <button
                 onClick={handleCopyLink}
-                className="ml-auto flex-shrink-0 rounded-lg bg-navy px-3 py-1 text-[11px] font-bold text-cream transition-colors hover:bg-gold hover:text-navy"
+                className="ml-auto flex-shrink-0 rounded-lg bg-pulse-gold px-3 py-1 font-mono text-[11px] font-bold text-signal-bg transition-colors hover:bg-yellow-400"
               >
                 {copied ? "Copied!" : "Copy"}
               </button>
             </div>
-            <p className="mt-2 text-center text-xs font-semibold text-walnut/60">
+            <p className="mt-2 text-center font-mono text-xs text-text-muted">
               Clip range: {formatSeconds(startInt)} – {formatSeconds(endInt)}
             </p>
           </div>
@@ -207,9 +207,9 @@ export default function ClipsReady() {
         {/* CONTROLS PANEL */}
         <section className="space-y-6">
           {/* Format Switcher */}
-          <div className="rounded-3xl border border-linen bg-cream p-6 shadow-soft">
-            <div className="mb-4 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-navy">
-              <Maximize2 size={16} className="text-gold" />
+          <div className="rounded-3xl border border-signal-border bg-signal-panel p-6 shadow-signal">
+            <div className="mb-4 flex items-center gap-2 font-mono text-xs font-bold uppercase tracking-wider text-pulse-gold">
+              <Maximize2 size={15} className="text-pulse-gold" />
               <span>Preview Aspect Ratio</span>
             </div>
             <div className="space-y-2">
@@ -220,12 +220,12 @@ export default function ClipsReady() {
                   className={[
                     "flex w-full items-center justify-between rounded-xl px-4 py-3 text-xs font-semibold transition-all duration-200",
                     selectedFormat === f.id
-                      ? "bg-navy text-cream shadow-navyGlow"
-                      : "bg-parchment/70 text-walnut hover:bg-parchment hover:text-navy",
+                      ? "bg-pulse-gold text-signal-bg shadow-pulse font-bold"
+                      : "bg-signal-bg text-text-secondary border border-signal-border hover:border-pulse-gold hover:text-text-primary",
                   ].join(" ")}
                 >
                   <span>{f.label}</span>
-                  {selectedFormat === f.id && <Check size={16} className="text-gold" />}
+                  {selectedFormat === f.id && <Check size={15} className="text-signal-bg" />}
                 </button>
               ))}
             </div>
@@ -235,15 +235,15 @@ export default function ClipsReady() {
           <button
             onClick={handleDownload}
             disabled={downloading}
-            className="w-full rounded-3xl border border-gold/40 bg-gold/15 p-5 text-center shadow-soft transition-all duration-200 hover:bg-gold/25 hover:shadow-glow active:scale-[0.98] disabled:opacity-50"
+            className="w-full rounded-3xl border border-pulse-gold/40 bg-pulse-gold/10 p-5 text-center shadow-signal transition-all duration-200 hover:bg-pulse-gold/20 hover:border-pulse-gold active:scale-[0.98] disabled:opacity-50"
           >
-            <div className="flex items-center justify-center gap-2 text-sm font-bold text-navy">
+            <div className="flex items-center justify-center gap-2 font-display text-sm font-bold text-pulse-gold">
               {downloading ? (
-                <Loader2 size={18} className="animate-spin text-navy" />
+                <Loader2 size={16} className="animate-spin text-pulse-gold" />
               ) : downloaded ? (
-                <Check size={18} className="text-green-600" />
+                <Check size={16} className="text-emerald-400" />
               ) : (
-                <Download size={18} className="text-gold-dark" />
+                <Download size={16} className="text-pulse-gold" />
               )}
               <span>
                 {downloading
@@ -253,15 +253,15 @@ export default function ClipsReady() {
                   : "Download MP4 Video Clip"}
               </span>
             </div>
-            <p className="mt-1 text-[11px] text-walnut/70">
+            <p className="mt-1 font-mono text-[11px] text-text-muted">
               Slices only {formatSeconds(startInt)} – {formatSeconds(endInt)} directly from YouTube
             </p>
           </button>
 
           {/* Share Directly */}
-          <div className="rounded-3xl border border-linen bg-cream p-6 shadow-soft">
-            <div className="mb-4 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-navy">
-              <Share2 size={16} className="text-gold" />
+          <div className="rounded-3xl border border-signal-border bg-signal-panel p-6 shadow-signal">
+            <div className="mb-4 flex items-center gap-2 font-mono text-xs font-bold uppercase tracking-wider text-pulse-gold">
+              <Share2 size={15} className="text-pulse-gold" />
               <span>Share Timestamped Link</span>
             </div>
             <div className="grid grid-cols-2 gap-2.5">
@@ -275,11 +275,11 @@ export default function ClipsReady() {
                   key={label}
                   type="button"
                   onClick={() => handleShareOpen(label)}
-                  className="flex items-center gap-2 rounded-xl border border-linen bg-parchment/60 px-3 py-2.5 text-xs font-semibold text-navy transition-colors hover:bg-gold/20"
+                  className="flex items-center gap-2 rounded-xl border border-signal-border bg-signal-bg px-3 py-2.5 font-mono text-xs font-semibold text-text-secondary transition-colors hover:border-pulse-gold hover:text-text-primary"
                 >
-                  <Icon size={16} className="text-gold-dark" />
+                  <Icon size={15} className="text-pulse-gold" />
                   <span>{label}</span>
-                  <ExternalLink size={12} className="ml-auto text-walnut/40" />
+                  <ExternalLink size={12} className="ml-auto text-text-muted" />
                 </button>
               ))}
             </div>

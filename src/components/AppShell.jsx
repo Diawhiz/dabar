@@ -1,5 +1,5 @@
 import { Outlet, NavLink } from "react-router-dom";
-import { Archive, Clapperboard, Home, Sparkles, Video, Cpu, ShieldCheck } from "lucide-react";
+import { Archive, Clapperboard, Home, Sparkles, Video, Cpu, Activity } from "lucide-react";
 
 const links = [
   { to: "/", label: "Home", icon: Home },
@@ -11,32 +11,32 @@ const links = [
 
 export default function AppShell() {
   return (
-    <div className="flex min-h-screen flex-col bg-paper text-umber">
-      <header className="sticky top-0 z-30 border-b border-linen/60 bg-paper/85 backdrop-blur-2xl">
+    <div className="flex min-h-screen flex-col bg-signal-bg text-text-primary font-sans antialiased">
+      <header className="sticky top-0 z-30 border-b border-signal-border/80 bg-signal-bg/90 backdrop-blur-2xl">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 sm:px-8 lg:px-10">
           {/* Logo Brand */}
-          <NavLink to="/" className="group flex items-center gap-3.5">
-            <div className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-navy via-navy to-navy-dark font-serif text-2xl font-bold text-cream shadow-navyGlow transition-transform duration-300 group-hover:scale-105">
-              D
-              <span className="absolute -right-1 -top-1 h-3 w-3 rounded-full border-2 border-paper bg-emerald-500" />
+          <NavLink to="/" className="group flex items-center gap-3.5 focus-visible:outline-none">
+            <div className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-signal-panel border border-signal-border text-pulse-gold font-display text-xl font-bold shadow-pulse transition-transform duration-300 group-hover:scale-105">
+              ד
+              <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-signal-bg bg-pulse-gold animate-pulse" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <p className="font-serif text-2xl font-semibold leading-none tracking-tight text-navy">
-                  Dabar
+                <p className="font-display text-xl font-bold leading-none tracking-tight text-text-primary group-hover:text-pulse-gold transition-colors">
+                  DABAR
                 </p>
-                <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-gold border border-gold/20">
-                  AI v2.4
+                <span className="rounded-md bg-pulse-gold/10 px-2 py-0.5 font-mono text-[10px] font-bold tracking-wider text-pulse-gold border border-pulse-gold/20">
+                  70B AI
                 </span>
               </div>
-              <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-gold">
+              <p className="mt-1 font-mono text-[10px] font-semibold uppercase tracking-[0.25em] text-text-muted">
                 The Word, ready to share
               </p>
             </div>
           </NavLink>
 
           {/* Desktop Navigation */}
-          <nav className="hidden items-center gap-1 rounded-full border border-linen bg-cream/90 p-1.5 shadow-soft backdrop-blur-xl md:flex">
+          <nav className="hidden items-center gap-1 rounded-2xl border border-signal-border bg-signal-panel/90 p-1.5 shadow-signal backdrop-blur-xl md:flex">
             {links.map(({ to, label, icon: Icon }) => (
               <NavLink
                 key={to}
@@ -44,27 +44,27 @@ export default function AppShell() {
                 end={to === "/"}
                 className={({ isActive }) =>
                   [
-                    "flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all duration-200",
+                    "flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-semibold transition-all duration-200",
                     isActive
-                      ? "bg-navy text-cream shadow-navyGlow"
-                      : "text-walnut hover:bg-parchment hover:text-navy",
+                      ? "bg-pulse-gold text-signal-bg shadow-pulse font-bold"
+                      : "text-text-secondary hover:bg-signal-hover hover:text-text-primary",
                   ].join(" ")
                 }
               >
-                <Icon size={16} />
+                <Icon size={15} />
                 {label}
               </NavLink>
             ))}
           </nav>
 
           {/* Engine Status Badge */}
-          <div className="hidden items-center gap-2.5 rounded-full border border-emerald-500/20 bg-emerald-500/5 px-3.5 py-1.5 text-xs font-semibold text-emerald-800 lg:flex">
+          <div className="hidden items-center gap-2.5 rounded-xl border border-pulse-gold/30 bg-pulse-gold/10 px-3.5 py-1.5 font-mono text-xs font-semibold text-pulse-gold lg:flex">
             <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-pulse-gold opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-pulse-gold" />
             </span>
-            <Cpu size={14} className="text-emerald-600" />
-            <span>AI Engine Online</span>
+            <Activity size={14} className="text-pulse-gold" />
+            <span>Groq Signal Active</span>
           </div>
         </div>
       </header>
@@ -75,22 +75,22 @@ export default function AppShell() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-linen/70 bg-parchment/50 py-8 text-center text-xs text-walnut">
+      <footer className="border-t border-signal-border/80 bg-signal-panel/40 py-8 text-center text-xs text-text-muted">
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-5 sm:flex-row sm:px-8">
-          <div className="flex items-center gap-2 font-serif text-sm font-semibold text-navy">
-            <span>Dabar AI</span>
-            <span className="text-linen">•</span>
-            <span className="text-xs font-normal text-walnut">Church Media Automation</span>
+          <div className="flex items-center gap-2 font-display text-xs font-semibold text-text-secondary">
+            <span>DABAR SYSTEM</span>
+            <span className="text-signal-border">•</span>
+            <span className="font-mono text-xs font-normal text-text-muted">Whisper + Llama 3.3 70B Engine</span>
           </div>
-          <div className="flex items-center gap-2 text-walnut/70">
-            <ShieldCheck size={14} className="text-gold" />
-            <span>Secure Sermon Processing Pipeline</span>
+          <div className="flex items-center gap-2 text-text-muted font-mono text-xs">
+            <Cpu size={14} className="text-pulse-gold" />
+            <span>Zero-Download FFmpeg Stream Slicing</span>
           </div>
         </div>
       </footer>
 
       {/* Mobile Floating Navigation Bar */}
-      <nav className="fixed bottom-4 left-1/2 z-40 flex w-[calc(100%-2rem)] max-w-md -translate-x-1/2 items-center justify-between rounded-full border border-linen/90 bg-cream/95 p-1.5 shadow-warm backdrop-blur-2xl md:hidden">
+      <nav className="fixed bottom-4 left-1/2 z-40 flex w-[calc(100%-2rem)] max-w-md -translate-x-1/2 items-center justify-between rounded-2xl border border-signal-border bg-signal-panel/95 p-1.5 shadow-signal backdrop-blur-2xl md:hidden">
         {links.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
@@ -98,8 +98,8 @@ export default function AppShell() {
             end={to === "/"}
             className={({ isActive }) =>
               [
-                "flex min-w-0 flex-1 flex-col items-center gap-1 rounded-full px-2 py-2 text-[10px] font-semibold transition-all duration-200",
-                isActive ? "bg-navy text-cream shadow-navyGlow" : "text-walnut hover:text-navy",
+                "flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl px-2 py-2 text-[10px] font-semibold transition-all duration-200",
+                isActive ? "bg-pulse-gold text-signal-bg font-bold shadow-pulse" : "text-text-secondary hover:text-text-primary",
               ].join(" ")
             }
           >

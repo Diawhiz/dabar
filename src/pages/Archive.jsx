@@ -45,27 +45,27 @@ export default function Archive() {
   return (
     <div className="mx-auto max-w-5xl py-6">
       <PageHeader
-        eyebrow="Media Library"
-        title="Past Sermon Projects"
+        eyebrow="Sermon Repository"
+        title="Indexed Sermon Projects"
         description="Browse, search, and access all sermon teachings and transcript packages created for your church channels."
       />
 
       {/* SEARCH CONTROL */}
       <section className="mb-8">
         <div className="relative">
-          <Search className="pointer-events-none absolute left-5 top-1/2 -translate-y-1/2 text-gold" size={20} />
+          <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-pulse-gold" size={18} />
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search by title, YouTube URL, or status..."
-            className="h-14 w-full rounded-2xl border border-linen bg-cream pl-13 pr-12 text-base font-medium text-umber shadow-soft outline-none transition-all focus:border-gold/50 focus:shadow-glow"
+            className="h-12 w-full rounded-2xl border border-signal-border bg-signal-panel pl-12 pr-10 text-sm font-medium text-text-primary shadow-signal outline-none transition-all focus:border-pulse-gold/50 focus:shadow-pulse"
           />
           {query && (
             <button
               onClick={() => setQuery("")}
-              className="absolute right-4 top-1/2 -translate-y-1/2 rounded-full p-1 text-walnut/60 hover:bg-parchment hover:text-navy"
+              className="absolute right-4 top-1/2 -translate-y-1/2 rounded-lg p-1 text-text-muted hover:bg-signal-hover hover:text-text-primary"
             >
-              <X size={18} />
+              <X size={16} />
             </button>
           )}
         </div>
@@ -73,26 +73,26 @@ export default function Archive() {
 
       {/* RESULTS LIST */}
       <section>
-        <div className="mb-4 flex items-center justify-between px-1 text-xs font-semibold text-walnut">
+        <div className="mb-4 flex items-center justify-between px-1 font-mono text-xs text-text-muted">
           <span>Showing {filtered.length} sermon projects</span>
           <span>Sorted by recent date</span>
         </div>
 
         {isLoading ? (
-          <div className="rounded-3xl border border-linen bg-cream p-12 text-center text-sm font-semibold text-walnut">
-            Loading sermon archive from database...
+          <div className="rounded-2xl border border-signal-border bg-signal-panel p-12 text-center font-mono text-xs font-semibold text-text-secondary">
+            Loading sermon repository from database...
           </div>
         ) : filtered.length > 0 ? (
           filtered.map((sermon) => <SermonRow key={sermon.id} sermon={sermon} />)
         ) : (
-          <div className="rounded-3xl border border-linen bg-cream px-6 py-16 text-center shadow-soft">
-            <BookOpen size={36} className="mx-auto text-gold/60" />
-            <p className="mt-4 font-serif text-xl font-semibold text-navy">No sermons match your search</p>
-            <p className="mt-1 text-sm text-walnut">Try clearing your search term or processing a new sermon.</p>
+          <div className="rounded-2xl border border-signal-border bg-signal-panel px-6 py-16 text-center shadow-signal">
+            <BookOpen size={32} className="mx-auto text-pulse-gold/60" />
+            <p className="mt-3 font-display text-lg font-bold text-text-primary">No sermons match your search</p>
+            <p className="mt-1 text-xs text-text-muted">Try clearing your search term or processing a new sermon.</p>
             {query && (
               <button
                 onClick={() => setQuery("")}
-                className="mt-4 rounded-full bg-parchment px-5 py-2 text-xs font-bold text-navy hover:bg-gold/20"
+                className="mt-4 rounded-xl border border-signal-border bg-signal-bg px-4 py-2 font-mono text-xs font-bold text-pulse-gold hover:border-pulse-gold"
               >
                 Reset Search
               </button>

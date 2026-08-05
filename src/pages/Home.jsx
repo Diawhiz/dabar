@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArrowRight, CalendarDays, Link2, Scissors, Sparkles, Wand2, Zap, PlayCircle } from "lucide-react";
+import { ArrowRight, Link2, Scissors, Sparkles, Wand2, Zap, PlayCircle, Radio, Disc, Activity } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import Button from "../components/Button.jsx";
 import { createSermon, listSermons } from "../lib/api.js";
@@ -61,62 +61,86 @@ export default function Home() {
   return (
     <div className="space-y-20">
       {/* HERO SECTION */}
-      <section className="relative overflow-hidden py-10 sm:py-16">
-        <div className="pointer-events-none absolute -left-20 -top-20 h-96 w-96 rounded-full bg-gold/10 blur-3xl" />
-        <div className="pointer-events-none absolute -right-20 top-1/2 h-96 w-96 rounded-full bg-navy/10 blur-3xl" />
+      <section className="relative overflow-hidden py-12 sm:py-20 rounded-3xl border border-signal-border bg-signal-panel/60 px-6 sm:px-12 shadow-signal">
+        {/* Glow ambient background elements */}
+        <div className="pointer-events-none absolute -left-20 -top-20 h-96 w-96 rounded-full bg-pulse-gold/10 blur-3xl" />
+        <div className="pointer-events-none absolute -right-20 top-1/2 h-96 w-96 rounded-full bg-pulse-amber/10 blur-3xl" />
 
         <div className="relative mx-auto max-w-4xl text-center">
-          <div className="mx-auto mb-6 inline-flex items-center gap-2 rounded-full border border-gold/30 bg-cream/90 px-4 py-1.5 shadow-soft backdrop-blur-xl">
-            <Sparkles size={15} className="text-gold animate-pulse" />
-            <span className="text-xs font-bold uppercase tracking-[0.2em] text-navy">
-              AI-Powered Sermon Clipping Engine
+          {/* Badge */}
+          <div className="mx-auto mb-6 inline-flex items-center gap-2 rounded-full border border-pulse-gold/30 bg-signal-card px-4 py-1.5 shadow-soft">
+            <Radio size={14} className="text-pulse-gold animate-pulse" />
+            <span className="font-mono text-xs font-bold uppercase tracking-[0.25em] text-pulse-gold">
+              Spoken Word Distillation Engine
             </span>
           </div>
 
-          <h1 className="mx-auto max-w-3xl font-serif text-5xl font-semibold leading-[1.08] tracking-tight text-navy sm:text-7xl">
-            Every sermon has a moment. <br className="hidden sm:inline" />
-            <span className="gold-gradient-text">Find & share it in seconds.</span>
+          {/* Main Headline */}
+          <h1 className="mx-auto max-w-3xl font-display text-4xl font-bold leading-[1.1] tracking-tight text-text-primary sm:text-6xl">
+            Long-form preaching. <br />
+            <span className="text-pulse-gold">Distilled into clips that travel.</span>
           </h1>
 
-          <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-walnut sm:text-xl">
-            Paste a sermon link and Dabar instantly transcribes, highlights conviction-rich moments, and prepares vertical clips ready for your church's social channels.
+          <p className="mx-auto mt-6 max-w-2xl text-base leading-relaxed text-text-secondary sm:text-lg">
+            Paste a sermon link. Dabar transcribes the message with Groq Whisper, extracts conviction-rich key moments using Llama 3.3 70B, and slices social clips in seconds.
           </p>
 
+          {/* SIGNATURE ELEMENT: Living Acoustic Distillation Waveform Ribbon */}
+          <div className="my-8 flex items-center justify-center gap-1 sm:gap-1.5 py-4 px-6 rounded-2xl border border-signal-border/80 bg-signal-bg/80 shadow-inner">
+            {[40, 65, 30, 85, 95, 45, 75, 100, 60, 90, 50, 80, 100, 70, 40, 90, 60, 85, 35, 75, 95, 50, 30, 60].map((h, i) => (
+              <div
+                key={i}
+                style={{ height: `${h}%` }}
+                className={`w-1 sm:w-1.5 rounded-full transition-all duration-300 ${
+                  i >= 7 && i <= 14
+                    ? "bg-pulse-gold shadow-pulse animate-signal-wave"
+                    : "bg-signal-border/90 opacity-60"
+                } ${i % 2 === 0 ? "wave-delay-1" : "wave-delay-2"}`}
+              />
+            ))}
+            <div className="ml-3 flex items-center gap-1.5 rounded-md bg-pulse-gold/20 px-2.5 py-1 font-mono text-[11px] font-bold text-pulse-gold border border-pulse-gold/30">
+              <Disc size={12} className="animate-spin" />
+              <span>00:45 CLIP EXTRACTED</span>
+            </div>
+          </div>
+
+          {/* INPUT FORM */}
           <form
-            className="mx-auto mt-10 flex max-w-3xl flex-col gap-3 rounded-[2.5rem] border border-linen/90 bg-cream p-3 shadow-warm transition-all duration-300 focus-within:border-gold/50 focus-within:shadow-glow sm:flex-row"
+            className="mx-auto mt-8 flex max-w-3xl flex-col gap-3 rounded-2xl border border-signal-border bg-signal-bg p-2.5 shadow-signal transition-all duration-300 focus-within:border-pulse-gold focus-within:shadow-pulse sm:flex-row"
             onSubmit={handleSubmit}
           >
             <label className="relative flex-1">
               <span className="sr-only">YouTube sermon link</span>
-              <Link2 className="pointer-events-none absolute left-5 top-1/2 -translate-y-1/2 text-gold" size={20} />
+              <Link2 className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-pulse-gold" size={18} />
               <input
                 value={url}
                 onChange={(event) => setUrl(event.target.value)}
-                placeholder="Paste YouTube sermon link (e.g. https://youtube.com/watch?v=...)"
-                className="h-14 w-full rounded-full bg-parchment/70 pl-12 pr-5 text-base font-medium text-umber outline-none transition placeholder:text-walnut/50 focus:bg-cream"
+                placeholder="Paste YouTube sermon URL (e.g. https://youtube.com/watch?v=...)"
+                className="h-12 w-full rounded-xl bg-signal-panel pl-11 pr-4 text-sm font-medium text-text-primary outline-none transition placeholder:text-text-muted focus:bg-signal-card"
               />
             </label>
-            <Button type="submit" variant="gold" className="h-14 whitespace-nowrap px-8 text-base shadow-glow">
+            <Button type="submit" variant="gold" className="h-12 whitespace-nowrap px-7 text-sm font-bold shadow-pulse">
               {isSubmitting ? (
                 <span className="inline-flex items-center gap-2">
-                  <Wand2 size={18} className="animate-spin" /> Processing...
+                  <Wand2 size={16} className="animate-spin" /> Distilling...
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-2">
-                  Extract Sermon Clips <ArrowRight size={18} />
+                  Extract Sermon Clips <ArrowRight size={16} />
                 </span>
               )}
             </Button>
           </form>
 
-          <div className="mt-4 flex flex-wrap items-center justify-center gap-2 text-xs font-semibold text-walnut">
-            <span className="text-walnut/60">Try sample:</span>
+          {/* Sample Buttons */}
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2 font-mono text-xs text-text-muted">
+            <span>Try sample:</span>
             {sampleUrls.map((sample) => (
               <button
                 key={sample.url}
                 type="button"
                 onClick={() => setUrl(sample.url)}
-                className="rounded-full bg-parchment/90 px-3 py-1 text-navy transition-colors hover:bg-gold/20 hover:text-gold-dark"
+                className="rounded-lg border border-signal-border bg-signal-card px-2.5 py-1 text-text-secondary transition-colors hover:border-pulse-gold hover:text-pulse-gold"
               >
                 "{sample.label}"
               </button>
@@ -124,50 +148,50 @@ export default function Home() {
           </div>
 
           {error && (
-            <div className="mx-auto mt-4 max-w-xl rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">
+            <div className="mx-auto mt-4 max-w-xl rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs font-semibold text-red-400">
               {error}
             </div>
           )}
         </div>
       </section>
 
-      {/* FEATURE HIGHLIGHTS */}
+      {/* FEATURE SEQUENCE */}
       <section className="mx-auto max-w-6xl">
         <div className="mb-10 text-center">
-          <p className="text-xs font-bold uppercase tracking-[0.24em] text-gold">Built for Church Media Teams</p>
-          <h2 className="mt-2 font-serif text-3xl font-semibold text-navy sm:text-4xl">
-            From Sunday Pulpit to Weekly Discipleship
+          <p className="font-mono text-xs font-bold uppercase tracking-[0.25em] text-pulse-gold">DISTILLATION PIPELINE</p>
+          <h2 className="mt-2 font-display text-2xl font-bold text-text-primary sm:text-3xl">
+            From Pulpit Audio to Shareable Clips
           </h2>
         </div>
 
         <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-          <div className="rounded-3xl border border-linen/80 bg-cream p-7 shadow-soft transition-transform hover:-translate-y-1">
-            <div className="grid h-12 w-12 place-items-center rounded-2xl bg-gold/15 text-gold-dark">
-              <Zap size={22} />
+          <div className="rounded-2xl border border-signal-border bg-signal-panel p-6 shadow-signal transition-transform hover:-translate-y-1">
+            <div className="grid h-10 w-10 place-items-center rounded-xl border border-pulse-gold/30 bg-pulse-gold/10 text-pulse-gold">
+              <Zap size={20} />
             </div>
-            <h3 className="mt-5 font-serif text-2xl font-semibold text-navy">1. Automated Transcription</h3>
-            <p className="mt-3 text-sm leading-relaxed text-walnut">
-              High-accuracy Whisper speech recognition maps timestamped transcripts for full sermon searching.
+            <h3 className="mt-4 font-display text-lg font-bold text-text-primary">1. Whisper Speech Recognition</h3>
+            <p className="mt-2 text-xs leading-relaxed text-text-secondary">
+              Groq Whisper Large V3 Turbo transcribes sermon audio with exact punctuation and segment timestamps.
             </p>
           </div>
 
-          <div className="rounded-3xl border border-linen/80 bg-cream p-7 shadow-soft transition-transform hover:-translate-y-1">
-            <div className="grid h-12 w-12 place-items-center rounded-2xl bg-navy/10 text-navy">
-              <Sparkles size={22} />
+          <div className="rounded-2xl border border-signal-border bg-signal-panel p-6 shadow-signal transition-transform hover:-translate-y-1">
+            <div className="grid h-10 w-10 place-items-center rounded-xl border border-pulse-amber/30 bg-pulse-amber/10 text-pulse-amber">
+              <Sparkles size={20} />
             </div>
-            <h3 className="mt-5 font-serif text-2xl font-semibold text-navy">2. Conviction Detection</h3>
-            <p className="mt-3 text-sm leading-relaxed text-walnut">
-              AI analyzes speech tone, cadence, and semantic weight to pinpoint invitations and key teaching quotes.
+            <h3 className="mt-4 font-display text-lg font-bold text-text-primary">2. Llama 3.3 70B Moment Mining</h3>
+            <p className="mt-2 text-xs leading-relaxed text-text-secondary">
+              Analyzes conviction points, gospel calls, and key teaching quotes to extract 30–90 second key moments.
             </p>
           </div>
 
-          <div className="rounded-3xl border border-linen/80 bg-cream p-7 shadow-soft transition-transform hover:-translate-y-1">
-            <div className="grid h-12 w-12 place-items-center rounded-2xl bg-amber-500/15 text-amber-800">
-              <Scissors size={22} />
+          <div className="rounded-2xl border border-signal-border bg-signal-panel p-6 shadow-signal transition-transform hover:-translate-y-1">
+            <div className="grid h-10 w-10 place-items-center rounded-xl border border-pulse-cyan/30 bg-pulse-cyan/10 text-pulse-cyan">
+              <Scissors size={20} />
             </div>
-            <h3 className="mt-5 font-serif text-2xl font-semibold text-navy">3. Vertical 9:16 Clips</h3>
-            <p className="mt-3 text-sm leading-relaxed text-walnut">
-              Export ready-to-post short videos with burnt-in captions for Instagram Reels, YouTube Shorts, and TikTok.
+            <h3 className="mt-4 font-display text-lg font-bold text-text-primary">3. Direct Stream Slicing</h3>
+            <p className="mt-2 text-xs leading-relaxed text-text-secondary">
+              FFmpeg HTTP stream slicing generates MP4 clips in 2–4s or produces instant timestamped share links.
             </p>
           </div>
         </div>
@@ -178,51 +202,51 @@ export default function Home() {
         <div className="mb-6 flex items-end justify-between gap-4">
           <div>
             <div className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-gold" />
-              <h2 className="font-serif text-3xl font-semibold text-navy">Recent Sermons</h2>
+              <span className="h-2 w-2 rounded-full bg-pulse-gold animate-pulse" />
+              <h2 className="font-display text-2xl font-bold text-text-primary">Recent Sermons</h2>
             </div>
-            <p className="mt-1 text-sm text-walnut">Latest teachings processed in your Django media database.</p>
+            <p className="mt-1 text-xs font-mono text-text-muted">Indexed preachings in your sermon repository.</p>
           </div>
-          <Button variant="secondary" onClick={() => navigate("/archive")}>
+          <Button variant="outline" size="sm" onClick={() => navigate("/archive")}>
             View Full Archive
           </Button>
         </div>
 
         {isLoadingSermons ? (
-          <div className="rounded-3xl border border-linen bg-cream p-12 text-center text-sm font-semibold text-walnut">
+          <div className="rounded-2xl border border-signal-border bg-signal-panel p-10 text-center font-mono text-xs font-semibold text-text-secondary">
             Loading recent sermons from server...
           </div>
         ) : sermons.length > 0 ? (
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {sermons.map((sermon) => (
               <article
                 key={sermon.id}
                 onClick={() => navigate(`/processing/${sermon.id}`)}
-                className="group cursor-pointer rounded-3xl border border-linen/90 bg-cream p-6 shadow-soft transition-all duration-300 hover:-translate-y-1.5 hover:border-gold/40 hover:shadow-warm"
+                className="group cursor-pointer rounded-2xl border border-signal-border bg-signal-panel p-5 shadow-signal transition-all duration-300 hover:-translate-y-1 hover:border-pulse-gold/50 hover:bg-signal-card"
               >
                 <div className="flex items-center justify-between">
-                  <span className="rounded-full bg-gold/15 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-navy">
+                  <span className="rounded-md border border-pulse-gold/30 bg-pulse-gold/10 px-2.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-pulse-gold">
                     {sermon.status}
                   </span>
-                  <span className="text-xs font-semibold text-walnut/70">
+                  <span className="font-mono text-xs text-text-muted">
                     {new Date(sermon.created_at).toLocaleDateString()}
                   </span>
                 </div>
 
-                <h3 className="mt-4 font-serif text-2xl font-semibold leading-snug text-navy transition-colors group-hover:text-gold-dark">
+                <h3 className="mt-3 font-display text-lg font-bold leading-snug text-text-primary transition-colors group-hover:text-pulse-gold">
                   {sermon.title || sermon.youtube_url}
                 </h3>
-                <p className="mt-2 text-xs font-semibold text-gold border-t border-linen/60 pt-3">
+                <p className="mt-3 font-mono text-xs text-text-muted truncate border-t border-signal-border/50 pt-2.5">
                   {sermon.youtube_url}
                 </p>
               </article>
             ))}
           </div>
         ) : (
-          <div className="rounded-3xl border border-linen bg-cream p-12 text-center">
-            <PlayCircle size={36} className="mx-auto text-gold/60" />
-            <p className="mt-4 font-serif text-xl font-semibold text-navy">No sermons in your database yet</p>
-            <p className="mt-1 text-sm text-walnut">Paste a YouTube sermon link above to process your first message!</p>
+          <div className="rounded-2xl border border-signal-border bg-signal-panel p-10 text-center">
+            <PlayCircle size={32} className="mx-auto text-pulse-gold/60" />
+            <p className="mt-3 font-display text-lg font-bold text-text-primary">No sermons in repository yet</p>
+            <p className="mt-1 text-xs text-text-muted">Paste a YouTube sermon link above to process your first message!</p>
           </div>
         )}
       </section>

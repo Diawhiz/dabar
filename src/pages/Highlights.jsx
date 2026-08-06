@@ -92,11 +92,11 @@ export default function Highlights() {
   const highlightCount = useMemo(() => segments.filter((s) => s.is_highlight).length, [segments]);
 
   return (
-    <div className="mx-auto max-w-6xl py-6 pb-28">
+    <div className="mx-auto max-w-6xl py-4 pb-28">
       <PageHeader
-        eyebrow="Transcript & Key Moments"
-        title={sermonTitle ? `Transcript: ${sermonTitle}` : "Sermon Highlights & Transcript"}
-        description="Explore timestamped sermon transcript blocks or review AI-detected key moments."
+        eyebrow="STUDIO TRANSCRIPT"
+        title={sermonTitle ? `Transcript: ${sermonTitle}` : "Sermon Transcript & Moments"}
+        description="Review timestamped sermon quotes, search key teachings, or select moments to convert into vertical video clips."
         action={
           <Link to="/clips">
             <Button variant="gold" className="px-6 shadow-pulse">
@@ -107,16 +107,15 @@ export default function Highlights() {
         }
       />
 
-      {/* FILTER & SEARCH CONTROLS BAR */}
+      {/* FILTER & SEARCH TABS */}
       <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-signal-border pb-5">
-        {/* Filter Mode Tabs */}
         <div className="flex items-center gap-2">
           <button
             onClick={() => setFilterMode("all")}
             className={[
-              "relative rounded-xl px-4 py-2 font-mono text-xs font-bold transition-all duration-200",
+              "rounded-xl px-4 py-2 font-mono text-xs font-bold transition-all duration-200",
               filterMode === "all"
-                ? "bg-pulse-gold text-signal-bg shadow-pulse"
+                ? "bg-pulse-gold text-white shadow-pulse"
                 : "bg-signal-panel text-text-secondary hover:bg-signal-hover hover:text-text-primary border border-signal-border",
             ].join(" ")}
           >
@@ -136,7 +135,6 @@ export default function Highlights() {
           </button>
         </div>
 
-        {/* Search Input */}
         <div className="relative w-full sm:w-72">
           <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-pulse-gold" size={15} />
           <input
@@ -256,7 +254,7 @@ export default function Highlights() {
             transition={{ type: "spring", stiffness: 350, damping: 25 }}
             className="fixed bottom-6 right-6 z-50 flex flex-col sm:flex-row items-center gap-4 rounded-2xl border border-pulse-gold/50 bg-signal-panel p-4 text-text-primary shadow-2xl backdrop-blur-xl max-w-lg"
           >
-            {/* Interactive Visible YouTube Mini Player Window for browser autoplay compliance */}
+            {/* Interactive Visible YouTube Mini Player Window */}
             {videoId && (
               <div className="relative h-28 w-44 shrink-0 overflow-hidden rounded-xl border border-signal-border bg-black shadow-inner">
                 <iframe
@@ -321,4 +319,3 @@ export default function Highlights() {
     </div>
   );
 }
-

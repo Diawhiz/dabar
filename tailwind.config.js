@@ -5,6 +5,7 @@ export default {
   theme: {
     extend: {
       fontFamily: {
+        editorial: ["Lora", "serif"],
         display: ["Outfit", "sans-serif"],
         sans: ["Plus Jakarta Sans", "system-ui", "sans-serif"],
         mono: ["JetBrains Mono", "monospace"],
@@ -53,5 +54,6 @@ export default {
   },
   plugins: [],
 };
+
 
 

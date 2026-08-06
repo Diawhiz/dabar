@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArrowRight, Link2, Scissors, Sparkles, Wand2, Zap, PlayCircle, Radio, Disc } from "lucide-react";
+import { ArrowRight, Link2, Scissors, Sparkles, Wand2, Zap, PlayCircle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import Button from "../components/Button.jsx";
@@ -60,59 +60,26 @@ export default function Home() {
   }
 
   return (
-    <div className="space-y-16">
-      {/* HERO SECTION */}
+    <div className="space-y-16 py-4">
+      {/* STUDIO DECK HERO */}
       <motion.section
         initial={{ opacity: 0, y: 15 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-        className="relative overflow-hidden py-12 sm:py-16 rounded-3xl border border-signal-border bg-signal-panel px-6 sm:px-12 shadow-signal"
+        transition={{ duration: 0.4 }}
+        className="rounded-3xl border border-signal-border bg-signal-panel p-8 sm:p-12 shadow-signal"
       >
-        <div className="relative mx-auto max-w-4xl text-center">
-          {/* Badge */}
-          <div className="mx-auto mb-6 inline-flex items-center gap-2 rounded-full border border-pulse-gold/30 bg-signal-bg px-4 py-1.5 shadow-sm">
-            <Radio size={14} className="text-pulse-gold animate-pulse" />
-            <span className="font-mono text-xs font-bold uppercase tracking-[0.2em] text-pulse-gold">
-              Sermon Clip Studio
-            </span>
-          </div>
-
-          {/* Main Headline */}
-          <h1 className="mx-auto max-w-3xl font-display text-4xl font-bold leading-[1.1] tracking-tight text-text-primary sm:text-6xl">
-            Long-form preaching. <br />
-            <span className="text-pulse-gold">Distilled into clips that travel.</span>
+        <div className="mx-auto max-w-3xl text-center space-y-6">
+          <h1 className="font-editorial text-4xl font-bold tracking-tight text-text-primary sm:text-6xl sm:leading-[1.15]">
+            Turn any sermon into clips <span className="text-pulse-gold italic font-normal">people actually watch.</span>
           </h1>
 
-          <p className="mx-auto mt-6 max-w-2xl text-base leading-relaxed text-text-secondary sm:text-lg font-sans">
-            Paste any YouTube sermon link. Dabar automatically transcribes the audio, detects key teaching moments, and slices ready-to-share video clips in seconds.
+          <p className="mx-auto max-w-xl text-base leading-relaxed text-text-secondary sm:text-lg font-sans">
+            Paste a sermon video link. Get instant key moments, exact transcript quotes, and ready-to-share vertical clips for Reels, Shorts, and TikTok.
           </p>
 
-          {/* Interactive Acoustic Distillation Waveform Ribbon */}
-          <div className="my-8 flex items-center justify-center gap-1 sm:gap-1.5 py-4 px-6 rounded-2xl border border-signal-border/80 bg-signal-bg shadow-inner">
-            {[40, 65, 30, 85, 95, 45, 75, 100, 60, 90, 50, 80, 100, 70, 40, 90, 60, 85, 35, 75, 95, 50, 30, 60].map((h, i) => (
-              <motion.div
-                key={i}
-                animate={{ scaleY: [0.3, 1, 0.4] }}
-                transition={{
-                  repeat: Infinity,
-                  repeatType: "reverse",
-                  duration: 0.8 + (i % 4) * 0.2,
-                }}
-                style={{ height: `${h}%` }}
-                className={`w-1 sm:w-1.5 rounded-full ${
-                  i >= 7 && i <= 14 ? "bg-pulse-gold shadow-pulse" : "bg-signal-border/90 opacity-60"
-                }`}
-              />
-            ))}
-            <div className="ml-3 flex items-center gap-1.5 rounded-md bg-pulse-gold/10 px-2.5 py-1 font-mono text-[11px] font-bold text-pulse-gold border border-pulse-gold/30">
-              <Disc size={12} className="animate-spin" />
-              <span>CLIP DETECTED</span>
-            </div>
-          </div>
-
-          {/* INPUT FORM */}
+          {/* URL INPUT DECK */}
           <form
-            className="mx-auto mt-8 flex max-w-3xl flex-col gap-3 rounded-2xl border border-signal-border bg-signal-bg p-2.5 shadow-signal transition-colors focus-within:border-pulse-gold sm:flex-row"
+            className="mx-auto mt-6 flex max-w-2xl flex-col gap-3 rounded-2xl border border-signal-border bg-signal-bg p-2 shadow-signal focus-within:border-pulse-gold sm:flex-row"
             onSubmit={handleSubmit}
           >
             <label className="relative flex-1">
@@ -121,8 +88,8 @@ export default function Home() {
               <input
                 value={url}
                 onChange={(event) => setUrl(event.target.value)}
-                placeholder="Paste YouTube sermon URL (e.g. https://youtube.com/watch?v=...)"
-                className="h-12 w-full rounded-xl bg-signal-panel pl-11 pr-4 text-sm font-medium text-text-primary outline-none transition placeholder:text-text-muted focus:bg-signal-card"
+                placeholder="Paste YouTube sermon link..."
+                className="h-12 w-full rounded-xl bg-signal-panel pl-11 pr-4 text-sm font-medium text-text-primary outline-none transition placeholder:text-text-muted"
               />
             </label>
             <Button type="submit" variant="gold" className="h-12 whitespace-nowrap px-7 text-sm font-bold shadow-pulse">
@@ -132,21 +99,21 @@ export default function Home() {
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-2">
-                  Extract Sermon Clips <ArrowRight size={16} />
+                  Extract Clips <ArrowRight size={16} />
                 </span>
               )}
             </Button>
           </form>
 
-          {/* Sample Buttons */}
-          <div className="mt-4 flex flex-wrap items-center justify-center gap-2 font-mono text-xs text-text-muted">
-            <span>Try sample:</span>
+          {/* Sample Presets */}
+          <div className="flex flex-wrap items-center justify-center gap-2 font-mono text-xs text-text-muted pt-2">
+            <span>Try a sample:</span>
             {sampleUrls.map((sample) => (
               <button
                 key={sample.url}
                 type="button"
                 onClick={() => setUrl(sample.url)}
-                className="rounded-lg border border-signal-border bg-signal-card px-2.5 py-1 text-text-secondary transition-colors hover:border-pulse-gold hover:text-pulse-gold"
+                className="rounded-lg border border-signal-border bg-signal-bg px-3 py-1 text-text-secondary transition-colors hover:border-pulse-gold hover:text-pulse-gold"
               >
                 "{sample.label}"
               </button>
@@ -154,106 +121,81 @@ export default function Home() {
           </div>
 
           {error && (
-            <div className="mx-auto mt-4 max-w-xl rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs font-semibold text-red-400">
+            <div className="mx-auto max-w-xl rounded-xl border border-red-500/30 bg-red-500/10 p-3 font-mono text-xs font-semibold text-red-400">
               {error}
             </div>
           )}
         </div>
       </motion.section>
 
-      {/* FEATURE SEQUENCE */}
-      <section className="mx-auto max-w-6xl">
-        <div className="mb-10 text-center">
-          <p className="font-mono text-xs font-bold uppercase tracking-[0.2em] text-pulse-gold">WORKFLOW</p>
-          <h2 className="mt-2 font-display text-2xl font-bold text-text-primary sm:text-3xl">
-            From Pulpit Audio to Shareable Clips
+      {/* HOW IT WORKS WORKFLOW */}
+      <section className="mx-auto max-w-5xl">
+        <div className="mb-8 text-center">
+          <p className="font-mono text-xs font-bold uppercase tracking-wider text-pulse-gold">SIMPLE 3-STEP WORKFLOW</p>
+          <h2 className="mt-1.5 font-display text-2xl font-bold text-text-primary sm:text-3xl">
+            From Full Message to Shareable Clips
           </h2>
         </div>
 
-        <motion.div
-          initial="hidden"
-          whileInView="show"
-          viewport={{ once: true }}
-          variants={{
-            hidden: { opacity: 0 },
-            show: { opacity: 1, transition: { staggerChildren: 0.15 } },
-          }}
-          className="grid grid-cols-1 gap-6 md:grid-cols-3"
-        >
-          <motion.div
-            variants={{ hidden: { opacity: 0, y: 15 }, show: { opacity: 1, y: 0 } }}
-            whileHover={{ y: -4 }}
-            className="rounded-2xl border border-signal-border bg-signal-panel p-6 shadow-signal transition-colors duration-200 hover:border-pulse-gold/40"
-          >
-            <div className="grid h-10 w-10 place-items-center rounded-xl border border-pulse-gold/30 bg-pulse-gold/10 text-pulse-gold">
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
+          <div className="rounded-2xl border border-signal-border bg-signal-panel p-6 shadow-signal transition-transform hover:-translate-y-1">
+            <div className="grid h-10 w-10 place-items-center rounded-xl border border-signal-border bg-signal-bg text-pulse-gold">
               <Zap size={20} />
             </div>
-            <h3 className="mt-4 font-display text-lg font-bold text-text-primary">1. High-Precision Transcription</h3>
+            <h3 className="mt-4 font-display text-lg font-bold text-text-primary">1. Paste Sermon Link</h3>
             <p className="mt-2 text-xs leading-relaxed text-text-secondary font-sans">
-              Transcribes sermon audio with exact punctuation and precise segment timestamps.
+              Provide any sermon URL from YouTube. Dabar processes the audio and generates an exact transcript with timestamps.
             </p>
-          </motion.div>
+          </div>
 
-          <motion.div
-            variants={{ hidden: { opacity: 0, y: 15 }, show: { opacity: 1, y: 0 } }}
-            whileHover={{ y: -4 }}
-            className="rounded-2xl border border-signal-border bg-signal-panel p-6 shadow-signal transition-colors duration-200 hover:border-pulse-gold/40"
-          >
-            <div className="grid h-10 w-10 place-items-center rounded-xl border border-pulse-amber/30 bg-pulse-amber/10 text-pulse-amber">
+          <div className="rounded-2xl border border-signal-border bg-signal-panel p-6 shadow-signal transition-transform hover:-translate-y-1">
+            <div className="grid h-10 w-10 place-items-center rounded-xl border border-signal-border bg-signal-bg text-pulse-amber">
               <Sparkles size={20} />
             </div>
-            <h3 className="mt-4 font-display text-lg font-bold text-text-primary">2. Key Moment Mining</h3>
+            <h3 className="mt-4 font-display text-lg font-bold text-text-primary">2. Review Key Moments</h3>
             <p className="mt-2 text-xs leading-relaxed text-text-secondary font-sans">
-              Identifies high-impact quotes, core teaching points, and altar calls for 30–90 second clip moments.
+              Browse automatically extracted preaching quotes, key points, and conviction moments ready for social sharing.
             </p>
-          </motion.div>
+          </div>
 
-          <motion.div
-            variants={{ hidden: { opacity: 0, y: 15 }, show: { opacity: 1, y: 0 } }}
-            whileHover={{ y: -4 }}
-            className="rounded-2xl border border-signal-border bg-signal-panel p-6 shadow-signal transition-colors duration-200 hover:border-pulse-gold/40"
-          >
-            <div className="grid h-10 w-10 place-items-center rounded-xl border border-pulse-cyan/30 bg-pulse-cyan/10 text-pulse-cyan">
+          <div className="rounded-2xl border border-signal-border bg-signal-panel p-6 shadow-signal transition-transform hover:-translate-y-1">
+            <div className="grid h-10 w-10 place-items-center rounded-xl border border-signal-border bg-signal-bg text-pulse-cyan">
               <Scissors size={20} />
             </div>
-            <h3 className="mt-4 font-display text-lg font-bold text-text-primary">3. Instant Clip Generation</h3>
+            <h3 className="mt-4 font-display text-lg font-bold text-text-primary">3. Export & Share Clips</h3>
             <p className="mt-2 text-xs leading-relaxed text-text-secondary font-sans">
-              Generates ready-to-share MP4 video clips or instant timestamped social share links.
+              Download vertical 9:16 MP4 video clips or share timestamped video links directly to WhatsApp, Instagram, or YouTube.
             </p>
-          </motion.div>
-        </motion.div>
+          </div>
+        </div>
       </section>
 
-      {/* RECENT SERMONS CAROUSEL */}
-      <section className="mx-auto max-w-6xl">
-        <div className="mb-6 flex items-end justify-between gap-4">
+      {/* RECENT SERMONS ARCHIVE REEL */}
+      <section className="mx-auto max-w-5xl">
+        <div className="mb-6 flex items-center justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-pulse-gold animate-pulse" />
-              <h2 className="font-display text-2xl font-bold text-text-primary">Recent Sermons</h2>
-            </div>
-            <p className="mt-1 text-xs font-mono text-text-muted">Indexed preachings in your sermon repository.</p>
+            <h2 className="font-display text-2xl font-bold text-text-primary">Recent Sermon Projects</h2>
+            <p className="mt-0.5 text-xs text-text-muted">Preachings indexed in your studio repository.</p>
           </div>
           <Button variant="outline" size="sm" onClick={() => navigate("/archive")}>
-            View Full Archive
+            View All Projects
           </Button>
         </div>
 
         {isLoadingSermons ? (
-          <div className="rounded-2xl border border-signal-border bg-signal-panel p-10 text-center font-mono text-xs font-semibold text-text-secondary">
-            Loading recent sermons from server...
+          <div className="rounded-2xl border border-signal-border bg-signal-panel p-10 text-center font-mono text-xs text-text-secondary">
+            Loading recent sermons...
           </div>
         ) : sermons.length > 0 ? (
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {sermons.map((sermon) => (
-              <motion.article
+              <article
                 key={sermon.id}
-                whileHover={{ y: -3 }}
                 onClick={() => navigate(`/processing/${sermon.id}`)}
-                className="group cursor-pointer rounded-2xl border border-signal-border bg-signal-panel p-5 shadow-signal transition-colors duration-200 hover:border-pulse-gold/50 hover:bg-signal-card"
+                className="group cursor-pointer rounded-2xl border border-signal-border bg-signal-panel p-5 shadow-signal transition-all duration-200 hover:-translate-y-1 hover:border-pulse-gold/50"
               >
                 <div className="flex items-center justify-between">
-                  <span className="rounded-md border border-pulse-gold/30 bg-pulse-gold/10 px-2.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-pulse-gold">
+                  <span className="rounded-md border border-signal-border bg-signal-bg px-2.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-pulse-gold">
                     {sermon.status}
                   </span>
                   <span className="font-mono text-xs text-text-muted">
@@ -261,25 +203,25 @@ export default function Home() {
                   </span>
                 </div>
 
-                <h3 className="mt-3 font-display text-lg font-bold leading-snug text-text-primary transition-colors group-hover:text-pulse-gold">
+                <h3 className="mt-3 font-editorial text-lg font-bold leading-snug text-text-primary transition-colors group-hover:text-pulse-gold">
                   {sermon.title || sermon.youtube_url}
                 </h3>
                 <p className="mt-3 font-mono text-xs text-text-muted truncate border-t border-signal-border/50 pt-2.5">
                   {sermon.youtube_url}
                 </p>
-              </motion.article>
+              </article>
             ))}
           </div>
         ) : (
           <div className="rounded-2xl border border-signal-border bg-signal-panel p-10 text-center">
             <PlayCircle size={32} className="mx-auto text-pulse-gold/60" />
-            <p className="mt-3 font-display text-lg font-bold text-text-primary">No sermons in repository yet</p>
+            <p className="mt-3 font-display text-lg font-bold text-text-primary">No sermon projects yet</p>
             <p className="mt-1 text-xs text-text-muted">Paste a YouTube sermon link above to process your first message!</p>
           </div>
         )}
       </section>
-
     </div>
   );
 }
+
 

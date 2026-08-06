@@ -336,6 +336,18 @@ def _group_whisper_segments(whisper_segments):
     return grouped
 
 
+
+def _fetch_youtube_title_fallback(youtube_url):
+
+    try:
+        resp = requests.get(f"https://www.youtube.com/oembed?url={youtube_url}&format=json", timeout=5)
+        if resp.ok:
+            return resp.json().get("title")
+    except Exception:
+        pass
+    return None
+
+
 def _download_full_audio(sermon):
     """Download lightweight audio-only file (~5-15MB) for Whisper transcription."""
     tmp_dir = _sermon_tmp_dir(sermon.id)
@@ -351,19 +363,30 @@ def _download_full_audio(sermon):
         }],
         "extractor_args": {
             "youtube": {
-                "player_client": ["ios", "mweb", "android"],
+                "player_client": ["android_vr", "web_creator", "tv", "ios_embedded"],
+                "player_skip": ["web", "mweb"],
             }
+        },
+        "http_headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
         },
         "nocheckcertificate": True,
         "quiet": True,
         "no_warnings": True,
     }
 
+    try:
+        with yt_dlp.YoutubeDL(options) as ydl:
+            info = ydl.extract_info(sermon.youtube_url, download=True)
+            sermon.title = info.get("title") or sermon.title
+    except Exception as e:
+        logger.warning("yt_dlp audio download warning: %s. Attempting oembed title fallback...", str(e))
+        fallback_title = _fetch_youtube_title_fallback(sermon.youtube_url)
+        if fallback_title:
+            sermon.title = fallback_title
 
-    with yt_dlp.YoutubeDL(options) as ydl:
-        info = ydl.extract_info(sermon.youtube_url, download=True)
-
-    sermon.title = info.get("title") or sermon.title
     sermon.save(update_fields=["title", "updated_at"])
 
     audio_files = list(tmp_dir.glob("audio.*"))
@@ -371,6 +394,7 @@ def _download_full_audio(sermon):
         raise FileNotFoundError(f"Audio file failed to download for sermon {sermon.id}")
 
     return audio_files[0]
+s[0]
 
 
 @shared_task(bind=True)
@@ -400,12 +424,13 @@ def process_sermon(self, sermon_id):
 
         if youtube_transcript:
             try:
-                with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True, "nocheckcertificate": True}) as ydl:
-                    info = ydl.extract_info(sermon.youtube_url, download=False)
-                    sermon.title = info.get("title") or sermon.title
+                fallback_title = _fetch_youtube_title_fallback(sermon.youtube_url)
+                if fallback_title:
+                    sermon.title = fallback_title
                     sermon.save(update_fields=["title", "updated_at"])
             except Exception as e:
                 logger.warning("Could not retrieve video metadata: %s", str(e))
+
 
             logger.info("Grouping YouTube subtitle segments into 35-45s sermon blocks...")
             grouped_segments = _group_youtube_transcript(youtube_transcript)

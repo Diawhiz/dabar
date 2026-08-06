@@ -152,6 +152,10 @@ def _fallback_heuristic_highlights(timestamped_segments):
     return selected
 
 
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+
 def _detect_highlights_with_llm(timestamped_segments, sermon_title=None):
     """
     Use llama-3.3-70b-versatile via Groq to identify key moments in a sermon.
@@ -162,8 +166,14 @@ def _detect_highlights_with_llm(timestamped_segments, sermon_title=None):
 
     api_key = config("GROQ_API_KEY", default=None)
     if api_key:
+        # Sample segments if transcript is very long to prevent payload overflow & socket resets
+        target_segs = timestamped_segments
+        if len(timestamped_segments) > 80:
+            step = len(timestamped_segments) / 80.0
+            target_segs = [timestamped_segments[int(i * step)] for i in range(80)]
+
         lines = []
-        for seg in timestamped_segments:
+        for seg in target_segs:
             s_sec = round(float(seg["start"]), 1)
             e_sec = round(float(seg["end"]), 1)
             s_min, s_rem = divmod(int(s_sec), 60)
@@ -172,6 +182,9 @@ def _detect_highlights_with_llm(timestamped_segments, sermon_title=None):
             lines.append(f"{ts} {seg['text']}")
 
         timestamped_text = "\n\n".join(lines)
+        if len(timestamped_text) > 14000:
+            timestamped_text = timestamped_text[:14000] + "\n\n[Transcript sampled for length]"
+
         sermon_ctx = f"for the sermon '{sermon_title}'" if sermon_title else ""
 
         headers = {
@@ -209,7 +222,12 @@ def _detect_highlights_with_llm(timestamped_segments, sermon_title=None):
 
         try:
             logger.info("Calling Groq LLM (llama-3.3-70b-versatile) for highlight detection...")
-            response = requests.post(GROQ_COMPLETIONS_URL, headers=headers, json=data, timeout=60)
+            
+            session = requests.Session()
+            retries = Retry(total=2, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
+            session.mount("https://", HTTPAdapter(max_retries=retries))
+
+            response = session.post(GROQ_COMPLETIONS_URL, headers=headers, json=data, timeout=35)
             if response.ok:
                 content = response.json()["choices"][0]["message"]["content"]
                 result = json.loads(content)
@@ -218,7 +236,6 @@ def _detect_highlights_with_llm(timestamped_segments, sermon_title=None):
                 parsed_highlights = []
                 for hl in raw_highlights:
                     hl_t = hl.get("title")
-                    # Enforce context-accurate title
                     if not hl_t or hl_t.lower() in ["clip 1", "key moment", "short clip title", "main point"]:
                         hl_t = None
                     parsed_highlights.append({
@@ -238,6 +255,7 @@ def _detect_highlights_with_llm(timestamped_segments, sermon_title=None):
 
     logger.info("Using heuristic highlight detector fallback...")
     return _fallback_heuristic_highlights(timestamped_segments)
+
 
 
 

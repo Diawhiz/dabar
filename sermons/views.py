@@ -88,8 +88,23 @@ class SermonTranscriptDetailView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
+        # Guarantee at least 3-5 highlights exist in response
+        if transcript.segments:
+            has_hl = any(seg.get("is_highlight") for seg in transcript.segments)
+            if not has_hl:
+                from .tasks import _fallback_heuristic_highlights
+                hl_moments = _fallback_heuristic_highlights(transcript.segments)
+                for seg in transcript.segments:
+                    for hl in hl_moments:
+                        if abs(float(seg.get("start", 0)) - hl["start"]) < 10:
+                            seg["is_highlight"] = True
+                            seg["highlight_title"] = hl["title"]
+                            break
+                transcript.save(update_fields=["segments"])
+
         serializer = TranscriptSerializer(transcript)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
 
 
 class ClipDownloadView(APIView):

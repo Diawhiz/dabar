@@ -1,90 +1,110 @@
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400..700;1,400..700&family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:ital,wght@0,400..800;1,400..800&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ── Design Tokens ──────────────────────────────────── */
 :root {
-  /* Light Theme Tokens */
-  --color-bg: #F8FAFC;
-  --color-panel: #FFFFFF;
-  --color-card: #F1F5F9;
-  --color-border: #E2E8F0;
-  --color-hover: #E2E8F0;
-  --color-gold: #D97706;
-  --color-amber: #EA580C;
-  --color-cyan: #0284C7;
-  --color-violet: #7C3AED;
-  --color-text-primary: #0F172A;
-  --color-text-secondary: #475569;
-  --color-text-muted: #64748B;
-  --shadow-signal: 0 10px 30px -10px rgba(0, 0, 0, 0.06);
-  --shadow-pulse: 0 0 20px rgba(217, 119, 6, 0.2);
-  --bg-pattern: radial-gradient(rgba(217, 119, 6, 0.08) 1px, transparent 1px);
+  --ink: #14110F;
+  --paper: #F7F3EA;
+  --ember: #E4572E;
+  --muted: #5C574E;
+  --surface: #EDE8DC;
+  --border: #D6D0C4;
 }
 
-.dark {
-  /* Dark Theme Tokens */
-  --color-bg: #090A0F;
-  --color-panel: #12151E;
-  --color-card: #1A1E2B;
-  --color-border: #252B3B;
-  --color-hover: #222736;
-  --color-gold: #F59E0B;
-  --color-amber: #EA580C;
-  --color-cyan: #06B6D4;
-  --color-violet: #8B5CF6;
-  --color-text-primary: #F8FAFC;
-  --color-text-secondary: #94A3B8;
-  --color-text-muted: #64748B;
-  --shadow-signal: 0 20px 40px -15px rgba(0, 0, 0, 0.7);
-  --shadow-pulse: 0 0 25px rgba(245, 158, 11, 0.25);
-  --bg-pattern: radial-gradient(rgba(245, 158, 11, 0.035) 1px, transparent 1px);
-}
-
+/* ── Base Layer ──────────────────────────────────────── */
 @layer base {
   body {
-    @apply bg-signal-bg text-text-primary font-sans antialiased;
-    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
-    background-image: var(--bg-pattern);
-    background-size: 32px 32px;
+    font-feature-settings: "cv02", "cv03", "cv11";
   }
 
-  h1, h2, h3, h4, h5, h6 {
-    @apply font-display tracking-tight text-text-primary;
+  h1, h2, h3, h4 {
+    @apply font-display tracking-tight text-ink;
+  }
+
+  /* Focus ring — ember, visible only on keyboard nav */
+  *:focus-visible {
+    outline: 2px solid var(--ember);
+    outline-offset: 2px;
+  }
+
+  /* Selection */
+  ::selection {
+    background-color: var(--ember);
+    color: #fff;
   }
 }
 
-/* Custom Selection Highlight */
-::selection {
-  background-color: var(--color-gold);
-  color: #FFFFFF;
-}
-
-
-/* Custom Signal Scrollbar */
+/* ── Scrollbar ───────────────────────────────────────── */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
-
 ::-webkit-scrollbar-track {
-  background: var(--color-bg);
+  background: var(--paper);
 }
-
 ::-webkit-scrollbar-thumb {
-  background: var(--color-border);
-  border-radius: 4px;
+  background: var(--border);
+  border-radius: 3px;
 }
-
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-gold);
+  background: var(--muted);
 }
 
-/* Focus Ring Utility */
-*:focus-visible {
-  outline: 2px solid var(--color-gold) !important;
-  outline-offset: 2px !important;
+/* ── Reel Strip scroll container ─────────────────────── */
+.reel-strip {
+  display: flex;
+  gap: 1.25rem;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scroll-padding-left: 1rem;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+  padding-bottom: 0.5rem;
+}
+.reel-strip > * {
+  scroll-snap-align: start;
+  flex-shrink: 0;
 }
 
+/* ── Waveform bars animation ─────────────────────────── */
+@keyframes wave-pulse {
+  0%, 100% { transform: scaleY(0.3); }
+  50% { transform: scaleY(1); }
+}
 
+.wave-bar {
+  animation: wave-pulse 1.2s ease-in-out infinite;
+  transform-origin: bottom;
+}
+
+/* Stagger each bar */
+.wave-bar:nth-child(2n) { animation-delay: 0.1s; }
+.wave-bar:nth-child(3n) { animation-delay: 0.25s; }
+.wave-bar:nth-child(5n) { animation-delay: 0.4s; }
+.wave-bar:nth-child(7n) { animation-delay: 0.15s; }
+
+/* ── Reduced motion ──────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .wave-bar {
+    transform: scaleY(0.6);
+  }
+}
+
+/* ── Film sprocket holes for reel strip ──────────────── */
+.sprocket-edge {
+  background-image: repeating-linear-gradient(
+    to right,
+    var(--border) 0px,
+    var(--border) 8px,
+    transparent 8px,
+    transparent 24px
+  );
+  height: 6px;
+}

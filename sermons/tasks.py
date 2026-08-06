@@ -266,6 +266,11 @@ def _detect_highlights_with_llm(timestamped_segments, sermon_title=None):
 
 
 
+import re
+
+FILLER_PATTERN = re.compile(r'\[music\]|>>\s*\[music\]|>>|\[applause\]|\[cheering\]|\[laughter\]', re.IGNORECASE)
+
+
 def _group_youtube_transcript(yt_transcript):
     grouped = []
     current_text = []
@@ -282,20 +287,21 @@ def _group_youtube_transcript(yt_transcript):
             d_val = float(getattr(item, "duration", 0.0))
             t_val = str(getattr(item, "text", ""))
 
+        cleaned_snippet = FILLER_PATTERN.sub('', t_val).replace("\n", " ").strip()
+        if not cleaned_snippet:
+            continue
+
         if current_start is None:
             current_start = s_val
 
-        cleaned_snippet = t_val.replace("\n", " ").strip()
-        if cleaned_snippet:
-            current_text.append(cleaned_snippet)
+        current_text.append(cleaned_snippet)
         current_end = s_val + d_val
 
-        text_so_far = " ".join(current_text)
-        if (current_end - current_start >= 35.0) and text_so_far.endswith((".", "?", "!", ";")):
+        if (current_end - current_start >= 35.0) or len(current_text) >= 12:
             grouped.append({
                 "start": current_start,
                 "end": current_end,
-                "text": text_so_far,
+                "text": " ".join(current_text),
             })
             current_text = []
             current_start = None
@@ -322,21 +328,21 @@ def _group_whisper_segments(whisper_segments):
         end_t = float(seg.get("end", 0.0))
         text = str(seg.get("text", "")).strip()
 
-        if not text:
+        cleaned_snippet = FILLER_PATTERN.sub('', text).replace("\n", " ").strip()
+        if not cleaned_snippet:
             continue
 
         if current_start is None:
             current_start = start_t
 
-        current_text.append(text)
+        current_text.append(cleaned_snippet)
         current_end = end_t
 
-        text_so_far = " ".join(current_text)
-        if (current_end - current_start >= 35.0) and text_so_far.endswith((".", "?", "!", ";")):
+        if (current_end - current_start >= 35.0) or len(current_text) >= 12:
             grouped.append({
                 "start": current_start,
                 "end": current_end,
-                "text": text_so_far,
+                "text": " ".join(current_text),
             })
             current_text = []
             current_start = None
@@ -349,41 +355,6 @@ def _group_whisper_segments(whisper_segments):
         })
 
     return grouped
-
-
-def _generate_failsafe_transcript(sermon_title):
-    """
-    Fail-safe transcript generator used when YouTube blocks both subtitle API & audio stream downloads on cloud servers.
-    Generates a structured, high-impact sermon transcript to ensure 100% uptime and demo success.
-    """
-    title = sermon_title or "Key Preaching Message"
-    return [
-        {
-            "start": 0.0,
-            "end": 45.0,
-            "text": f"Welcome everyone. Today we are stepping into a powerful message titled '{title}'. Open your hearts because God is preparing something extraordinary for this season.",
-        },
-        {
-            "start": 45.0,
-            "end": 90.0,
-            "text": "When you look at the promises of God, remember that depth always precedes visibility. Before God raises you up publicly, He builds your foundation in private prayer and faithfulness.",
-        },
-        {
-            "start": 90.0,
-            "end": 135.0,
-            "text": "Do not despise the season of preparation. The trial you are facing right now is not meant to break you—it is refining your faith, sharpening your discernment, and anchoring your soul.",
-        },
-        {
-            "start": 135.0,
-            "end": 180.0,
-            "text": "God is moving in your family, in your calling, and in your purpose. Stand firm, hold fast to His promises, and watch how He transforms every obstacle into a testimony of His glory.",
-        },
-        {
-            "start": 180.0,
-            "end": 225.0,
-            "text": "Father, we pray for everyone listening right now. Grant them wisdom, peace, and unshakeable confidence in Your Word. In Jesus' mighty name, Amen.",
-        },
-    ]
 
 
 def _fetch_youtube_title_fallback(youtube_url):
@@ -478,26 +449,13 @@ def process_sermon(sermon_id):
         if yt_id:
             try:
                 logger.info("Attempting to fetch YouTube transcript for video %s...", yt_id)
-                if hasattr(YouTubeTranscriptApi, "list_transcripts"):
-                    try:
-                        t_list = YouTubeTranscriptApi.list_transcripts(yt_id)
-                        try:
-                            t = t_list.find_transcript(["en", "en-US", "en-GB"])
-                            youtube_transcript = t.fetch()
-                        except Exception:
-                            for t in t_list:
-                                youtube_transcript = t.fetch()
-                                break
-                    except Exception as list_err:
-                        logger.info("list_transcripts fallback: %s", str(list_err))
-
-                if not youtube_transcript and hasattr(YouTubeTranscriptApi, "get_transcript"):
-                    try:
-                        youtube_transcript = YouTubeTranscriptApi.get_transcript(yt_id, languages=["en", "en-US"])
-                    except Exception:
-                        youtube_transcript = YouTubeTranscriptApi.get_transcript(yt_id)
+                api = YouTubeTranscriptApi()
+                try:
+                    youtube_transcript = api.fetch(yt_id, languages=["en", "en-US", "en-GB"])
+                except Exception:
+                    youtube_transcript = api.fetch(yt_id)
             except Exception as e:
-                logger.info("YouTube transcript unavailable for %s: %s. Using Whisper audio transcription.", yt_id, str(e))
+                logger.info("YouTubeTranscriptApi fetch warning for %s: %s. Using Whisper audio transcription.", yt_id, str(e))
 
         grouped_segments = []
 
@@ -515,31 +473,24 @@ def process_sermon(sermon_id):
 
         else:
             # Whisper Audio Transcription Pipeline
-            try:
-                logger.info("Downloading lightweight audio file for sermon %s...", sermon.id)
-                audio_path = _download_full_audio(sermon)
+            logger.info("Downloading lightweight audio file for sermon %s...", sermon.id)
+            audio_path = _download_full_audio(sermon)
 
-                sermon.status = Sermon.Status.TRANSCRIBING
-                sermon.save(update_fields=["status", "updated_at"])
+            sermon.status = Sermon.Status.TRANSCRIBING
+            sermon.save(update_fields=["status", "updated_at"])
 
-                logger.info("Transcribing audio via Groq Whisper (whisper-large-v3-turbo)...")
-                transcript_record = transcribe_sermon(sermon.id, audio_path=audio_path)
+            logger.info("Transcribing audio via Groq Whisper (whisper-large-v3-turbo)...")
+            transcript_record = transcribe_sermon(sermon.id, audio_path=audio_path)
 
-                if transcript_record.status == Transcript.Status.COMPLETE and transcript_record.segments:
-                    whisper_segments = transcript_record.segments
-                    grouped_segments = _group_whisper_segments(whisper_segments)
-            except Exception as download_err:
-                logger.warning("Audio download/transcription failed: %s. Using fail-safe transcript generator...", str(download_err))
+            if transcript_record.status == Transcript.Status.COMPLETE and transcript_record.segments:
+                whisper_segments = transcript_record.segments
+                grouped_segments = _group_whisper_segments(whisper_segments)
+            else:
+                raise RuntimeError("Whisper audio transcription returned no segments.")
 
-        # Fail-safe fallback if no transcript segments could be extracted by any pipeline
         if not grouped_segments:
-            fallback_title = _fetch_youtube_title_fallback(sermon.youtube_url)
-            if fallback_title:
-                sermon.title = fallback_title
-                sermon.save(update_fields=["title", "updated_at"])
-            
-            logger.info("Using fail-safe transcript synthesizer for sermon %s...", sermon.id)
-            grouped_segments = _generate_failsafe_transcript(sermon.title)
+            raise RuntimeError("No transcript segments could be extracted from this sermon.")
+
 
         # Generate full transcript text
         full_text = " ".join([seg["text"] for seg in grouped_segments])

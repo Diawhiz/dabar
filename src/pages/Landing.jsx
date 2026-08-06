@@ -4,7 +4,7 @@ import Waveform from "../components/Waveform.jsx";
 
 export default function Landing() {
   return (
-    <div className="min-h-screen bg-paper text-ink font-body">
+    <div className="min-h-screen bg-paper text-ink font-body overflow-x-hidden">
       {/* Header bar */}
       <header className="mx-auto flex max-w-6xl items-center justify-between px-5 py-6 sm:px-8">
         <span className="font-display text-2xl font-bold tracking-tight">DABAR</span>

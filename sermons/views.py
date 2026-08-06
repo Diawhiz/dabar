@@ -184,12 +184,12 @@ class ClipDownloadView(APIView):
             headers_dict = info.get("http_headers") or {}
             headers_str = "".join([f"{k}: {v}\r\n" for k, v in headers_dict.items()])
 
-            # 2. Ultra-fast lossless stream copy (-c copy) directly from YouTube HTTP streams with headers
+            ffmpeg_bin = shutil.which("ffmpeg") or "ffmpeg"
             if len(requested_formats) >= 2:
                 v_url = requested_formats[0]["url"]
                 a_url = requested_formats[1]["url"]
                 cmd = [
-                    "ffmpeg", "-y",
+                    ffmpeg_bin, "-y",
                     "-headers", headers_str,
                     "-ss", str(start_f), "-to", str(end_f), "-i", v_url,
                     "-headers", headers_str,
@@ -201,7 +201,7 @@ class ClipDownloadView(APIView):
             else:
                 stream_url = info.get("url")
                 cmd = [
-                    "ffmpeg", "-y",
+                    ffmpeg_bin, "-y",
                     "-headers", headers_str,
                     "-ss", str(start_f), "-to", str(end_f), "-i", stream_url,
                     "-c", "copy",
@@ -210,6 +210,7 @@ class ClipDownloadView(APIView):
                 ]
 
             subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
 
 
 

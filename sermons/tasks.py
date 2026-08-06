@@ -34,14 +34,20 @@ def _cleanup_tmp_dir(sermon_id):
 
 
 def _extract_youtube_id(url):
-    parsed = urlparse(url)
+    if not url:
+        return None
+    url_str = str(url).strip()
+    if not url_str.startswith(("http://", "https://")):
+        url_str = "https://" + url_str
+    parsed = urlparse(url_str)
     if parsed.hostname in {"youtu.be", "www.youtu.be"}:
         return parsed.path.strip("/")
     if parsed.hostname in {"youtube.com", "www.youtube.com", "m.youtube.com"}:
         if parsed.path == "/watch":
             return parse_qs(parsed.query).get("v", [None])[0]
         if parsed.path.startswith(("/shorts/", "/embed/")):
-            return parsed.path.split("/")[2]
+            parts = [p for p in parsed.path.split("/") if p]
+            return parts[1] if len(parts) > 1 else None
     return None
 
 
@@ -267,13 +273,22 @@ def _group_youtube_transcript(yt_transcript):
     current_end = 0.0
 
     for item in yt_transcript:
+        if isinstance(item, dict):
+            s_val = float(item.get("start", 0.0))
+            d_val = float(item.get("duration", 0.0))
+            t_val = str(item.get("text", ""))
+        else:
+            s_val = float(getattr(item, "start", 0.0))
+            d_val = float(getattr(item, "duration", 0.0))
+            t_val = str(getattr(item, "text", ""))
+
         if current_start is None:
-            current_start = float(item.start)
-        
-        cleaned_snippet = item.text.replace("\n", " ").strip()
+            current_start = s_val
+
+        cleaned_snippet = t_val.replace("\n", " ").strip()
         if cleaned_snippet:
             current_text.append(cleaned_snippet)
-        current_end = float(item.start) + float(item.duration)
+        current_end = s_val + d_val
 
         text_so_far = " ".join(current_text)
         if (current_end - current_start >= 35.0) and text_so_far.endswith((".", "?", "!", ";")):
@@ -396,8 +411,8 @@ def _download_full_audio(sermon):
     return audio_files[0]
 
 
-@shared_task(bind=True)
-def process_sermon(self, sermon_id):
+@shared_task
+def process_sermon(sermon_id):
     sermon = Sermon.objects.get(id=sermon_id)
 
     try:
@@ -411,11 +426,17 @@ def process_sermon(self, sermon_id):
         if yt_id:
             try:
                 logger.info("Attempting to fetch YouTube transcript for video %s...", yt_id)
-                api = YouTubeTranscriptApi()
-                try:
-                    youtube_transcript = api.fetch(yt_id, languages=["en"])
-                except Exception:
-                    youtube_transcript = api.fetch(yt_id)
+                if hasattr(YouTubeTranscriptApi, "get_transcript"):
+                    try:
+                        youtube_transcript = YouTubeTranscriptApi.get_transcript(yt_id, languages=["en"])
+                    except Exception:
+                        youtube_transcript = YouTubeTranscriptApi.get_transcript(yt_id)
+                elif hasattr(YouTubeTranscriptApi, "fetch"):
+                    api = YouTubeTranscriptApi()
+                    try:
+                        youtube_transcript = api.fetch(yt_id, languages=["en"])
+                    except Exception:
+                        youtube_transcript = api.fetch(yt_id)
             except Exception as e:
                 logger.info("YouTube transcript unavailable for %s: %s. Using Whisper audio transcription.", yt_id, str(e))
 

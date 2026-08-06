@@ -10,7 +10,7 @@ const navLinks = [
 
 export default function Shell() {
   return (
-    <div className="flex min-h-screen flex-col bg-paper text-ink font-body">
+    <div className="flex min-h-screen flex-col bg-paper text-ink font-body overflow-x-hidden">
       {/* Header */}
       <header className="sticky top-0 z-30 bg-paper/95 backdrop-blur-sm border-b border-border">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4 sm:px-8">
@@ -45,7 +45,7 @@ export default function Shell() {
       <Waveform mode="divider" className="mx-auto max-w-6xl px-5 sm:px-8" />
 
       {/* Main content */}
-      <main className="mx-auto w-full max-w-6xl flex-1 px-5 py-8 sm:px-8">
+      <main className="mx-auto w-full max-w-6xl flex-1 min-w-0 px-5 py-8 sm:px-8">
         <Outlet />
       </main>
 

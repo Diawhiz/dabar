@@ -123,9 +123,9 @@ class ClipDownloadView(APIView):
         try:
             import yt_dlp
 
-            # 1. Fetch direct YouTube stream HTTP URLs (takes <1 sec, zero video download)
+            # 1. Fetch direct YouTube stream HTTP URLs for highest quality up to 1080p
             options = {
-                "format": "bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+                "format": "bestvideo[height<=1080]+bestaudio/bestvideo+bestaudio/best",
                 "extractor_args": {
                     "youtube": {
                         "player_client": ["ios", "mweb", "android"],
@@ -142,7 +142,7 @@ class ClipDownloadView(APIView):
             out_mp4 = clip_dir / "clip.mp4"
             requested_formats = info.get("requested_formats")
 
-            # 2. Slice ONLY the requested seconds via ffmpeg directly over HTTP stream
+            # 2. Slice requested segment with high-quality x264/AAC re-encoding (crf 18) for exact frame cuts & crisp 1080p resolution
             if requested_formats and len(requested_formats) >= 2:
                 v_url = requested_formats[0]["url"]
                 a_url = requested_formats[1]["url"]
@@ -150,7 +150,12 @@ class ClipDownloadView(APIView):
                     "ffmpeg", "-y",
                     "-ss", str(start_f), "-to", str(end_f), "-i", v_url,
                     "-ss", str(start_f), "-to", str(end_f), "-i", a_url,
-                    "-c", "copy",
+                    "-c:v", "libx264",
+                    "-preset", "fast",
+                    "-crf", "18",
+                    "-c:a", "aac",
+                    "-b:a", "192k",
+                    "-avoid_negative_ts", "make_zero",
                     str(out_mp4)
                 ]
             else:
@@ -158,11 +163,17 @@ class ClipDownloadView(APIView):
                 cmd = [
                     "ffmpeg", "-y",
                     "-ss", str(start_f), "-to", str(end_f), "-i", stream_url,
-                    "-c", "copy",
+                    "-c:v", "libx264",
+                    "-preset", "fast",
+                    "-crf", "18",
+                    "-c:a", "aac",
+                    "-b:a", "192k",
+                    "-avoid_negative_ts", "make_zero",
                     str(out_mp4)
                 ]
 
             subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
 
             if not out_mp4.exists() or out_mp4.stat().st_size == 0:
                 raise FileNotFoundError("FFmpeg did not produce a valid MP4 clip")

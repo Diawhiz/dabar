@@ -394,7 +394,6 @@ def _download_full_audio(sermon):
         raise FileNotFoundError(f"Audio file failed to download for sermon {sermon.id}")
 
     return audio_files[0]
-s[0]
 
 
 @shared_task(bind=True)

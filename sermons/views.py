@@ -115,46 +115,55 @@ class ClipDownloadView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        import hashlib
         import uuid
+        from django.core.cache import cache
+
         clip_id = uuid.uuid4().hex[:12]
         clip_dir = TMP_CLIPS / clip_id
         clip_dir.mkdir(parents=True, exist_ok=True)
 
+        url_hash = hashlib.md5(youtube_url.encode("utf-8")).hexdigest()
+        cache_key = f"yt_stream_info_{url_hash}"
+
         try:
             import yt_dlp
 
-            # 1. Fetch direct YouTube stream HTTP URLs for highest quality up to 1080p
-            options = {
-                "format": "bestvideo[height<=1080]+bestaudio/bestvideo+bestaudio/best",
-                "extractor_args": {
-                    "youtube": {
-                        "player_client": ["ios", "mweb", "android"],
-                    }
-                },
-                "nocheckcertificate": True,
-                "quiet": True,
-                "no_warnings": True,
-            }
-
-            with yt_dlp.YoutubeDL(options) as ydl:
-                info = ydl.extract_info(youtube_url, download=False)
+            # 1. Fetch direct YouTube stream HTTP URLs (or retrieve from 2-hour cache for instant response)
+            info = cache.get(cache_key)
+            if not info:
+                options = {
+                    "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
+                    "extractor_args": {
+                        "youtube": {
+                            "player_client": ["ios", "mweb", "android"],
+                        }
+                    },
+                    "nocheckcertificate": True,
+                    "quiet": True,
+                    "no_warnings": True,
+                }
+                with yt_dlp.YoutubeDL(options) as ydl:
+                    info = ydl.extract_info(youtube_url, download=False)
+                if info:
+                    cache.set(cache_key, info, timeout=7200)
 
             out_mp4 = clip_dir / "clip.mp4"
-            requested_formats = info.get("requested_formats")
+            requested_formats = info.get("requested_formats") or []
+            headers_dict = info.get("http_headers") or {}
+            headers_str = "".join([f"{k}: {v}\r\n" for k, v in headers_dict.items()])
 
-            # 2. Slice requested segment with high-quality x264/AAC re-encoding (crf 18) for exact frame cuts & crisp 1080p resolution
-            if requested_formats and len(requested_formats) >= 2:
+            # 2. Ultra-fast lossless stream copy (-c copy) directly from YouTube HTTP streams with headers
+            if len(requested_formats) >= 2:
                 v_url = requested_formats[0]["url"]
                 a_url = requested_formats[1]["url"]
                 cmd = [
                     "ffmpeg", "-y",
+                    "-headers", headers_str,
                     "-ss", str(start_f), "-to", str(end_f), "-i", v_url,
+                    "-headers", headers_str,
                     "-ss", str(start_f), "-to", str(end_f), "-i", a_url,
-                    "-c:v", "libx264",
-                    "-preset", "fast",
-                    "-crf", "18",
-                    "-c:a", "aac",
-                    "-b:a", "192k",
+                    "-c", "copy",
                     "-avoid_negative_ts", "make_zero",
                     str(out_mp4)
                 ]
@@ -162,17 +171,15 @@ class ClipDownloadView(APIView):
                 stream_url = info.get("url")
                 cmd = [
                     "ffmpeg", "-y",
+                    "-headers", headers_str,
                     "-ss", str(start_f), "-to", str(end_f), "-i", stream_url,
-                    "-c:v", "libx264",
-                    "-preset", "fast",
-                    "-crf", "18",
-                    "-c:a", "aac",
-                    "-b:a", "192k",
+                    "-c", "copy",
                     "-avoid_negative_ts", "make_zero",
                     str(out_mp4)
                 ]
 
             subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
 
 
             if not out_mp4.exists() or out_mp4.stat().st_size == 0:

@@ -368,43 +368,61 @@ def _download_full_audio(sermon):
     tmp_dir = _sermon_tmp_dir(sermon.id)
     tmp_dir.mkdir(parents=True, exist_ok=True)
 
+    ffmpeg_bin = shutil.which("ffmpeg")
+
     options = {
-        "format": "ba/ba*/bestaudio[ext=m4a]/bestaudio",
+        "format": "bestaudio/bestaudio[ext=m4a]/best",
         "outtmpl": str(tmp_dir / "audio.%(ext)s"),
-        "postprocessors": [{
-            "key": "FFmpegExtractAudio",
-            "preferredcodec": "m4a",
-            "preferredquality": "96",
-        }],
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["android_vr", "web_creator", "tv", "ios_embedded"],
-                "player_skip": ["web", "mweb"],
-            }
-        },
-        "http_headers": {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.5",
-        },
         "nocheckcertificate": True,
         "quiet": True,
         "no_warnings": True,
     }
+    if ffmpeg_bin:
+        options["ffmpeg_location"] = ffmpeg_bin
 
     try:
         with yt_dlp.YoutubeDL(options) as ydl:
             info = ydl.extract_info(sermon.youtube_url, download=True)
-            sermon.title = info.get("title") or sermon.title
+            if info and info.get("title"):
+                sermon.title = info.get("title")
     except Exception as e:
-        logger.warning("yt_dlp audio download warning: %s. Attempting oembed title fallback...", str(e))
-        fallback_title = _fetch_youtube_title_fallback(sermon.youtube_url)
-        if fallback_title:
-            sermon.title = fallback_title
+        logger.warning("Primary yt_dlp download attempt failed: %s. Trying fallback client...", str(e))
+        fallback_options = {
+            "format": "bestaudio/best",
+            "outtmpl": str(tmp_dir / "audio.%(ext)s"),
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["mweb", "ios", "android"],
+                }
+            },
+            "nocheckcertificate": True,
+            "quiet": True,
+            "no_warnings": True,
+        }
+        if ffmpeg_bin:
+            fallback_options["ffmpeg_location"] = ffmpeg_bin
+        try:
+            with yt_dlp.YoutubeDL(fallback_options) as ydl:
+                info = ydl.extract_info(sermon.youtube_url, download=True)
+                if info and info.get("title"):
+                    sermon.title = info.get("title")
+        except Exception as fallback_e:
+            logger.warning("Fallback yt_dlp download failed: %s", str(fallback_e))
+
+    fallback_title = _fetch_youtube_title_fallback(sermon.youtube_url)
+    if fallback_title and (not sermon.title or sermon.title == sermon.youtube_url):
+        sermon.title = fallback_title
 
     sermon.save(update_fields=["title", "updated_at"])
 
-    audio_files = list(tmp_dir.glob("audio.*"))
+    valid_exts = {".m4a", ".mp3", ".webm", ".opus", ".mp4", ".ogg", ".wav", ".aac"}
+    audio_files = [f for f in tmp_dir.glob("*") if f.is_file() and f.suffix.lower() in valid_exts]
+
+    if not audio_files:
+        all_files = [f for f in tmp_dir.glob("*") if f.is_file() and f.stat().st_size > 0]
+        if all_files:
+            audio_files = all_files
+
     if not audio_files:
         raise FileNotFoundError(f"Audio file failed to download for sermon {sermon.id}")
 
@@ -426,17 +444,24 @@ def process_sermon(sermon_id):
         if yt_id:
             try:
                 logger.info("Attempting to fetch YouTube transcript for video %s...", yt_id)
-                if hasattr(YouTubeTranscriptApi, "get_transcript"):
+                if hasattr(YouTubeTranscriptApi, "list_transcripts"):
                     try:
-                        youtube_transcript = YouTubeTranscriptApi.get_transcript(yt_id, languages=["en"])
+                        t_list = YouTubeTranscriptApi.list_transcripts(yt_id)
+                        try:
+                            t = t_list.find_transcript(["en", "en-US", "en-GB"])
+                            youtube_transcript = t.fetch()
+                        except Exception:
+                            for t in t_list:
+                                youtube_transcript = t.fetch()
+                                break
+                    except Exception as list_err:
+                        logger.info("list_transcripts fallback: %s", str(list_err))
+
+                if not youtube_transcript and hasattr(YouTubeTranscriptApi, "get_transcript"):
+                    try:
+                        youtube_transcript = YouTubeTranscriptApi.get_transcript(yt_id, languages=["en", "en-US"])
                     except Exception:
                         youtube_transcript = YouTubeTranscriptApi.get_transcript(yt_id)
-                elif hasattr(YouTubeTranscriptApi, "fetch"):
-                    api = YouTubeTranscriptApi()
-                    try:
-                        youtube_transcript = api.fetch(yt_id, languages=["en"])
-                    except Exception:
-                        youtube_transcript = api.fetch(yt_id)
             except Exception as e:
                 logger.info("YouTube transcript unavailable for %s: %s. Using Whisper audio transcription.", yt_id, str(e))
 

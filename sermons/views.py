@@ -28,15 +28,20 @@ class SermonListCreateView(generics.ListCreateAPIView):
     serializer_class = SermonSerializer
 
     def perform_create(self, serializer):
-        sermon = serializer.save()
-        from .tasks import process_sermon
+        try:
+            sermon = serializer.save()
+            from .tasks import process_sermon
 
-        # Launch background processing thread so transcription starts immediately
-        threading.Thread(
-            target=process_sermon,
-            args=(str(sermon.id),),
-            daemon=True,
-        ).start()
+            # Launch background processing thread so transcription starts immediately
+            threading.Thread(
+                target=process_sermon,
+                args=(str(sermon.id),),
+                daemon=True,
+            ).start()
+        except Exception as e:
+            logger.error("Failed to create sermon: %s", str(e), exc_info=True)
+            raise
+
 
 
 class SermonDetailView(generics.RetrieveAPIView):

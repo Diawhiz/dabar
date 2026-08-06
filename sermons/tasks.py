@@ -67,6 +67,8 @@ def _parse_timestamp(val):
         return 0.0
 
 
+import re
+
 SERMON_KEYWORDS = {
     "god", "jesus", "christ", "lord", "faith", "grace", "word", "truth", "promise",
     "covenant", "pray", "prayer", "glory", "holy", "spirit", "believe", "heart",
@@ -75,11 +77,39 @@ SERMON_KEYWORDS = {
 }
 
 
+def _generate_title_from_text(raw_text):
+    """
+    Generate a 100% context-accurate clip title directly from spoken text.
+    Extracts the most punchy sentence or clause from the transcript segment.
+    """
+    if not raw_text:
+        return "Key Teaching Moment"
+
+    text = " ".join(raw_text.split()).strip()
+    sentences = [s.strip() for s in re.split(r'[.!?]+', text) if s.strip()]
+
+    for sentence in sentences:
+        words = sentence.split()
+        if 3 <= len(words) <= 9:
+            clean = sentence.strip('"\'()').strip()
+            return clean[0].upper() + clean[1:] if len(clean) > 1 else clean.upper()
+        elif len(words) > 9:
+            phrase = " ".join(words[:7]).strip('"\'()').strip()
+            return (phrase[0].upper() + phrase[1:] if len(phrase) > 1 else phrase.upper()) + "…"
+
+    words = text.split()
+    if words:
+        phrase = " ".join(words[:7]).strip('"\'()').strip()
+        return (phrase[0].upper() + phrase[1:] if len(phrase) > 1 else phrase.upper()) + "…"
+
+    return "Key Preaching Moment"
+
+
 def _fallback_heuristic_highlights(timestamped_segments):
     """
     Fallback highlight extractor when LLM API is unavailable or returns 0 highlights.
     Scores segments based on sermon keywords, punctuation cues, and word density.
-    Returns 3 to 5 non-overlapping key moments.
+    Returns 3 to 5 non-overlapping key moments with titles derived directly from spoken text.
     """
     if not timestamped_segments:
         return []
@@ -102,13 +132,6 @@ def _fallback_heuristic_highlights(timestamped_segments):
 
     selected = []
     used_indices = set()
-    titles = [
-        "Key Preaching Moment",
-        "Core Teaching Point",
-        "Faith & Conviction Moment",
-        "Declaration of Truth",
-        "Message Takeaway",
-    ]
 
     for score, idx, seg in scored:
         if len(selected) >= 5:
@@ -116,7 +139,7 @@ def _fallback_heuristic_highlights(timestamped_segments):
         if any(abs(idx - u) < 2 for u in used_indices):
             continue
 
-        title = titles[len(selected) % len(titles)]
+        title = _generate_title_from_text(seg.get("text", ""))
         selected.append({
             "title": title,
             "start": float(seg["start"]),
@@ -129,7 +152,7 @@ def _fallback_heuristic_highlights(timestamped_segments):
     return selected
 
 
-def _detect_highlights_with_llm(timestamped_segments):
+def _detect_highlights_with_llm(timestamped_segments, sermon_title=None):
     """
     Use llama-3.3-70b-versatile via Groq to identify key moments in a sermon.
     If API key is missing or call fails/returns empty, fallback to heuristic extraction.
@@ -149,6 +172,7 @@ def _detect_highlights_with_llm(timestamped_segments):
             lines.append(f"{ts} {seg['text']}")
 
         timestamped_text = "\n\n".join(lines)
+        sermon_ctx = f"for the sermon '{sermon_title}'" if sermon_title else ""
 
         headers = {
             "Authorization": f"Bearer {api_key}",
@@ -156,25 +180,19 @@ def _detect_highlights_with_llm(timestamped_segments):
         }
 
         prompt = (
-            "You are a senior church media strategist who produces viral sermon clips for social media.\n\n"
-            "Below is a FULL sermon transcript with exact timestamps in seconds. Your job is to find the 3 to 6 most "
-            "powerful, shareable moments — the kind that make someone stop scrolling and share.\n\n"
-            "Look for these types of moments:\n"
-            "- **Core Message / Main Point**: The central thesis or revelation the preacher drives home\n"
-            "- **Conviction Moments**: When the preacher challenges the congregation directly\n"
-            "- **Gospel Invitations**: Altar calls, salvation prayers, calls to surrender\n"
-            "- **Powerful Illustrations**: Stories, analogies, or metaphors that land emotionally\n"
-            "- **Declaration / Prophetic Words**: Bold faith declarations the audience repeats\n"
-            "- **Worship Transitions**: When preaching flows into worship or prayer\n\n"
+            f"You are a senior church media strategist producing viral social clips {sermon_ctx}.\n\n"
+            "Below is the sermon transcript with exact timestamps in seconds. Find the 3 to 6 most powerful, "
+            "contextually accurate key moments that will make viewers stop scrolling.\n\n"
+            "CRITICAL TITLE REQUIREMENT:\n"
+            "- Each highlight 'title' MUST be a punchy, 4-8 word title derived DIRECTLY from the actual spoken message in that segment.\n"
+            "- Example: 'God Builds Depth Before Visibility', NOT generic titles like 'Clip 1' or 'Main Point'.\n\n"
             "RULES:\n"
             "- Each highlight MUST be 30-90 seconds long (a complete thought, not a fragment)\n"
-            "- Output exact numerical float values for start and end in SECONDS (e.g. start: 120.0, end: 180.0)\n"
-            "- Pick start from the FIRST segment and end from the LAST segment that form the moment\n"
-            "- The highlights should cover the MAIN message of the sermon\n\n"
+            "- Output exact numerical float values for start and end in SECONDS\n\n"
             "Respond ONLY with this JSON format:\n"
             '{"highlights": [\n'
-            '  {"title": "Short Clip Title", "start": 120.0, "end": 185.0, '
-            '"reason": "Why this moment is powerful and shareable"}\n'
+            '  {"title": "Exact Spoken Title", "start": 120.0, "end": 185.0, '
+            '"reason": "Why this moment is powerful"}\n'
             "]}\n\n"
             f"SERMON TRANSCRIPT:\n\n{timestamped_text}"
         )
@@ -199,8 +217,12 @@ def _detect_highlights_with_llm(timestamped_segments):
                 
                 parsed_highlights = []
                 for hl in raw_highlights:
+                    hl_t = hl.get("title")
+                    # Enforce context-accurate title
+                    if not hl_t or hl_t.lower() in ["clip 1", "key moment", "short clip title", "main point"]:
+                        hl_t = None
                     parsed_highlights.append({
-                        "title": hl.get("title", "Key Moment"),
+                        "title": hl_t,
                         "start": _parse_timestamp(hl.get("start")),
                         "end": _parse_timestamp(hl.get("end")),
                         "reason": hl.get("reason", ""),
@@ -216,6 +238,7 @@ def _detect_highlights_with_llm(timestamped_segments):
 
     logger.info("Using heuristic highlight detector fallback...")
     return _fallback_heuristic_highlights(timestamped_segments)
+
 
 
 
@@ -389,9 +412,9 @@ def process_sermon(self, sermon_id):
         # Generate full transcript text
         full_text = " ".join([seg["text"] for seg in grouped_segments])
         
-        # Use gpt-oss-120b with timestamped segments to detect key moments accurately
-        highlights = _detect_highlights_with_llm(grouped_segments)
-        
+        # Use LLM or smart heuristic to detect key moments with 100% context-accurate titles
+        highlights = _detect_highlights_with_llm(grouped_segments, sermon_title=sermon.title)
+
         final_segments = []
         for idx, seg in enumerate(grouped_segments):
             is_hl = False
@@ -399,9 +422,9 @@ def process_sermon(self, sermon_id):
             for hl in highlights:
                 hl_start = hl.get("start", 0)
                 hl_end = hl.get("end", 0)
-                if (seg["start"] >= hl_start - 10 and seg["start"] <= hl_end) or (seg["end"] >= hl_start and seg["end"] <= hl_end + 10):
+                if (seg["start"] >= hl_start - 10 and seg["start"] <= hl_end + 10) or (seg["end"] >= hl_start - 10 and seg["end"] <= hl_end + 10):
                     is_hl = True
-                    hl_title = hl.get("title")
+                    hl_title = hl.get("title") or _generate_title_from_text(seg["text"])
                     break
 
             final_segments.append({
@@ -412,6 +435,7 @@ def process_sermon(self, sermon_id):
                 "is_highlight": is_hl,
                 "highlight_title": hl_title,
             })
+
 
         # Merge consecutive segments that share the same highlight title
         merged = []

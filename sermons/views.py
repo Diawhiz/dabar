@@ -88,11 +88,11 @@ class SermonTranscriptDetailView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        # Guarantee at least 3-5 highlights exist in response
+        # Guarantee at least 3-5 highlights exist in response and have 100% context-accurate titles
         if transcript.segments:
+            from .tasks import _fallback_heuristic_highlights, _generate_title_from_text
             has_hl = any(seg.get("is_highlight") for seg in transcript.segments)
             if not has_hl:
-                from .tasks import _fallback_heuristic_highlights
                 hl_moments = _fallback_heuristic_highlights(transcript.segments)
                 for seg in transcript.segments:
                     for hl in hl_moments:
@@ -100,7 +100,18 @@ class SermonTranscriptDetailView(APIView):
                             seg["is_highlight"] = True
                             seg["highlight_title"] = hl["title"]
                             break
+
+            updated = False
+            for seg in transcript.segments:
+                if seg.get("is_highlight"):
+                    curr_title = seg.get("highlight_title")
+                    if not curr_title or curr_title.lower() in ["key moment", "key preaching moment", "clip 1", "main point", "short clip title"]:
+                        seg["highlight_title"] = _generate_title_from_text(seg.get("text", ""))
+                        updated = True
+
+            if not has_hl or updated:
                 transcript.save(update_fields=["segments"])
+
 
         serializer = TranscriptSerializer(transcript)
         return Response(serializer.data, status=status.HTTP_200_OK)

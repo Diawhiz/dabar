@@ -301,8 +301,13 @@ def _download_full_audio(sermon):
     tmp_dir.mkdir(parents=True, exist_ok=True)
 
     options = {
-        "format": "bestaudio[ext=m4a]/bestaudio/best",
+        "format": "ba/ba*/bestaudio[ext=m4a]/bestaudio",
         "outtmpl": str(tmp_dir / "audio.%(ext)s"),
+        "postprocessors": [{
+            "key": "FFmpegExtractAudio",
+            "preferredcodec": "m4a",
+            "preferredquality": "96",
+        }],
         "extractor_args": {
             "youtube": {
                 "player_client": ["ios", "mweb", "android"],
@@ -312,6 +317,7 @@ def _download_full_audio(sermon):
         "quiet": True,
         "no_warnings": True,
     }
+
 
     with yt_dlp.YoutubeDL(options) as ydl:
         info = ydl.extract_info(sermon.youtube_url, download=True)

@@ -1,6 +1,7 @@
 import { Outlet, NavLink } from "react-router-dom";
-import { Archive, Clapperboard, Home, Sparkles, Video, Radio } from "lucide-react";
+import { Archive, Clapperboard, Home, Sparkles, Video, Radio, Sun, Moon } from "lucide-react";
 import { motion } from "framer-motion";
+import { useTheme } from "../context/ThemeContext.jsx";
 
 const links = [
   { to: "/", label: "Home", icon: Home },
@@ -11,10 +12,12 @@ const links = [
 ];
 
 export default function AppShell() {
+  const { theme, toggleTheme } = useTheme();
+
   return (
-    <div className="flex min-h-screen flex-col bg-signal-bg text-text-primary font-sans antialiased">
-      <header className="sticky top-0 z-30 border-b border-signal-border/80 bg-signal-bg/90 backdrop-blur-2xl">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 sm:px-8 lg:px-10">
+    <div className="flex min-h-screen flex-col bg-signal-bg text-text-primary font-sans antialiased transition-colors duration-200">
+      <header className="sticky top-0 z-30 border-b border-signal-border/80 bg-signal-bg/85 backdrop-blur-2xl transition-colors duration-200">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-3.5 sm:px-8 lg:px-10">
           {/* Logo Brand */}
           <NavLink to="/" className="group flex items-center gap-3.5 focus-visible:outline-none">
             <motion.div
@@ -51,7 +54,7 @@ export default function AppShell() {
                   [
                     "relative flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-semibold transition-colors duration-200",
                     isActive
-                      ? "bg-pulse-gold text-signal-bg font-bold shadow-pulse"
+                      ? "bg-pulse-gold text-white font-bold shadow-pulse"
                       : "text-text-secondary hover:bg-signal-hover hover:text-text-primary",
                   ].join(" ")
                 }
@@ -62,14 +65,33 @@ export default function AppShell() {
             ))}
           </nav>
 
-          {/* Status Indicator */}
-          <div className="hidden items-center gap-2 rounded-xl border border-signal-border bg-signal-panel px-3.5 py-1.5 font-mono text-xs font-semibold text-text-secondary lg:flex">
-            <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-pulse-gold opacity-75" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-pulse-gold" />
-            </span>
-            <Radio size={13} className="text-pulse-gold" />
-            <span>Engine Ready</span>
+          {/* Controls Right */}
+          <div className="flex items-center gap-3">
+            {/* Status Indicator */}
+            <div className="hidden items-center gap-2 rounded-xl border border-signal-border bg-signal-panel px-3.5 py-1.5 font-mono text-xs font-semibold text-text-secondary lg:flex">
+              <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-pulse-gold opacity-75" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-pulse-gold" />
+              </span>
+              <Radio size={13} className="text-pulse-gold" />
+              <span>Engine Ready</span>
+            </div>
+
+            {/* Light / Dark Mode Toggle Button */}
+            <motion.button
+              type="button"
+              onClick={toggleTheme}
+              whileHover={{ scale: 1.08 }}
+              whileTap={{ scale: 0.92 }}
+              className="flex h-10 w-10 items-center justify-center rounded-xl border border-signal-border bg-signal-panel text-text-secondary hover:border-pulse-gold hover:text-pulse-gold shadow-sm transition-colors"
+              title={`Switch to ${theme === "dark" ? "Light" : "Dark"} Mode`}
+            >
+              {theme === "dark" ? (
+                <Sun size={18} className="text-amber-400" />
+              ) : (
+                <Moon size={18} className="text-slate-700" />
+              )}
+            </motion.button>
           </div>
         </div>
       </header>
@@ -103,7 +125,7 @@ export default function AppShell() {
             className={({ isActive }) =>
               [
                 "flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl px-2 py-2 text-[10px] font-semibold transition-all duration-200",
-                isActive ? "bg-pulse-gold text-signal-bg font-bold shadow-pulse" : "text-text-secondary hover:text-text-primary",
+                isActive ? "bg-pulse-gold text-white font-bold shadow-pulse" : "text-text-secondary hover:text-text-primary",
               ].join(" ")
             }
           >
@@ -115,4 +137,5 @@ export default function AppShell() {
     </div>
   );
 }
+
 

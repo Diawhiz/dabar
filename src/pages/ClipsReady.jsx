@@ -162,7 +162,7 @@ export default function ClipsReady() {
 
       <div className="grid grid-cols-1 gap-10 lg:grid-cols-[1fr_360px]">
         {/* VIDEO PREVIEW */}
-        <section className="flex flex-col items-center justify-center rounded-3xl border border-signal-border bg-signal-panel/80 p-8 shadow-signal">
+        <section className="flex flex-col items-center justify-center rounded-3xl border border-signal-border bg-signal-panel p-8 shadow-signal">
           <motion.div
             layout
             transition={{ type: "spring", stiffness: 300, damping: 30 }}
@@ -200,7 +200,7 @@ export default function ClipsReady() {
               <span className="truncate font-mono text-xs text-text-secondary">{shareUrl}</span>
               <button
                 onClick={handleCopyLink}
-                className="ml-auto flex-shrink-0 rounded-lg bg-pulse-gold px-3 py-1 font-mono text-[11px] font-bold text-signal-bg transition-colors hover:bg-yellow-400"
+                className="ml-auto flex-shrink-0 rounded-lg bg-pulse-gold px-3 py-1 font-mono text-[11px] font-bold text-white transition-colors hover:brightness-110"
               >
                 {copied ? "Copied!" : "Copy"}
               </button>
@@ -214,7 +214,8 @@ export default function ClipsReady() {
         {/* CONTROLS PANEL */}
         <section className="space-y-6">
           {/* Format Switcher */}
-          <div className="rounded-3xl border border-signal-border bg-signal-panel/80 p-6 shadow-signal">
+          <div className="rounded-3xl border border-signal-border bg-signal-panel p-6 shadow-signal">
+
             <div className="mb-4 flex items-center gap-2 font-mono text-xs font-bold uppercase tracking-wider text-pulse-gold">
               <Maximize2 size={15} className="text-pulse-gold" />
               <span>Preview Aspect Ratio</span>

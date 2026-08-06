@@ -66,7 +66,7 @@ export default function Home() {
         initial={{ opacity: 0, y: 15 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
-        className="relative overflow-hidden py-12 sm:py-16 rounded-3xl border border-signal-border bg-signal-panel/80 px-6 sm:px-12 shadow-signal"
+        className="relative overflow-hidden py-12 sm:py-16 rounded-3xl border border-signal-border bg-signal-panel px-6 sm:px-12 shadow-signal"
       >
         <div className="relative mx-auto max-w-4xl text-center">
           {/* Badge */}
@@ -83,12 +83,12 @@ export default function Home() {
             <span className="text-pulse-gold">Distilled into clips that travel.</span>
           </h1>
 
-          <p className="mx-auto mt-6 max-w-2xl text-base leading-relaxed text-text-secondary sm:text-lg">
+          <p className="mx-auto mt-6 max-w-2xl text-base leading-relaxed text-text-secondary sm:text-lg font-sans">
             Paste any YouTube sermon link. Dabar automatically transcribes the audio, detects key teaching moments, and slices ready-to-share video clips in seconds.
           </p>
 
           {/* Interactive Acoustic Distillation Waveform Ribbon */}
-          <div className="my-8 flex items-center justify-center gap-1 sm:gap-1.5 py-4 px-6 rounded-2xl border border-signal-border/80 bg-signal-bg/90 shadow-inner">
+          <div className="my-8 flex items-center justify-center gap-1 sm:gap-1.5 py-4 px-6 rounded-2xl border border-signal-border/80 bg-signal-bg shadow-inner">
             {[40, 65, 30, 85, 95, 45, 75, 100, 60, 90, 50, 80, 100, 70, 40, 90, 60, 85, 35, 75, 95, 50, 30, 60].map((h, i) => (
               <motion.div
                 key={i}
@@ -183,13 +183,13 @@ export default function Home() {
           <motion.div
             variants={{ hidden: { opacity: 0, y: 15 }, show: { opacity: 1, y: 0 } }}
             whileHover={{ y: -4 }}
-            className="rounded-2xl border border-signal-border bg-signal-panel/80 p-6 shadow-signal transition-colors duration-200 hover:border-pulse-gold/40"
+            className="rounded-2xl border border-signal-border bg-signal-panel p-6 shadow-signal transition-colors duration-200 hover:border-pulse-gold/40"
           >
             <div className="grid h-10 w-10 place-items-center rounded-xl border border-pulse-gold/30 bg-pulse-gold/10 text-pulse-gold">
               <Zap size={20} />
             </div>
             <h3 className="mt-4 font-display text-lg font-bold text-text-primary">1. High-Precision Transcription</h3>
-            <p className="mt-2 text-xs leading-relaxed text-text-secondary">
+            <p className="mt-2 text-xs leading-relaxed text-text-secondary font-sans">
               Transcribes sermon audio with exact punctuation and precise segment timestamps.
             </p>
           </motion.div>
@@ -197,13 +197,13 @@ export default function Home() {
           <motion.div
             variants={{ hidden: { opacity: 0, y: 15 }, show: { opacity: 1, y: 0 } }}
             whileHover={{ y: -4 }}
-            className="rounded-2xl border border-signal-border bg-signal-panel/80 p-6 shadow-signal transition-colors duration-200 hover:border-pulse-gold/40"
+            className="rounded-2xl border border-signal-border bg-signal-panel p-6 shadow-signal transition-colors duration-200 hover:border-pulse-gold/40"
           >
             <div className="grid h-10 w-10 place-items-center rounded-xl border border-pulse-amber/30 bg-pulse-amber/10 text-pulse-amber">
               <Sparkles size={20} />
             </div>
             <h3 className="mt-4 font-display text-lg font-bold text-text-primary">2. Key Moment Mining</h3>
-            <p className="mt-2 text-xs leading-relaxed text-text-secondary">
+            <p className="mt-2 text-xs leading-relaxed text-text-secondary font-sans">
               Identifies high-impact quotes, core teaching points, and altar calls for 30–90 second clip moments.
             </p>
           </motion.div>
@@ -211,13 +211,13 @@ export default function Home() {
           <motion.div
             variants={{ hidden: { opacity: 0, y: 15 }, show: { opacity: 1, y: 0 } }}
             whileHover={{ y: -4 }}
-            className="rounded-2xl border border-signal-border bg-signal-panel/80 p-6 shadow-signal transition-colors duration-200 hover:border-pulse-gold/40"
+            className="rounded-2xl border border-signal-border bg-signal-panel p-6 shadow-signal transition-colors duration-200 hover:border-pulse-gold/40"
           >
             <div className="grid h-10 w-10 place-items-center rounded-xl border border-pulse-cyan/30 bg-pulse-cyan/10 text-pulse-cyan">
               <Scissors size={20} />
             </div>
             <h3 className="mt-4 font-display text-lg font-bold text-text-primary">3. Instant Clip Generation</h3>
-            <p className="mt-2 text-xs leading-relaxed text-text-secondary">
+            <p className="mt-2 text-xs leading-relaxed text-text-secondary font-sans">
               Generates ready-to-share MP4 video clips or instant timestamped social share links.
             </p>
           </motion.div>
@@ -250,7 +250,7 @@ export default function Home() {
                 key={sermon.id}
                 whileHover={{ y: -3 }}
                 onClick={() => navigate(`/processing/${sermon.id}`)}
-                className="group cursor-pointer rounded-2xl border border-signal-border bg-signal-panel/90 p-5 shadow-signal transition-colors duration-200 hover:border-pulse-gold/50 hover:bg-signal-card"
+                className="group cursor-pointer rounded-2xl border border-signal-border bg-signal-panel p-5 shadow-signal transition-colors duration-200 hover:border-pulse-gold/50 hover:bg-signal-card"
               >
                 <div className="flex items-center justify-between">
                   <span className="rounded-md border border-pulse-gold/30 bg-pulse-gold/10 px-2.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-pulse-gold">
@@ -278,6 +278,7 @@ export default function Home() {
           </div>
         )}
       </section>
+
     </div>
   );
 }

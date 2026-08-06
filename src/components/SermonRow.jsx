@@ -15,10 +15,10 @@ export default function SermonRow({ sermon }) {
       animate={{ opacity: 1, y: 0 }}
       whileHover={{ y: -2, transition: { duration: 0.15 } }}
       onClick={() => navigate(`/processing/${sermon.id}`)}
-      className="group relative mb-3 flex cursor-pointer flex-col justify-between gap-4 rounded-2xl border border-signal-border bg-signal-panel/80 p-5 shadow-signal transition-colors duration-200 hover:border-pulse-gold/50 hover:bg-signal-card sm:flex-row sm:items-center"
+      className="group relative mb-3 flex cursor-pointer flex-col justify-between gap-4 rounded-2xl border border-signal-border bg-signal-panel p-5 shadow-signal transition-colors duration-200 hover:border-pulse-gold/50 hover:bg-signal-card sm:flex-row sm:items-center"
     >
       <div className="flex items-start gap-4">
-        <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-signal-border bg-signal-bg text-pulse-gold transition-colors duration-200 group-hover:bg-pulse-gold group-hover:text-signal-bg">
+        <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-signal-border bg-signal-bg text-pulse-gold transition-colors duration-200 group-hover:bg-pulse-gold group-hover:text-white">
           <PlayCircle size={20} />
         </div>
         <div>
@@ -47,11 +47,12 @@ export default function SermonRow({ sermon }) {
           </span>
         </div>
 
-        <div className="grid h-9 w-9 place-items-center rounded-xl border border-signal-border bg-signal-bg text-text-secondary transition-all duration-200 group-hover:bg-pulse-gold group-hover:text-signal-bg group-hover:border-pulse-gold">
+        <div className="grid h-9 w-9 place-items-center rounded-xl border border-signal-border bg-signal-bg text-text-secondary transition-all duration-200 group-hover:bg-pulse-gold group-hover:text-white group-hover:border-pulse-gold">
           <ArrowUpRight size={18} />
         </div>
       </div>
     </motion.div>
   );
 }
+
 

@@ -63,8 +63,9 @@ export default function Archive() {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search by title, YouTube URL, or status..."
-            className="h-12 w-full rounded-2xl border border-signal-border bg-signal-panel/80 pl-12 pr-10 text-sm font-medium text-text-primary shadow-signal outline-none transition-colors focus:border-pulse-gold/50"
+            className="h-12 w-full rounded-2xl border border-signal-border bg-signal-panel pl-12 pr-10 text-sm font-medium text-text-primary shadow-signal outline-none transition-colors focus:border-pulse-gold/50"
           />
+
           {query && (
             <button
               onClick={() => setQuery("")}

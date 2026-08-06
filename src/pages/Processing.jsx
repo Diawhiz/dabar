@@ -88,7 +88,7 @@ export default function Processing() {
       className="mx-auto max-w-4xl py-6"
     >
       {/* Header Banner */}
-      <div className="rounded-3xl border border-signal-border bg-signal-panel/80 p-8 text-text-primary shadow-signal">
+      <div className="rounded-3xl border border-signal-border bg-signal-panel p-8 text-text-primary shadow-signal">
         <div className="flex flex-col justify-between gap-6 md:flex-row md:items-center">
           <div>
             <div className="inline-flex items-center gap-2 rounded-xl border border-pulse-gold/30 bg-pulse-gold/10 px-3 py-1 font-mono text-xs font-bold uppercase tracking-wider text-pulse-gold">
@@ -128,7 +128,7 @@ export default function Processing() {
 
       {/* Live AI Speech Ticker */}
       {sermon?.transcript && (
-        <div className="my-8 rounded-2xl border border-signal-border bg-signal-panel/80 p-5 shadow-signal">
+        <div className="my-8 rounded-2xl border border-signal-border bg-signal-panel p-5 shadow-signal">
           <div className="flex items-center gap-2 font-mono text-xs font-bold uppercase tracking-wider text-pulse-gold">
             <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
             <span>Extracted Sermon Transcript</span>
@@ -140,7 +140,8 @@ export default function Processing() {
       )}
 
       {/* Processing Stages Breakdown */}
-      <section className="mt-8 rounded-3xl border border-signal-border bg-signal-panel/80 px-6 py-8 shadow-signal sm:px-10">
+      <section className="mt-8 rounded-3xl border border-signal-border bg-signal-panel px-6 py-8 shadow-signal sm:px-10">
+
         <div className="space-y-0">
           {stages.map(({ label, detail, icon: Icon, state }, index) => (
             <div key={label} className="grid grid-cols-[3.5rem_1fr] gap-5">

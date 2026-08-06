@@ -1,15 +1,52 @@
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400..700;1,400..700&family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:ital,wght@0,400..800;1,400..800&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  /* Light Theme Tokens */
+  --color-bg: #F8FAFC;
+  --color-panel: #FFFFFF;
+  --color-card: #F1F5F9;
+  --color-border: #E2E8F0;
+  --color-hover: #E2E8F0;
+  --color-gold: #D97706;
+  --color-amber: #EA580C;
+  --color-cyan: #0284C7;
+  --color-violet: #7C3AED;
+  --color-text-primary: #0F172A;
+  --color-text-secondary: #475569;
+  --color-text-muted: #64748B;
+  --shadow-signal: 0 10px 30px -10px rgba(0, 0, 0, 0.06);
+  --shadow-pulse: 0 0 20px rgba(217, 119, 6, 0.2);
+  --bg-pattern: radial-gradient(rgba(217, 119, 6, 0.08) 1px, transparent 1px);
+}
+
+.dark {
+  /* Dark Theme Tokens */
+  --color-bg: #090A0F;
+  --color-panel: #12151E;
+  --color-card: #1A1E2B;
+  --color-border: #252B3B;
+  --color-hover: #222736;
+  --color-gold: #F59E0B;
+  --color-amber: #EA580C;
+  --color-cyan: #06B6D4;
+  --color-violet: #8B5CF6;
+  --color-text-primary: #F8FAFC;
+  --color-text-secondary: #94A3B8;
+  --color-text-muted: #64748B;
+  --shadow-signal: 0 20px 40px -15px rgba(0, 0, 0, 0.7);
+  --shadow-pulse: 0 0 25px rgba(245, 158, 11, 0.25);
+  --bg-pattern: radial-gradient(rgba(245, 158, 11, 0.035) 1px, transparent 1px);
+}
+
 @layer base {
   body {
-    @apply bg-signal-bg text-text-primary font-sans antialiased selection:bg-pulse-gold/30 selection:text-pulse-gold;
+    @apply bg-signal-bg text-text-primary font-sans antialiased;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
-    background-color: #090a0f;
-    background-image: radial-gradient(rgba(245, 158, 11, 0.035) 1px, transparent 1px);
+    background-image: var(--bg-pattern);
     background-size: 32px 32px;
   }
 
@@ -18,6 +55,13 @@
   }
 }
 
+/* Custom Selection Highlight */
+::selection {
+  background-color: var(--color-gold);
+  color: #FFFFFF;
+}
+
+
 /* Custom Signal Scrollbar */
 ::-webkit-scrollbar {
   width: 8px;
@@ -25,21 +69,22 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: #090A0F;
+  background: var(--color-bg);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #252B3B;
+  background: var(--color-border);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #F59E0B;
+  background: var(--color-gold);
 }
 
 /* Focus Ring Utility */
 *:focus-visible {
-  outline: 2px solid #F59E0B !important;
+  outline: 2px solid var(--color-gold) !important;
   outline-offset: 2px !important;
 }
+
 

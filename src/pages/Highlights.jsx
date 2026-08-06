@@ -180,8 +180,8 @@ export default function Highlights() {
                 className={[
                   "group rounded-2xl border p-6 shadow-signal transition-colors duration-200",
                   seg.is_highlight
-                    ? "border-pulse-gold/50 bg-signal-panel/90"
-                    : "border-signal-border bg-signal-panel/60",
+                    ? "border-pulse-gold/50 bg-signal-panel"
+                    : "border-signal-border bg-signal-panel",
                 ].join(" ")}
               >
                 <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
@@ -206,6 +206,7 @@ export default function Highlights() {
                       "{seg.text}"
                     </p>
                   </div>
+
 
                   <div className="flex flex-row items-center gap-2.5 lg:flex-col lg:items-end lg:justify-center">
                     <Button

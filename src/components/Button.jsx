@@ -2,10 +2,10 @@ import { forwardRef } from "react";
 import { motion } from "framer-motion";
 
 const variants = {
-  gold: "bg-pulse-gold text-signal-bg font-bold hover:bg-yellow-400 shadow-pulse",
-  amber: "bg-pulse-amber text-white font-bold hover:bg-orange-500 shadow-laser",
-  navy: "bg-signal-panel text-text-primary border border-signal-border hover:bg-signal-hover hover:border-text-secondary",
-  outline: "border border-signal-border bg-signal-panel/50 text-text-secondary hover:border-pulse-gold hover:text-pulse-gold",
+  gold: "bg-pulse-gold text-white font-bold hover:brightness-110 shadow-pulse",
+  amber: "bg-pulse-amber text-white font-bold hover:brightness-110 shadow-laser",
+  navy: "bg-signal-panel text-text-primary border border-signal-border hover:bg-signal-hover hover:border-text-secondary shadow-sm",
+  outline: "border border-signal-border bg-signal-panel/40 text-text-secondary hover:border-pulse-gold hover:text-pulse-gold shadow-sm",
   ghost: "bg-transparent text-text-secondary hover:bg-signal-panel hover:text-text-primary",
 };
 
@@ -39,4 +39,5 @@ const Button = forwardRef(function Button(
 });
 
 export default Button;
+
 

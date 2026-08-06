@@ -1,36 +1,37 @@
 /** @type {import('tailwindcss').Config} */
 export default {
+  darkMode: "class",
   content: ["./index.html", "./src/**/*.{js,jsx}"],
   theme: {
     extend: {
       fontFamily: {
-        display: ["Space Grotesk", "sans-serif"],
+        display: ["Outfit", "sans-serif"],
         sans: ["Plus Jakarta Sans", "system-ui", "sans-serif"],
         mono: ["JetBrains Mono", "monospace"],
       },
       colors: {
         signal: {
-          bg: "#090A0F",       // Deep Obsidian Midnight
-          panel: "#12151E",    // Dark Velvet Surface
-          card: "#1A1E2B",     // Elevated Glass Card
-          border: "#252B3B",   // Crisp Precision Border
-          hover: "#222736",    // Interactive Hover Surface
+          bg: "var(--color-bg)",
+          panel: "var(--color-panel)",
+          card: "var(--color-card)",
+          border: "var(--color-border)",
+          hover: "var(--color-hover)",
         },
         pulse: {
-          gold: "#F59E0B",     // Warm Regal Gold
-          amber: "#EA580C",    // Sunset Orange Accent
-          cyan: "#06B6D4",     // Electric Cyan Accent
-          violet: "#8B5CF6",   // Royal Violet Accent
+          gold: "var(--color-gold)",
+          amber: "var(--color-amber)",
+          cyan: "var(--color-cyan)",
+          violet: "var(--color-violet)",
         },
         text: {
-          primary: "#F8FAFC",  // High-Contrast White
-          secondary: "#94A3B8",// Refined Slate Gray
-          muted: "#64748B",    // Subtle Muted Gray
+          primary: "var(--color-text-primary)",
+          secondary: "var(--color-text-secondary)",
+          muted: "var(--color-text-muted)",
         },
       },
       boxShadow: {
-        signal: "0 20px 40px -15px rgba(0, 0, 0, 0.7)",
-        pulse: "0 0 25px rgba(245, 158, 11, 0.25)",
+        signal: "var(--shadow-signal)",
+        pulse: "var(--shadow-pulse)",
         laser: "0 0 25px rgba(234, 88, 12, 0.25)",
         glow: "0 0 40px -10px rgba(245, 158, 11, 0.15)",
       },
@@ -52,4 +53,5 @@ export default {
   },
   plugins: [],
 };
+
 

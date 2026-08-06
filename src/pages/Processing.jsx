@@ -23,8 +23,8 @@ export default function Processing() {
     if (!status) return 0;
     const s = status.toLowerCase();
     if (s === "ready" || s.includes("complete")) return 3;
-    if (s.includes("clip") || s.includes("highlight")) return 2;
-    if (s.includes("transcri")) return 1;
+    if (s.includes("clip") || s.includes("highlight") || s.includes("detect")) return 2;
+    if (s.includes("transcri") || s.includes("downloa")) return 1;
     return 0;
   }
 
@@ -36,7 +36,10 @@ export default function Processing() {
         .then((data) => {
           setSermon(data);
           const s = (data?.status || "").toLowerCase();
-          if (s === "ready" || s.includes("complete")) {
+          if (s === "failed") {
+            setError(data?.error_message || "Processing failed for this sermon. Please try uploading again.");
+            clearInterval(pollRef.current);
+          } else if (s === "ready" || s.includes("complete")) {
             clearInterval(pollRef.current);
           }
         })
@@ -46,15 +49,17 @@ export default function Processing() {
     }
 
     fetchSermon();
-    pollRef.current = setInterval(fetchSermon, 4000);
+    pollRef.current = setInterval(fetchSermon, 2000);
 
     return () => clearInterval(pollRef.current);
   }, [sermonId]);
 
+  const isFailed = (sermon?.status || "").toLowerCase() === "failed";
   const stageIndex = getStageIndex(sermon?.status);
   const currentStage = STAGES[stageIndex];
-  const progress = Math.min(100, Math.round(((stageIndex + 1) / STAGES.length) * 100));
+  const progress = isFailed ? 0 : Math.min(100, Math.round(((stageIndex + 1) / STAGES.length) * 100));
   const isComplete = stageIndex >= 3;
+
 
   return (
     <div className="mx-auto max-w-2xl py-8 space-y-10">

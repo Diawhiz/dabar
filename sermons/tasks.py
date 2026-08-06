@@ -376,8 +376,13 @@ def _download_full_audio(sermon):
     ffmpeg_bin = shutil.which("ffmpeg")
 
     options = {
-        "format": "bestaudio/bestaudio[ext=m4a]/best",
+        "format": "ba/bestaudio/best",
         "outtmpl": str(tmp_dir / "audio.%(ext)s"),
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android_vr", "tv"],
+            }
+        },
         "nocheckcertificate": True,
         "quiet": True,
         "no_warnings": True,
@@ -391,15 +396,10 @@ def _download_full_audio(sermon):
             if info and info.get("title"):
                 sermon.title = info.get("title")
     except Exception as e:
-        logger.warning("Primary yt_dlp download attempt failed: %s. Trying fallback client...", str(e))
+        logger.warning("Primary yt_dlp download attempt failed: %s. Trying fallback options...", str(e))
         fallback_options = {
             "format": "bestaudio/best",
             "outtmpl": str(tmp_dir / "audio.%(ext)s"),
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["mweb", "ios", "android"],
-                }
-            },
             "nocheckcertificate": True,
             "quiet": True,
             "no_warnings": True,
@@ -444,52 +444,48 @@ def process_sermon(sermon_id):
         sermon.save(update_fields=["status", "error_message", "updated_at"])
 
         yt_id = _extract_youtube_id(sermon.youtube_url)
-        youtube_transcript = None
-
-        if yt_id:
-            try:
-                logger.info("Attempting to fetch YouTube transcript for video %s...", yt_id)
-                api = YouTubeTranscriptApi()
-                try:
-                    youtube_transcript = api.fetch(yt_id, languages=["en", "en-US", "en-GB"])
-                except Exception:
-                    youtube_transcript = api.fetch(yt_id)
-            except Exception as e:
-                logger.info("YouTubeTranscriptApi fetch warning for %s: %s. Using Whisper audio transcription.", yt_id, str(e))
-
         grouped_segments = []
 
-        if youtube_transcript:
-            try:
-                fallback_title = _fetch_youtube_title_fallback(sermon.youtube_url)
-                if fallback_title:
-                    sermon.title = fallback_title
-                    sermon.save(update_fields=["title", "updated_at"])
-            except Exception as e:
-                logger.warning("Could not retrieve video metadata: %s", str(e))
-
-            logger.info("Grouping YouTube subtitle segments into 35-45s sermon blocks...")
-            grouped_segments = _group_youtube_transcript(youtube_transcript)
-
-        else:
-            # Whisper Audio Transcription Pipeline
-            logger.info("Downloading lightweight audio file for sermon %s...", sermon.id)
+        # 1. Primary Pipeline: Download Audio + Transcribe with Whisper AI
+        try:
+            logger.info("Downloading sermon audio for Whisper AI transcription...")
             audio_path = _download_full_audio(sermon)
 
             sermon.status = Sermon.Status.TRANSCRIBING
             sermon.save(update_fields=["status", "updated_at"])
 
-            logger.info("Transcribing audio via Groq Whisper (whisper-large-v3-turbo)...")
+            logger.info("Transcribing audio via Groq Whisper AI (whisper-large-v3-turbo)...")
             transcript_record = transcribe_sermon(sermon.id, audio_path=audio_path)
 
             if transcript_record.status == Transcript.Status.COMPLETE and transcript_record.segments:
                 whisper_segments = transcript_record.segments
                 grouped_segments = _group_whisper_segments(whisper_segments)
-            else:
-                raise RuntimeError("Whisper audio transcription returned no segments.")
+        except Exception as audio_err:
+            logger.warning("Audio download/Whisper transcription error: %s. Attempting YouTube transcript fallback...", str(audio_err))
+
+        # 2. Secondary Fallback Pipeline: YouTube Subtitles API
+        if not grouped_segments and yt_id:
+            try:
+                logger.info("Attempting YouTube transcript fallback for video %s...", yt_id)
+                api = YouTubeTranscriptApi()
+                yt_sub = None
+                try:
+                    yt_sub = api.fetch(yt_id, languages=["en", "en-US", "en-GB"])
+                except Exception:
+                    yt_sub = api.fetch(yt_id)
+
+                if yt_sub:
+                    fallback_title = _fetch_youtube_title_fallback(sermon.youtube_url)
+                    if fallback_title:
+                        sermon.title = fallback_title
+                        sermon.save(update_fields=["title", "updated_at"])
+                    grouped_segments = _group_youtube_transcript(yt_sub)
+            except Exception as yt_err:
+                logger.warning("YouTube transcript fallback error: %s", str(yt_err))
 
         if not grouped_segments:
-            raise RuntimeError("No transcript segments could be extracted from this sermon.")
+            raise RuntimeError("Could not transcribe or extract text for this sermon.")
+
 
 
         # Generate full transcript text

@@ -1,5 +1,6 @@
 import { Search, X, BookOpen } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import PageHeader from "../components/PageHeader.jsx";
 import SermonRow from "../components/SermonRow.jsx";
 import { listSermons } from "../lib/api.js";
@@ -43,7 +44,11 @@ export default function Archive() {
   }, [query, sermons]);
 
   return (
-    <div className="mx-auto max-w-5xl py-6">
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="mx-auto max-w-5xl py-6"
+    >
       <PageHeader
         eyebrow="Sermon Repository"
         title="Indexed Sermon Projects"
@@ -58,7 +63,7 @@ export default function Archive() {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search by title, YouTube URL, or status..."
-            className="h-12 w-full rounded-2xl border border-signal-border bg-signal-panel pl-12 pr-10 text-sm font-medium text-text-primary shadow-signal outline-none transition-all focus:border-pulse-gold/50 focus:shadow-pulse"
+            className="h-12 w-full rounded-2xl border border-signal-border bg-signal-panel/80 pl-12 pr-10 text-sm font-medium text-text-primary shadow-signal outline-none transition-colors focus:border-pulse-gold/50"
           />
           {query && (
             <button
@@ -83,7 +88,11 @@ export default function Archive() {
             Loading sermon repository from database...
           </div>
         ) : filtered.length > 0 ? (
-          filtered.map((sermon) => <SermonRow key={sermon.id} sermon={sermon} />)
+          <AnimatePresence>
+            {filtered.map((sermon) => (
+              <SermonRow key={sermon.id} sermon={sermon} />
+            ))}
+          </AnimatePresence>
         ) : (
           <div className="rounded-2xl border border-signal-border bg-signal-panel px-6 py-16 text-center shadow-signal">
             <BookOpen size={32} className="mx-auto text-pulse-gold/60" />
@@ -100,6 +109,7 @@ export default function Archive() {
           </div>
         )}
       </section>
-    </div>
+    </motion.div>
   );
 }
+

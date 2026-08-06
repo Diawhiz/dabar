@@ -1,6 +1,13 @@
+import { motion } from "framer-motion";
+
 export default function PageHeader({ eyebrow, title, description, action }) {
   return (
-    <div className="mb-10 flex flex-col justify-between gap-6 border-b border-signal-border pb-8 md:flex-row md:items-end">
+    <motion.div
+      initial={{ opacity: 0, y: -10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, ease: "easeOut" }}
+      className="mb-10 flex flex-col justify-between gap-6 border-b border-signal-border pb-8 md:flex-row md:items-end"
+    >
       <div className="max-w-3xl">
         {eyebrow && (
           <div className="mb-3 flex items-center gap-2">
@@ -18,6 +25,7 @@ export default function PageHeader({ eyebrow, title, description, action }) {
         )}
       </div>
       {action && <div className="shrink-0">{action}</div>}
-    </div>
+    </motion.div>
   );
 }
+

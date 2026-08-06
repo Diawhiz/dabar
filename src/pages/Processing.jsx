@@ -1,13 +1,14 @@
-import { CheckCircle2, Download, FileText, Sparkles, Wand2, ArrowRight, Activity, Disc } from "lucide-react";
+import { CheckCircle2, Download, FileText, Sparkles, Wand2, ArrowRight } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { motion } from "framer-motion";
 import Button from "../components/Button.jsx";
 import { getSermon } from "../lib/api.js";
 
 const stageDefinitions = [
-  { key: "downloading", label: "Ingesting Audio Signal", detail: "Extracting lightweight audio stream from YouTube source.", icon: Download },
-  { key: "transcribing", label: "Groq Whisper Speech Recognition", detail: "Generating precise timestamped transcript via whisper-large-v3-turbo.", icon: FileText },
-  { key: "ready", label: "Llama 3.3 70B Key Moments", detail: "Distilling conviction points, altar invitations, and memorable illustrations.", icon: Sparkles },
+  { key: "downloading", label: "Ingesting Sermon Audio", detail: "Connecting to sermon video stream and preparing audio signal.", icon: Download },
+  { key: "transcribing", label: "Speech-to-Text Transcription", detail: "Generating timestamped sermon transcript.", icon: FileText },
+  { key: "ready", label: "AI Key Moment Mining", detail: "Identifying conviction points, key illustrations, and shareable quotes.", icon: Sparkles },
 ];
 
 export default function Processing() {
@@ -75,15 +76,19 @@ export default function Processing() {
   const heading = sermon?.title || sermon?.youtube_url || "Sermon Submitted";
   const description =
     sermon?.status === "queued"
-      ? "Dabar has received the link and queued it for signal ingestion."
+      ? "Dabar has received the link and queued it for audio processing."
       : sermon?.status === "ready"
-      ? "Distillation complete! Sermon key moments are ready for review."
-      : "Dabar is processing audio frequencies, identifying high-impact preaching quotes, and generating social clips.";
+      ? "Processing complete! Sermon key moments are ready for review."
+      : "Dabar is analyzing sermon audio, extracting high-impact quotes, and preparing social clips.";
 
   return (
-    <div className="mx-auto max-w-4xl py-6">
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="mx-auto max-w-4xl py-6"
+    >
       {/* Header Banner */}
-      <div className="rounded-3xl border border-signal-border bg-signal-panel p-8 text-text-primary shadow-signal">
+      <div className="rounded-3xl border border-signal-border bg-signal-panel/80 p-8 text-text-primary shadow-signal">
         <div className="flex flex-col justify-between gap-6 md:flex-row md:items-center">
           <div>
             <div className="inline-flex items-center gap-2 rounded-xl border border-pulse-gold/30 bg-pulse-gold/10 px-3 py-1 font-mono text-xs font-bold uppercase tracking-wider text-pulse-gold">
@@ -99,16 +104,18 @@ export default function Processing() {
           <div className="shrink-0 text-center md:text-right font-mono">
             <p className="font-display text-4xl font-bold text-pulse-gold">{progress}%</p>
             <p className="mt-1 text-xs font-bold uppercase tracking-widest text-text-muted">
-              {sermon?.status === "ready" ? "Complete" : "Distilling"}
+              {sermon?.status === "ready" ? "Complete" : "Processing"}
             </p>
           </div>
         </div>
 
         {/* Animated Progress Bar */}
         <div className="mt-6 h-2.5 w-full overflow-hidden rounded-full bg-signal-bg">
-          <div
-            className="h-full rounded-full bg-pulse-gold transition-all duration-500 shadow-pulse"
-            style={{ width: `${progress}%` }}
+          <motion.div
+            initial={{ width: 0 }}
+            animate={{ width: `${progress}%` }}
+            transition={{ duration: 0.5, ease: "easeOut" }}
+            className="h-full rounded-full bg-pulse-gold shadow-pulse"
           />
         </div>
       </div>
@@ -121,10 +128,10 @@ export default function Processing() {
 
       {/* Live AI Speech Ticker */}
       {sermon?.transcript && (
-        <div className="my-8 rounded-2xl border border-signal-border bg-signal-panel p-5 shadow-signal">
+        <div className="my-8 rounded-2xl border border-signal-border bg-signal-panel/80 p-5 shadow-signal">
           <div className="flex items-center gap-2 font-mono text-xs font-bold uppercase tracking-wider text-pulse-gold">
             <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>Extracted Sermon Transcript Stream</span>
+            <span>Extracted Sermon Transcript</span>
           </div>
           <p className="mt-2 font-sans text-sm leading-relaxed italic text-text-secondary">
             "{sermon.transcript.slice(0, 300)}..."
@@ -133,7 +140,7 @@ export default function Processing() {
       )}
 
       {/* Processing Stages Breakdown */}
-      <section className="mt-8 rounded-3xl border border-signal-border bg-signal-panel px-6 py-8 shadow-signal sm:px-10">
+      <section className="mt-8 rounded-3xl border border-signal-border bg-signal-panel/80 px-6 py-8 shadow-signal sm:px-10">
         <div className="space-y-0">
           {stages.map(({ label, detail, icon: Icon, state }, index) => (
             <div key={label} className="grid grid-cols-[3.5rem_1fr] gap-5">
@@ -141,7 +148,7 @@ export default function Processing() {
                 {index < stages.length - 1 && <div className="absolute top-14 h-full w-0.5 bg-signal-border" />}
                 <div
                   className={[
-                    "relative z-10 grid h-12 w-12 place-items-center rounded-xl border transition-all duration-300",
+                    "relative z-10 grid h-12 w-12 place-items-center rounded-xl border transition-colors duration-200",
                     state === "complete" && "border-pulse-gold bg-pulse-gold text-signal-bg shadow-pulse font-bold",
                     state === "active" && "border-pulse-gold bg-signal-bg text-pulse-gold shadow-pulse animate-pulse",
                     state === "upcoming" && "border-signal-border bg-signal-bg text-text-muted",
@@ -175,7 +182,7 @@ export default function Processing() {
 
         <div className="mt-4 flex flex-col sm:flex-row items-center justify-between border-t border-signal-border pt-6 gap-4">
           <p className="font-mono text-xs text-text-muted">
-            You can review generated moments as soon as detection completes.
+            You can review generated key moments as soon as transcript processing completes.
           </p>
           <Link to="/highlights">
             <Button variant="gold" className="px-6 font-bold shadow-pulse">
@@ -184,6 +191,7 @@ export default function Processing() {
           </Link>
         </div>
       </section>
-    </div>
+    </motion.div>
   );
 }
+

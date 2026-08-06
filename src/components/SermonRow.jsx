@@ -1,5 +1,6 @@
-import { CalendarDays, ArrowUpRight, PlayCircle, Activity } from "lucide-react";
+import { CalendarDays, ArrowUpRight, PlayCircle, Radio } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { motion } from "framer-motion";
 
 export default function SermonRow({ sermon }) {
   const navigate = useNavigate();
@@ -9,9 +10,12 @@ export default function SermonRow({ sermon }) {
     : "Recent";
 
   return (
-    <div
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      whileHover={{ y: -2, transition: { duration: 0.15 } }}
       onClick={() => navigate(`/processing/${sermon.id}`)}
-      className="group relative mb-3 flex cursor-pointer flex-col justify-between gap-4 rounded-2xl border border-signal-border bg-signal-panel/90 p-5 shadow-signal transition-all duration-300 hover:-translate-y-0.5 hover:border-pulse-gold/50 hover:bg-signal-card sm:flex-row sm:items-center"
+      className="group relative mb-3 flex cursor-pointer flex-col justify-between gap-4 rounded-2xl border border-signal-border bg-signal-panel/80 p-5 shadow-signal transition-colors duration-200 hover:border-pulse-gold/50 hover:bg-signal-card sm:flex-row sm:items-center"
     >
       <div className="flex items-start gap-4">
         <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-signal-border bg-signal-bg text-pulse-gold transition-colors duration-200 group-hover:bg-pulse-gold group-hover:text-signal-bg">
@@ -20,7 +24,7 @@ export default function SermonRow({ sermon }) {
         <div>
           <div className="flex flex-wrap items-center gap-2 font-mono text-xs">
             <span className="rounded-md bg-pulse-gold/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-pulse-gold border border-pulse-gold/20">
-              YOUTUBE
+              SERMON
             </span>
             <span className="text-text-muted">•</span>
             <span className="truncate max-w-xs text-text-muted">{sermon.youtube_url}</span>
@@ -38,7 +42,7 @@ export default function SermonRow({ sermon }) {
             {formattedDate}
           </span>
           <span className="inline-flex items-center gap-1.5 rounded-xl border border-pulse-gold/30 bg-pulse-gold/10 px-3 py-1.5 font-bold uppercase text-pulse-gold">
-            <Activity size={13} className="text-pulse-gold" />
+            <Radio size={13} className="text-pulse-gold" />
             {sermon.status}
           </span>
         </div>
@@ -47,6 +51,7 @@ export default function SermonRow({ sermon }) {
           <ArrowUpRight size={18} />
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
+

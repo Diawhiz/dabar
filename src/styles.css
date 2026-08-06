@@ -8,6 +8,9 @@
   body {
     @apply bg-signal-bg text-text-primary font-sans antialiased selection:bg-pulse-gold/30 selection:text-pulse-gold;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    background-color: #090a0f;
+    background-image: radial-gradient(rgba(245, 158, 11, 0.035) 1px, transparent 1px);
+    background-size: 32px 32px;
   }
 
   h1, h2, h3, h4, h5, h6 {
@@ -22,26 +25,21 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: #0B0F19;
+  background: #090A0F;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #2A3852;
+  background: #252B3B;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #F2B824;
+  background: #F59E0B;
 }
 
 /* Focus Ring Utility */
 *:focus-visible {
-  outline: 2px solid #F2B824 !important;
+  outline: 2px solid #F59E0B !important;
   outline-offset: 2px !important;
 }
 
-/* Audio Waveform animation delay utilities */
-.wave-delay-1 { animation-delay: 0.15s; }
-.wave-delay-2 { animation-delay: 0.3s; }
-.wave-delay-3 { animation-delay: 0.45s; }
-.wave-delay-4 { animation-delay: 0.6s; }

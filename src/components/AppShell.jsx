@@ -1,11 +1,12 @@
 import { Outlet, NavLink } from "react-router-dom";
-import { Archive, Clapperboard, Home, Sparkles, Video, Cpu, Activity } from "lucide-react";
+import { Archive, Clapperboard, Home, Sparkles, Video, Radio } from "lucide-react";
+import { motion } from "framer-motion";
 
 const links = [
   { to: "/", label: "Home", icon: Home },
   { to: "/processing", label: "Processing", icon: Sparkles },
   { to: "/highlights", label: "Highlights", icon: Clapperboard },
-  { to: "/clips", label: "Clips Studio", icon: Video },
+  { to: "/clips", label: "Clip Studio", icon: Video },
   { to: "/archive", label: "Archive", icon: Archive },
 ];
 
@@ -16,21 +17,25 @@ export default function AppShell() {
         <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 sm:px-8 lg:px-10">
           {/* Logo Brand */}
           <NavLink to="/" className="group flex items-center gap-3.5 focus-visible:outline-none">
-            <div className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-signal-panel border border-signal-border text-pulse-gold font-display text-xl font-bold shadow-pulse transition-transform duration-300 group-hover:scale-105">
+            <motion.div
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-signal-panel border border-signal-border text-pulse-gold font-display text-xl font-bold shadow-pulse"
+            >
               ד
               <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-signal-bg bg-pulse-gold animate-pulse" />
-            </div>
+            </motion.div>
             <div>
               <div className="flex items-center gap-2">
                 <p className="font-display text-xl font-bold leading-none tracking-tight text-text-primary group-hover:text-pulse-gold transition-colors">
                   DABAR
                 </p>
                 <span className="rounded-md bg-pulse-gold/10 px-2 py-0.5 font-mono text-[10px] font-bold tracking-wider text-pulse-gold border border-pulse-gold/20">
-                  70B AI
+                  STUDIO
                 </span>
               </div>
-              <p className="mt-1 font-mono text-[10px] font-semibold uppercase tracking-[0.25em] text-text-muted">
-                The Word, ready to share
+              <p className="mt-1 font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-text-muted">
+                The Word, Ready To Share
               </p>
             </div>
           </NavLink>
@@ -44,9 +49,9 @@ export default function AppShell() {
                 end={to === "/"}
                 className={({ isActive }) =>
                   [
-                    "flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-semibold transition-all duration-200",
+                    "relative flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-semibold transition-colors duration-200",
                     isActive
-                      ? "bg-pulse-gold text-signal-bg shadow-pulse font-bold"
+                      ? "bg-pulse-gold text-signal-bg font-bold shadow-pulse"
                       : "text-text-secondary hover:bg-signal-hover hover:text-text-primary",
                   ].join(" ")
                 }
@@ -57,14 +62,14 @@ export default function AppShell() {
             ))}
           </nav>
 
-          {/* Engine Status Badge */}
-          <div className="hidden items-center gap-2.5 rounded-xl border border-pulse-gold/30 bg-pulse-gold/10 px-3.5 py-1.5 font-mono text-xs font-semibold text-pulse-gold lg:flex">
+          {/* Status Indicator */}
+          <div className="hidden items-center gap-2 rounded-xl border border-signal-border bg-signal-panel px-3.5 py-1.5 font-mono text-xs font-semibold text-text-secondary lg:flex">
             <span className="relative flex h-2 w-2">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-pulse-gold opacity-75" />
               <span className="relative inline-flex h-2 w-2 rounded-full bg-pulse-gold" />
             </span>
-            <Activity size={14} className="text-pulse-gold" />
-            <span>Groq Signal Active</span>
+            <Radio size={13} className="text-pulse-gold" />
+            <span>Engine Ready</span>
           </div>
         </div>
       </header>
@@ -78,13 +83,12 @@ export default function AppShell() {
       <footer className="border-t border-signal-border/80 bg-signal-panel/40 py-8 text-center text-xs text-text-muted">
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-5 sm:flex-row sm:px-8">
           <div className="flex items-center gap-2 font-display text-xs font-semibold text-text-secondary">
-            <span>DABAR SYSTEM</span>
+            <span>DABAR STUDIO</span>
             <span className="text-signal-border">•</span>
-            <span className="font-mono text-xs font-normal text-text-muted">Whisper + Llama 3.3 70B Engine</span>
+            <span className="font-mono text-xs font-normal text-text-muted">Smart Sermon Clipping</span>
           </div>
           <div className="flex items-center gap-2 text-text-muted font-mono text-xs">
-            <Cpu size={14} className="text-pulse-gold" />
-            <span>Zero-Download FFmpeg Stream Slicing</span>
+            <span>Precision Audio & Video Clipping</span>
           </div>
         </div>
       </footer>
@@ -111,3 +115,4 @@ export default function AppShell() {
     </div>
   );
 }
+

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { ArrowRight, Link2, Scissors, Sparkles, Wand2, Zap, PlayCircle, Radio, Disc, Activity } from "lucide-react";
+import { ArrowRight, Link2, Scissors, Sparkles, Wand2, Zap, PlayCircle, Radio, Disc } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { motion } from "framer-motion";
 import Button from "../components/Button.jsx";
 import { createSermon, listSermons } from "../lib/api.js";
 
@@ -59,19 +60,20 @@ export default function Home() {
   }
 
   return (
-    <div className="space-y-20">
+    <div className="space-y-16">
       {/* HERO SECTION */}
-      <section className="relative overflow-hidden py-12 sm:py-20 rounded-3xl border border-signal-border bg-signal-panel/60 px-6 sm:px-12 shadow-signal">
-        {/* Glow ambient background elements */}
-        <div className="pointer-events-none absolute -left-20 -top-20 h-96 w-96 rounded-full bg-pulse-gold/10 blur-3xl" />
-        <div className="pointer-events-none absolute -right-20 top-1/2 h-96 w-96 rounded-full bg-pulse-amber/10 blur-3xl" />
-
+      <motion.section
+        initial={{ opacity: 0, y: 15 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+        className="relative overflow-hidden py-12 sm:py-16 rounded-3xl border border-signal-border bg-signal-panel/80 px-6 sm:px-12 shadow-signal"
+      >
         <div className="relative mx-auto max-w-4xl text-center">
           {/* Badge */}
-          <div className="mx-auto mb-6 inline-flex items-center gap-2 rounded-full border border-pulse-gold/30 bg-signal-card px-4 py-1.5 shadow-soft">
+          <div className="mx-auto mb-6 inline-flex items-center gap-2 rounded-full border border-pulse-gold/30 bg-signal-bg px-4 py-1.5 shadow-sm">
             <Radio size={14} className="text-pulse-gold animate-pulse" />
-            <span className="font-mono text-xs font-bold uppercase tracking-[0.25em] text-pulse-gold">
-              Spoken Word Distillation Engine
+            <span className="font-mono text-xs font-bold uppercase tracking-[0.2em] text-pulse-gold">
+              Sermon Clip Studio
             </span>
           </div>
 
@@ -82,31 +84,35 @@ export default function Home() {
           </h1>
 
           <p className="mx-auto mt-6 max-w-2xl text-base leading-relaxed text-text-secondary sm:text-lg">
-            Paste a sermon link. Dabar transcribes the message with Groq Whisper, extracts conviction-rich key moments using Llama 3.3 70B, and slices social clips in seconds.
+            Paste any YouTube sermon link. Dabar automatically transcribes the audio, detects key teaching moments, and slices ready-to-share video clips in seconds.
           </p>
 
-          {/* SIGNATURE ELEMENT: Living Acoustic Distillation Waveform Ribbon */}
-          <div className="my-8 flex items-center justify-center gap-1 sm:gap-1.5 py-4 px-6 rounded-2xl border border-signal-border/80 bg-signal-bg/80 shadow-inner">
+          {/* Interactive Acoustic Distillation Waveform Ribbon */}
+          <div className="my-8 flex items-center justify-center gap-1 sm:gap-1.5 py-4 px-6 rounded-2xl border border-signal-border/80 bg-signal-bg/90 shadow-inner">
             {[40, 65, 30, 85, 95, 45, 75, 100, 60, 90, 50, 80, 100, 70, 40, 90, 60, 85, 35, 75, 95, 50, 30, 60].map((h, i) => (
-              <div
+              <motion.div
                 key={i}
+                animate={{ scaleY: [0.3, 1, 0.4] }}
+                transition={{
+                  repeat: Infinity,
+                  repeatType: "reverse",
+                  duration: 0.8 + (i % 4) * 0.2,
+                }}
                 style={{ height: `${h}%` }}
-                className={`w-1 sm:w-1.5 rounded-full transition-all duration-300 ${
-                  i >= 7 && i <= 14
-                    ? "bg-pulse-gold shadow-pulse animate-signal-wave"
-                    : "bg-signal-border/90 opacity-60"
-                } ${i % 2 === 0 ? "wave-delay-1" : "wave-delay-2"}`}
+                className={`w-1 sm:w-1.5 rounded-full ${
+                  i >= 7 && i <= 14 ? "bg-pulse-gold shadow-pulse" : "bg-signal-border/90 opacity-60"
+                }`}
               />
             ))}
-            <div className="ml-3 flex items-center gap-1.5 rounded-md bg-pulse-gold/20 px-2.5 py-1 font-mono text-[11px] font-bold text-pulse-gold border border-pulse-gold/30">
+            <div className="ml-3 flex items-center gap-1.5 rounded-md bg-pulse-gold/10 px-2.5 py-1 font-mono text-[11px] font-bold text-pulse-gold border border-pulse-gold/30">
               <Disc size={12} className="animate-spin" />
-              <span>00:45 CLIP EXTRACTED</span>
+              <span>CLIP DETECTED</span>
             </div>
           </div>
 
           {/* INPUT FORM */}
           <form
-            className="mx-auto mt-8 flex max-w-3xl flex-col gap-3 rounded-2xl border border-signal-border bg-signal-bg p-2.5 shadow-signal transition-all duration-300 focus-within:border-pulse-gold focus-within:shadow-pulse sm:flex-row"
+            className="mx-auto mt-8 flex max-w-3xl flex-col gap-3 rounded-2xl border border-signal-border bg-signal-bg p-2.5 shadow-signal transition-colors focus-within:border-pulse-gold sm:flex-row"
             onSubmit={handleSubmit}
           >
             <label className="relative flex-1">
@@ -122,7 +128,7 @@ export default function Home() {
             <Button type="submit" variant="gold" className="h-12 whitespace-nowrap px-7 text-sm font-bold shadow-pulse">
               {isSubmitting ? (
                 <span className="inline-flex items-center gap-2">
-                  <Wand2 size={16} className="animate-spin" /> Distilling...
+                  <Wand2 size={16} className="animate-spin" /> Processing…
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-2">
@@ -153,48 +159,69 @@ export default function Home() {
             </div>
           )}
         </div>
-      </section>
+      </motion.section>
 
       {/* FEATURE SEQUENCE */}
       <section className="mx-auto max-w-6xl">
         <div className="mb-10 text-center">
-          <p className="font-mono text-xs font-bold uppercase tracking-[0.25em] text-pulse-gold">DISTILLATION PIPELINE</p>
+          <p className="font-mono text-xs font-bold uppercase tracking-[0.2em] text-pulse-gold">WORKFLOW</p>
           <h2 className="mt-2 font-display text-2xl font-bold text-text-primary sm:text-3xl">
             From Pulpit Audio to Shareable Clips
           </h2>
         </div>
 
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-          <div className="rounded-2xl border border-signal-border bg-signal-panel p-6 shadow-signal transition-transform hover:-translate-y-1">
+        <motion.div
+          initial="hidden"
+          whileInView="show"
+          viewport={{ once: true }}
+          variants={{
+            hidden: { opacity: 0 },
+            show: { opacity: 1, transition: { staggerChildren: 0.15 } },
+          }}
+          className="grid grid-cols-1 gap-6 md:grid-cols-3"
+        >
+          <motion.div
+            variants={{ hidden: { opacity: 0, y: 15 }, show: { opacity: 1, y: 0 } }}
+            whileHover={{ y: -4 }}
+            className="rounded-2xl border border-signal-border bg-signal-panel/80 p-6 shadow-signal transition-colors duration-200 hover:border-pulse-gold/40"
+          >
             <div className="grid h-10 w-10 place-items-center rounded-xl border border-pulse-gold/30 bg-pulse-gold/10 text-pulse-gold">
               <Zap size={20} />
             </div>
-            <h3 className="mt-4 font-display text-lg font-bold text-text-primary">1. Whisper Speech Recognition</h3>
+            <h3 className="mt-4 font-display text-lg font-bold text-text-primary">1. High-Precision Transcription</h3>
             <p className="mt-2 text-xs leading-relaxed text-text-secondary">
-              Groq Whisper Large V3 Turbo transcribes sermon audio with exact punctuation and segment timestamps.
+              Transcribes sermon audio with exact punctuation and precise segment timestamps.
             </p>
-          </div>
+          </motion.div>
 
-          <div className="rounded-2xl border border-signal-border bg-signal-panel p-6 shadow-signal transition-transform hover:-translate-y-1">
+          <motion.div
+            variants={{ hidden: { opacity: 0, y: 15 }, show: { opacity: 1, y: 0 } }}
+            whileHover={{ y: -4 }}
+            className="rounded-2xl border border-signal-border bg-signal-panel/80 p-6 shadow-signal transition-colors duration-200 hover:border-pulse-gold/40"
+          >
             <div className="grid h-10 w-10 place-items-center rounded-xl border border-pulse-amber/30 bg-pulse-amber/10 text-pulse-amber">
               <Sparkles size={20} />
             </div>
-            <h3 className="mt-4 font-display text-lg font-bold text-text-primary">2. Llama 3.3 70B Moment Mining</h3>
+            <h3 className="mt-4 font-display text-lg font-bold text-text-primary">2. Key Moment Mining</h3>
             <p className="mt-2 text-xs leading-relaxed text-text-secondary">
-              Analyzes conviction points, gospel calls, and key teaching quotes to extract 30–90 second key moments.
+              Identifies high-impact quotes, core teaching points, and altar calls for 30–90 second clip moments.
             </p>
-          </div>
+          </motion.div>
 
-          <div className="rounded-2xl border border-signal-border bg-signal-panel p-6 shadow-signal transition-transform hover:-translate-y-1">
+          <motion.div
+            variants={{ hidden: { opacity: 0, y: 15 }, show: { opacity: 1, y: 0 } }}
+            whileHover={{ y: -4 }}
+            className="rounded-2xl border border-signal-border bg-signal-panel/80 p-6 shadow-signal transition-colors duration-200 hover:border-pulse-gold/40"
+          >
             <div className="grid h-10 w-10 place-items-center rounded-xl border border-pulse-cyan/30 bg-pulse-cyan/10 text-pulse-cyan">
               <Scissors size={20} />
             </div>
-            <h3 className="mt-4 font-display text-lg font-bold text-text-primary">3. Direct Stream Slicing</h3>
+            <h3 className="mt-4 font-display text-lg font-bold text-text-primary">3. Instant Clip Generation</h3>
             <p className="mt-2 text-xs leading-relaxed text-text-secondary">
-              FFmpeg HTTP stream slicing generates MP4 clips in 2–4s or produces instant timestamped share links.
+              Generates ready-to-share MP4 video clips or instant timestamped social share links.
             </p>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       </section>
 
       {/* RECENT SERMONS CAROUSEL */}
@@ -219,10 +246,11 @@ export default function Home() {
         ) : sermons.length > 0 ? (
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {sermons.map((sermon) => (
-              <article
+              <motion.article
                 key={sermon.id}
+                whileHover={{ y: -3 }}
                 onClick={() => navigate(`/processing/${sermon.id}`)}
-                className="group cursor-pointer rounded-2xl border border-signal-border bg-signal-panel p-5 shadow-signal transition-all duration-300 hover:-translate-y-1 hover:border-pulse-gold/50 hover:bg-signal-card"
+                className="group cursor-pointer rounded-2xl border border-signal-border bg-signal-panel/90 p-5 shadow-signal transition-colors duration-200 hover:border-pulse-gold/50 hover:bg-signal-card"
               >
                 <div className="flex items-center justify-between">
                   <span className="rounded-md border border-pulse-gold/30 bg-pulse-gold/10 px-2.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-pulse-gold">
@@ -239,7 +267,7 @@ export default function Home() {
                 <p className="mt-3 font-mono text-xs text-text-muted truncate border-t border-signal-border/50 pt-2.5">
                   {sermon.youtube_url}
                 </p>
-              </article>
+              </motion.article>
             ))}
           </div>
         ) : (
@@ -253,3 +281,4 @@ export default function Home() {
     </div>
   );
 }
+

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { Download, Instagram, MessageCircle, Send, Youtube, Sparkles, Check, Maximize2, Share2, Link2, ExternalLink, Loader2 } from "lucide-react";
+import { motion } from "framer-motion";
 import Button from "../components/Button.jsx";
 import PageHeader from "../components/PageHeader.jsx";
 import { listSermons, downloadClip } from "../lib/api.js";
@@ -108,8 +109,8 @@ export default function ClipsReady() {
 
   function handleShareOpen(platform) {
     const text = clipTitle
-      ? `🔥 "${clipTitle}" — Watch this powerful sermon moment`
-      : "🔥 Watch this powerful sermon moment";
+      ? `🔥 "${clipTitle}" — Watch this sermon moment`
+      : "🔥 Watch this sermon moment";
 
     const encodedUrl = encodeURIComponent(shareUrl);
     const encodedText = encodeURIComponent(text);
@@ -125,16 +126,20 @@ export default function ClipsReady() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl py-6">
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="mx-auto max-w-5xl py-6"
+    >
       <PageHeader
         eyebrow="Clip Studio"
         title="Sermon Video Clip"
-        description="Preview the sermon clip, download the MP4 file via FFmpeg stream slicing, or share the timestamped link."
+        description="Preview the sermon video clip, download the high quality MP4, or share the timestamped link."
         action={
           <Button variant="gold" className="px-7 shadow-pulse" onClick={handleDownload} disabled={downloading}>
             {downloading ? (
               <span className="inline-flex items-center gap-2">
-                <Loader2 size={16} className="animate-spin text-signal-bg" /> Slicing MP4 Clip…
+                <Loader2 size={16} className="animate-spin text-signal-bg" /> Exporting MP4 Clip…
               </span>
             ) : downloaded ? (
               <span className="inline-flex items-center gap-2">
@@ -157,10 +162,12 @@ export default function ClipsReady() {
 
       <div className="grid grid-cols-1 gap-10 lg:grid-cols-[1fr_360px]">
         {/* VIDEO PREVIEW */}
-        <section className="flex flex-col items-center justify-center rounded-3xl border border-signal-border bg-signal-panel p-8 shadow-signal">
-          <div
+        <section className="flex flex-col items-center justify-center rounded-3xl border border-signal-border bg-signal-panel/80 p-8 shadow-signal">
+          <motion.div
+            layout
+            transition={{ type: "spring", stiffness: 300, damping: 30 }}
             className={[
-              "relative mx-auto overflow-hidden rounded-2xl border border-signal-border shadow-signal transition-all duration-300",
+              "relative mx-auto overflow-hidden rounded-2xl border border-signal-border shadow-signal",
               activeFormatObj.aspect,
               "w-full bg-signal-bg",
             ].join(" ")}
@@ -180,11 +187,11 @@ export default function ClipsReady() {
             )}
 
             {/* Duration badge */}
-            <div className="absolute top-3 left-3 z-10 flex items-center gap-1.5 font-mono text-xs font-bold uppercase tracking-wider text-pulse-gold bg-signal-bg/80 px-3 py-1.5 rounded-xl backdrop-blur-md border border-pulse-gold/30">
+            <div className="absolute top-3 left-3 z-10 flex items-center gap-1.5 font-mono text-xs font-bold uppercase tracking-wider text-pulse-gold bg-signal-bg/90 px-3 py-1.5 rounded-xl backdrop-blur-md border border-pulse-gold/30">
               <Sparkles size={13} className="text-pulse-gold" />
               <span>{durationLabel}</span>
             </div>
-          </div>
+          </motion.div>
 
           {/* Share Link Preview */}
           <div className="mt-5 w-full max-w-md">
@@ -207,7 +214,7 @@ export default function ClipsReady() {
         {/* CONTROLS PANEL */}
         <section className="space-y-6">
           {/* Format Switcher */}
-          <div className="rounded-3xl border border-signal-border bg-signal-panel p-6 shadow-signal">
+          <div className="rounded-3xl border border-signal-border bg-signal-panel/80 p-6 shadow-signal">
             <div className="mb-4 flex items-center gap-2 font-mono text-xs font-bold uppercase tracking-wider text-pulse-gold">
               <Maximize2 size={15} className="text-pulse-gold" />
               <span>Preview Aspect Ratio</span>
@@ -218,7 +225,7 @@ export default function ClipsReady() {
                   key={f.id}
                   onClick={() => setSelectedFormat(f.id)}
                   className={[
-                    "flex w-full items-center justify-between rounded-xl px-4 py-3 text-xs font-semibold transition-all duration-200",
+                    "flex w-full items-center justify-between rounded-xl px-4 py-3 text-xs font-semibold transition-colors duration-200",
                     selectedFormat === f.id
                       ? "bg-pulse-gold text-signal-bg shadow-pulse font-bold"
                       : "bg-signal-bg text-text-secondary border border-signal-border hover:border-pulse-gold hover:text-text-primary",
@@ -230,6 +237,7 @@ export default function ClipsReady() {
               ))}
             </div>
           </div>
+
 
           {/* Download Action Card */}
           <button
@@ -286,6 +294,8 @@ export default function ClipsReady() {
           </div>
         </section>
       </div>
-    </div>
+    </motion.div>
   );
 }
+
+

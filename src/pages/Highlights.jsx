@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { Clock3, Scissors, Sparkles, Play, Pause, Search, Volume2, X, Activity, Filter } from "lucide-react";
+import { Clock3, Scissors, Sparkles, Play, Pause, Search, Volume2, X } from "lucide-react";
 import { Link } from "react-router-dom";
+import { motion, AnimatePresence } from "framer-motion";
 import Button from "../components/Button.jsx";
 import PageHeader from "../components/PageHeader.jsx";
 import { listSermons, getTranscript } from "../lib/api.js";
 
 function formatSeconds(secs) {
+  if (!secs && secs !== 0) return "00:00";
   const m = Math.floor(secs / 60);
   const s = Math.floor(secs % 60);
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
@@ -92,14 +94,14 @@ export default function Highlights() {
   return (
     <div className="mx-auto max-w-6xl py-6 pb-28">
       <PageHeader
-        eyebrow="Sermon Transcript & Moments"
+        eyebrow="Transcript & Key Moments"
         title={sermonTitle ? `Transcript: ${sermonTitle}` : "Sermon Highlights & Transcript"}
-        description="Explore timestamped sermon transcript blocks or view AI-detected key moments distilled by Llama 3.3 70B."
+        description="Explore timestamped sermon transcript blocks or review AI-detected key moments."
         action={
           <Link to="/clips">
             <Button variant="gold" className="px-6 shadow-pulse">
               <Scissors size={16} />
-              Studio Clip Generator
+              Open Clip Studio
             </Button>
           </Link>
         }
@@ -112,13 +114,13 @@ export default function Highlights() {
           <button
             onClick={() => setFilterMode("all")}
             className={[
-              "rounded-xl px-4 py-2 font-mono text-xs font-bold transition-all duration-200",
+              "relative rounded-xl px-4 py-2 font-mono text-xs font-bold transition-all duration-200",
               filterMode === "all"
                 ? "bg-pulse-gold text-signal-bg shadow-pulse"
                 : "bg-signal-panel text-text-secondary hover:bg-signal-hover hover:text-text-primary border border-signal-border",
             ].join(" ")}
           >
-            FULL SERMON ({segments.length})
+            FULL TRANSCRIPT ({segments.length})
           </button>
           <button
             onClick={() => setFilterMode("highlights")}
@@ -130,7 +132,7 @@ export default function Highlights() {
             ].join(" ")}
           >
             <Sparkles size={13} className={filterMode === "highlights" ? "text-white" : "text-pulse-amber"} />
-            AI KEY MOMENTS ({highlightCount})
+            KEY MOMENTS ({highlightCount})
           </button>
         </div>
 
@@ -141,29 +143,45 @@ export default function Highlights() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search transcript text..."
-            className="h-10 w-full rounded-xl border border-signal-border bg-signal-panel pl-10 pr-4 text-xs font-medium text-text-primary shadow-signal outline-none focus:border-pulse-gold/50"
+            className="h-10 w-full rounded-xl border border-signal-border bg-signal-panel pl-10 pr-4 text-xs font-medium text-text-primary shadow-signal outline-none transition-colors focus:border-pulse-gold/50"
           />
         </div>
       </div>
 
       {isLoading ? (
         <div className="rounded-2xl border border-signal-border bg-signal-panel p-12 text-center font-mono text-xs font-semibold text-text-secondary">
-          Loading full sermon transcript from database...
+          Loading sermon transcript...
         </div>
       ) : filteredSegments.length > 0 ? (
-        <section className="space-y-4">
+        <motion.section
+          initial="hidden"
+          animate="show"
+          variants={{
+            hidden: { opacity: 0 },
+            show: {
+              opacity: 1,
+              transition: { staggerChildren: 0.04 },
+            },
+          }}
+          className="space-y-4"
+        >
           {filteredSegments.map((seg, idx) => {
             const isPlaying = playingSegment && playingSegment.start === seg.start;
             const timestamp = `${formatSeconds(seg.start)} - ${formatSeconds(seg.end)}`;
 
             return (
-              <article
-                key={idx}
+              <motion.article
+                key={seg.id || idx}
+                variants={{
+                  hidden: { opacity: 0, y: 12 },
+                  show: { opacity: 1, y: 0 },
+                }}
+                whileHover={{ y: -2, transition: { duration: 0.15 } }}
                 className={[
-                  "group rounded-2xl border p-6 shadow-signal transition-all duration-300 hover:-translate-y-0.5",
+                  "group rounded-2xl border p-6 shadow-signal transition-colors duration-200",
                   seg.is_highlight
-                    ? "border-pulse-gold/60 bg-gradient-to-r from-signal-panel via-signal-panel to-pulse-gold/10"
-                    : "border-signal-border/90 bg-signal-panel",
+                    ? "border-pulse-gold/50 bg-signal-panel/90"
+                    : "border-signal-border bg-signal-panel/60",
                 ].join(" ")}
               >
                 <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
@@ -176,7 +194,7 @@ export default function Highlights() {
                       {seg.is_highlight && (
                         <span className="inline-flex items-center gap-1.5 rounded-lg border border-pulse-gold/30 bg-pulse-gold/10 px-3 py-1 font-bold text-pulse-gold uppercase tracking-wider">
                           <Sparkles size={13} className="text-pulse-gold" />
-                          {seg.highlight_title || "Key Highlight"}
+                          {seg.highlight_title || "Key Moment"}
                         </span>
                       )}
                       <span className="text-text-muted">
@@ -190,19 +208,15 @@ export default function Highlights() {
                   </div>
 
                   <div className="flex flex-row items-center gap-2.5 lg:flex-col lg:items-end lg:justify-center">
-                    <button
-                      type="button"
+                    <Button
+                      size="sm"
+                      variant={isPlaying ? "gold" : "outline"}
                       onClick={() => toggleAudio(seg)}
-                      className={[
-                        "inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border px-3.5 font-mono text-xs font-semibold transition-all duration-200",
-                        isPlaying
-                          ? "border-pulse-gold bg-pulse-gold text-signal-bg shadow-pulse font-bold"
-                          : "border-signal-border bg-signal-bg text-text-secondary hover:border-pulse-gold hover:text-text-primary",
-                      ].join(" ")}
+                      className="h-9 px-3.5 font-mono text-xs"
                     >
-                      {isPlaying ? <Pause size={14} className="text-signal-bg" /> : <Play size={14} className="text-pulse-gold" />}
-                      <span>{isPlaying ? "Stop Audio" : "Preview Audio"}</span>
-                    </button>
+                      {isPlaying ? <Pause size={14} /> : <Play size={14} className="text-pulse-gold" />}
+                      <span>{isPlaying ? "Pause Preview" : "Preview Audio"}</span>
+                    </Button>
 
                     <Link
                       to="/clips"
@@ -221,52 +235,89 @@ export default function Highlights() {
                     </Link>
                   </div>
                 </div>
-              </article>
+              </motion.article>
             );
           })}
-        </section>
+        </motion.section>
       ) : (
         <div className="rounded-2xl border border-signal-border bg-signal-panel p-12 text-center font-mono text-xs font-semibold text-text-secondary">
           No matching transcript segments found.
         </div>
       )}
 
-      {/* FLOATING AUDIO PREVIEW PLAYER BAR */}
-      {playingSegment && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-4 rounded-2xl border border-pulse-gold/50 bg-signal-panel px-5 py-3.5 text-text-primary shadow-signal backdrop-blur-md transition-all animate-in fade-in slide-in-from-bottom-5">
-          <div className="flex items-center gap-3">
-            <div className="grid h-9 w-9 place-items-center rounded-xl bg-pulse-gold text-signal-bg font-bold">
-              <Volume2 size={18} className="animate-pulse" />
-            </div>
-            <div className="font-mono">
-              <p className="text-xs font-bold text-text-primary">
-                Previewing Segment #{playingSegment.segment_index !== undefined ? playingSegment.segment_index + 1 : 1}
-              </p>
-              <p className="text-[11px] text-pulse-gold">
-                {formatSeconds(playingSegment.start)} – {formatSeconds(playingSegment.end)}
-              </p>
-            </div>
-          </div>
-
-          {/* YouTube Embed Audio Engine */}
-          {videoId && (
-            <iframe
-              src={`https://www.youtube.com/embed/${videoId}?start=${Math.floor(playingSegment.start)}&end=${Math.ceil(playingSegment.end)}&autoplay=1&enablejsapi=1`}
-              title="Segment Audio Preview"
-              className="h-0 w-0 opacity-0 pointer-events-none"
-              allow="autoplay; encrypted-media"
-            />
-          )}
-
-          <button
-            onClick={() => setPlayingSegment(null)}
-            className="ml-2 rounded-xl border border-signal-border bg-signal-bg p-1.5 text-text-secondary hover:text-text-primary transition-colors"
-            title="Stop Audio"
+      {/* FLOATING INTERACTIVE AUDIO PREVIEW PLAYER BAR */}
+      <AnimatePresence>
+        {playingSegment && (
+          <motion.div
+            initial={{ opacity: 0, y: 40, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 40, scale: 0.95 }}
+            transition={{ type: "spring", stiffness: 350, damping: 25 }}
+            className="fixed bottom-6 right-6 z-50 flex flex-col sm:flex-row items-center gap-4 rounded-2xl border border-pulse-gold/50 bg-signal-panel p-4 text-text-primary shadow-2xl backdrop-blur-xl max-w-lg"
           >
-            <X size={15} />
-          </button>
-        </div>
-      )}
+            {/* Interactive Visible YouTube Mini Player Window for browser autoplay compliance */}
+            {videoId && (
+              <div className="relative h-28 w-44 shrink-0 overflow-hidden rounded-xl border border-signal-border bg-black shadow-inner">
+                <iframe
+                  src={`https://www.youtube.com/embed/${videoId}?start=${Math.floor(playingSegment.start)}&end=${Math.ceil(playingSegment.end)}&autoplay=1&enablejsapi=1&rel=0`}
+                  title="Segment Audio Preview"
+                  className="h-full w-full object-cover"
+                  allow="autoplay; encrypted-media"
+                />
+              </div>
+            )}
+
+            <div className="flex flex-1 flex-col justify-between space-y-2 w-full">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="flex items-center gap-1.5 font-mono text-[11px] font-bold text-pulse-gold">
+                    <Volume2 size={14} className="animate-pulse" />
+                    <span>AUDIO PREVIEW</span>
+                  </div>
+                  <p className="mt-0.5 text-xs font-bold text-text-primary line-clamp-1">
+                    Segment #{playingSegment.segment_index !== undefined ? playingSegment.segment_index + 1 : 1}
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => setPlayingSegment(null)}
+                  className="rounded-lg border border-signal-border bg-signal-bg p-1 text-text-muted hover:text-text-primary transition-colors"
+                  title="Close Preview"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+
+              {/* Animated Waveform Bars */}
+              <div className="flex items-center gap-1 py-1">
+                {[40, 75, 35, 90, 60, 95, 45, 80, 50, 85, 30, 70].map((h, i) => (
+                  <motion.div
+                    key={i}
+                    animate={{
+                      height: [h * 0.3, h, h * 0.4],
+                    }}
+                    transition={{
+                      repeat: Infinity,
+                      repeatType: "reverse",
+                      duration: 0.6 + (i % 3) * 0.2,
+                    }}
+                    style={{ height: `${h}%` }}
+                    className="w-1 rounded-full bg-pulse-gold"
+                  />
+                ))}
+                <span className="ml-2 font-mono text-[11px] font-semibold text-text-secondary">
+                  {formatSeconds(playingSegment.start)} – {formatSeconds(playingSegment.end)}
+                </span>
+              </div>
+
+              <p className="font-sans text-[11px] text-text-muted line-clamp-1 italic">
+                "{playingSegment.text}"
+              </p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
+

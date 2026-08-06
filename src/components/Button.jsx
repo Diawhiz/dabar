@@ -1,10 +1,11 @@
 import { forwardRef } from "react";
+import { motion } from "framer-motion";
 
 const variants = {
-  gold: "bg-pulse-gold text-signal-bg font-bold hover:bg-yellow-400 shadow-pulse active:scale-[0.98]",
-  amber: "bg-pulse-amber text-white font-bold hover:bg-orange-600 shadow-laser active:scale-[0.98]",
-  navy: "bg-signal-panel text-text-primary border border-signal-border hover:bg-signal-hover hover:border-text-secondary active:scale-[0.98]",
-  outline: "border border-signal-border bg-transparent text-text-secondary hover:border-pulse-gold hover:text-pulse-gold active:scale-[0.98]",
+  gold: "bg-pulse-gold text-signal-bg font-bold hover:bg-yellow-400 shadow-pulse",
+  amber: "bg-pulse-amber text-white font-bold hover:bg-orange-500 shadow-laser",
+  navy: "bg-signal-panel text-text-primary border border-signal-border hover:bg-signal-hover hover:border-text-secondary",
+  outline: "border border-signal-border bg-signal-panel/50 text-text-secondary hover:border-pulse-gold hover:text-pulse-gold",
   ghost: "bg-transparent text-text-secondary hover:bg-signal-panel hover:text-text-primary",
 };
 
@@ -15,22 +16,27 @@ const sizes = {
 };
 
 const Button = forwardRef(function Button(
-  { variant = "gold", size = "md", className = "", children, ...props },
+  { variant = "gold", size = "md", className = "", children, disabled, ...props },
   ref
 ) {
   const variantClass = variants[variant] || variants.gold;
   const sizeClass = sizes[size] || sizes.md;
 
   return (
-    <button
+    <motion.button
       ref={ref}
       type="button"
-      className={`inline-flex items-center justify-center font-semibold transition-all duration-200 focus-visible:outline-none ${variantClass} ${sizeClass} ${className}`}
+      whileHover={disabled ? undefined : { scale: 1.02 }}
+      whileTap={disabled ? undefined : { scale: 0.97 }}
+      transition={{ type: "spring", stiffness: 400, damping: 25 }}
+      disabled={disabled}
+      className={`inline-flex items-center justify-center font-semibold transition-colors focus-visible:outline-none disabled:opacity-50 disabled:pointer-events-none ${variantClass} ${sizeClass} ${className}`}
       {...props}
     >
       {children}
-    </button>
+    </motion.button>
   );
 });
 
 export default Button;
+

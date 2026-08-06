@@ -10,48 +10,46 @@ export default {
       },
       colors: {
         signal: {
-          bg: "#0B0F19",       // Ink Midnight — deep acoustic dark foundation
-          panel: "#141C2E",    // Transmission Slate — dark structured surface
-          card: "#1E293B",     // Frequency Card — contrast elevated surface
-          border: "#2A3852",   // Frequency Line — precise low-contrast border
-          hover: "#334155",    // Interactive hover state
+          bg: "#090A0F",       // Deep Obsidian Midnight
+          panel: "#12151E",    // Dark Velvet Surface
+          card: "#1A1E2B",     // Elevated Glass Card
+          border: "#252B3B",   // Crisp Precision Border
+          hover: "#222736",    // Interactive Hover Surface
         },
         pulse: {
-          gold: "#F2B824",     // Spoken Pulse — energetic signal accent
-          amber: "#F97316",    // Laser Cut Highlight — active distillation marker
-          cyan: "#38BDF8",     // Transmission Blue — secondary status indicator
+          gold: "#F59E0B",     // Warm Regal Gold
+          amber: "#EA580C",    // Sunset Orange Accent
+          cyan: "#06B6D4",     // Electric Cyan Accent
+          violet: "#8B5CF6",   // Royal Violet Accent
         },
         text: {
-          primary: "#F8FAFC",  // Pure Vocal White — high contrast readable text
-          secondary: "#94A3B8",// Waveform Gray — secondary metadata
-          muted: "#64748B",    // Subtle label gray
+          primary: "#F8FAFC",  // High-Contrast White
+          secondary: "#94A3B8",// Refined Slate Gray
+          muted: "#64748B",    // Subtle Muted Gray
         },
       },
       boxShadow: {
-        signal: "0 20px 50px -10px rgba(11, 15, 25, 0.8)",
-        pulse: "0 0 35px rgba(242, 184, 36, 0.22)",
-        laser: "0 0 25px rgba(249, 115, 22, 0.3)",
+        signal: "0 20px 40px -15px rgba(0, 0, 0, 0.7)",
+        pulse: "0 0 25px rgba(245, 158, 11, 0.25)",
+        laser: "0 0 25px rgba(234, 88, 12, 0.25)",
+        glow: "0 0 40px -10px rgba(245, 158, 11, 0.15)",
       },
       animation: {
         'pulse-glow': 'pulse-glow 2.5s ease-in-out infinite',
         'signal-wave': 'signal-wave 1.2s ease-in-out infinite alternate',
-        'laser-scan': 'laser-scan 3s linear infinite',
       },
       keyframes: {
         'pulse-glow': {
-          '0%, 100%': { boxShadow: '0 0 0 0 rgba(242, 184, 36, 0.3)' },
-          '50%': { boxShadow: '0 0 0 12px rgba(242, 184, 36, 0)' },
+          '0%, 100%': { boxShadow: '0 0 0 0 rgba(245, 158, 11, 0.3)' },
+          '50%': { boxShadow: '0 0 0 12px rgba(245, 158, 11, 0)' },
         },
         'signal-wave': {
           '0%': { transform: 'scaleY(0.25)' },
           '100%': { transform: 'scaleY(1.0)' },
         },
-        'laser-scan': {
-          '0%': { transform: 'translateX(-100%)' },
-          '100%': { transform: 'translateX(100%)' },
-        }
       }
     },
   },
   plugins: [],
 };
+

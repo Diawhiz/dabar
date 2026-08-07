@@ -18,6 +18,8 @@ async fn main() -> anyhow::Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
+    check_external_dependencies().await;
+
     let state = AppState::connect().await?;
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -42,4 +44,22 @@ async fn main() -> anyhow::Result<()> {
         .await
         .context("serving Axum app")?;
     Ok(())
+}
+
+async fn check_external_dependencies() {
+    let yt_dlp_path = std::env::var("YT_DLP_PATH").unwrap_or_else(|_| "yt-dlp".to_string());
+    match dabar_core::downloader::check_yt_dlp_installed().await {
+        Ok(version) => tracing::info!("yt-dlp binary verified (version: {version})"),
+        Err(err) => tracing::error!(
+            "yt-dlp check failed (path: '{yt_dlp_path}'): {err:?}. Install yt-dlp on system PATH or set YT_DLP_PATH env var."
+        ),
+    }
+
+    let ffmpeg_path = std::env::var("FFMPEG_PATH").unwrap_or_else(|_| "ffmpeg".to_string());
+    match dabar_core::ffmpeg::check_ffmpeg_installed().await {
+        Ok(version) => tracing::info!("ffmpeg binary verified ({version})"),
+        Err(err) => tracing::error!(
+            "ffmpeg check failed (path: '{ffmpeg_path}'): {err:?}. Install ffmpeg on system PATH or set FFMPEG_PATH env var."
+        ),
+    }
 }

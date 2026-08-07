@@ -86,7 +86,35 @@ pub async fn resolve_stream_url(youtube_url: &str) -> Result<String> {
     Ok(resolved_url)
 }
 
+pub async fn check_yt_dlp_installed() -> Result<String> {
+    let output = get_binary_command("yt-dlp")
+        .arg("--version")
+        .output()
+        .await
+        .context("executing yt-dlp --version")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("yt-dlp execution failed: {}", stderr.trim());
+    }
+
+    let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if version.is_empty() {
+        anyhow::bail!("yt-dlp returned empty version output");
+    }
+
+    Ok(version)
+}
+
 fn get_binary_command(name: &str) -> Command {
+    if name == "yt-dlp" {
+        if let Ok(custom_path) = std::env::var("YT_DLP_PATH") {
+            if !custom_path.trim().is_empty() {
+                return Command::new(custom_path.trim());
+            }
+        }
+    }
+
     let exe_name = if cfg!(windows) && !name.ends_with(".exe") {
         format!("{name}.exe")
     } else {

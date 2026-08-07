@@ -44,7 +44,38 @@ pub async fn extract_vertical_clip(
     Ok(())
 }
 
+pub async fn check_ffmpeg_installed() -> Result<String> {
+    let output = get_binary_command("ffmpeg")
+        .arg("-version")
+        .output()
+        .await
+        .context("executing ffmpeg -version")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("ffmpeg execution failed: {}", stderr.trim());
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let version_line = stdout
+        .lines()
+        .next()
+        .map(str::trim)
+        .unwrap_or("ffmpeg")
+        .to_string();
+
+    Ok(version_line)
+}
+
 fn get_binary_command(name: &str) -> Command {
+    if name == "ffmpeg" {
+        if let Ok(custom_path) = std::env::var("FFMPEG_PATH") {
+            if !custom_path.trim().is_empty() {
+                return Command::new(custom_path.trim());
+            }
+        }
+    }
+
     let exe_name = if cfg!(windows) && !name.ends_with(".exe") {
         format!("{name}.exe")
     } else {

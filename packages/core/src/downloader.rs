@@ -18,11 +18,8 @@ pub async fn download_youtube_audio(
 
     let output_template = output_dir.join("%(id)s.%(ext)s");
     let mut cmd = get_binary_command("yt-dlp");
-    // Disabled cookies because youtube:player_client=android does not support cookie authentication
-    // apply_cookies_arg(&mut cmd);
-    cmd.arg("--extractor-args")
-        .arg("youtube:player_client=android")
-        .arg("--js-runtimes")
+    apply_cookies_arg(&mut cmd);
+    cmd.arg("--js-runtimes")
         .arg("node")
         .arg("--remote-components")
         .arg("ejs:github")
@@ -45,8 +42,6 @@ pub async fn download_youtube_audio(
             eprintln!("Warning: YouTube cookies invalid/rotated. Retrying download without cookies...");
             let mut retry_cmd = get_binary_command("yt-dlp");
             retry_cmd
-                .arg("--extractor-args")
-                .arg("youtube:player_client=android")
                 .arg("--js-runtimes")
                 .arg("node")
                 .arg("--remote-components")
@@ -91,11 +86,8 @@ pub async fn download_youtube_audio(
 
 pub async fn resolve_stream_url(youtube_url: &str) -> Result<String> {
     let mut cmd = get_binary_command("yt-dlp");
-    // Disabled cookies because youtube:player_client=android does not support cookie authentication
-    // apply_cookies_arg(&mut cmd);
-    cmd.arg("--extractor-args")
-        .arg("youtube:player_client=android")
-        .arg("--js-runtimes")
+    apply_cookies_arg(&mut cmd);
+    cmd.arg("--js-runtimes")
         .arg("node")
         .arg("--remote-components")
         .arg("ejs:github")
@@ -112,8 +104,6 @@ pub async fn resolve_stream_url(youtube_url: &str) -> Result<String> {
         if stderr.contains("cookies are no longer valid") || stderr.contains("rotated in the browser") {
             let mut retry_cmd = get_binary_command("yt-dlp");
             retry_cmd
-                .arg("--extractor-args")
-                .arg("youtube:player_client=android")
                 .arg("--js-runtimes")
                 .arg("node")
                 .arg("--remote-components")

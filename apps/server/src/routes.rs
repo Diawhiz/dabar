@@ -85,8 +85,15 @@ async fn create_sermon(
 
     tokio::spawn(async move {
         if let Err(err) = run_pipeline(state_clone.clone(), sermon_id, youtube_url).await {
-            tracing::error!("Sermon pipeline failed for sermon {sermon_id}: {err:?}");
-            if let Err(db_err) = state_clone.mark_failed(sermon_id, &err.to_string()).await {
+            let err_msg = err.to_string();
+            if err_msg.contains("confirm you're not a bot") || err_msg.contains("bot-detection") {
+                tracing::error!(
+                    "Sermon pipeline failed due to YouTube bot-detection for sermon {sermon_id}: {err:?}. To fix this on Render, export cookies.txt from a logged-in YouTube session using a browser extension ('Get cookies.txt LOCALLY'), upload the file to Render Secret Files (e.g. /etc/secrets/cookies.txt), and set YT_DLP_COOKIES_PATH=/etc/secrets/cookies.txt."
+                );
+            } else {
+                tracing::error!("Sermon pipeline failed for sermon {sermon_id}: {err:?}");
+            }
+            if let Err(db_err) = state_clone.mark_failed(sermon_id, &err_msg).await {
                 tracing::error!("Failed to record sermon failure in DB for {sermon_id}: {db_err:?}");
             }
         }

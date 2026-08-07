@@ -12,3 +12,8 @@ tmp_audio/
 tmp_clips/
 target/
 src-tauri/target/
+
+# Sensitive YouTube Auth Cookies
+cookies.txt
+*.cookies.txt
+*.cookies

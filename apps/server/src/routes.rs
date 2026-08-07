@@ -169,22 +169,71 @@ async fn queue_transcription(
     }
 }
 
-async fn download_clip_by_id(Path(_id): Path<Uuid>) -> impl IntoResponse {
-    (
-        StatusCode::NOT_IMPLEMENTED,
-        Json(ApiError {
-            detail: "Clip rendering will be enabled in the processing phase.".to_string(),
-        }),
-    )
-}
+async fn download_clip_by_id(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Response {
+    let (highlight, sermon) = match state.get_highlight_with_sermon(id).await {
+        Ok(Some(pair)) => pair,
+        Ok(None) => return not_found("Clip highlight not found."),
+        Err(err) => return server_error(err),
+    };
 
-async fn download_clip_by_query(Query(query): Query<DownloadClipQuery>) -> Response {
-    let filename = format!("dabar-clip-{:.0}s.mp4", query.start.max(0.0));
-    let detail = format!(
-        "Clip rendering is queued for {} from {:.2}s to {:.2}s.",
-        query.url, query.start, query.end
+    if highlight.start_time < 0.0 || highlight.end_time <= highlight.start_time {
+        return bad_request("Invalid clip duration bounds for highlight.");
+    }
+
+    let stream_url = match dabar_core::downloader::resolve_stream_url(&sermon.youtube_url).await {
+        Ok(url) => url,
+        Err(err) => {
+            tracing::error!("Stream resolution failed for clip {id}: {err:?}");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiError {
+                    detail: format!("Failed to resolve media stream URL: {err}"),
+                }),
+            )
+                .into_response();
+        }
+    };
+
+    let temp_path = std::env::temp_dir().join(format!("clip_{id}.mp4"));
+    let extract_res = dabar_core::ffmpeg::extract_vertical_clip(
+        &stream_url,
+        &temp_path,
+        highlight.start_time,
+        highlight.end_time,
+    )
+    .await;
+
+    if let Err(err) = extract_res {
+        tracing::error!("FFmpeg clip extraction failed for clip {id}: {err:?}");
+        let _ = tokio::fs::remove_file(&temp_path).await;
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiError {
+                detail: format!("FFmpeg clip rendering failed: {err}"),
+            }),
+        )
+            .into_response();
+    }
+
+    let bytes = match tokio::fs::read(&temp_path).await {
+        Ok(bytes) => bytes,
+        Err(read_err) => {
+            let _ = tokio::fs::remove_file(&temp_path).await;
+            return server_error(anyhow::anyhow!("Reading clip file failed: {read_err}"));
+        }
+    };
+
+    let _ = tokio::fs::remove_file(&temp_path).await;
+
+    let filename = format!("clip-{id}.mp4");
+    let mut response = (StatusCode::OK, bytes).into_response();
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("video/mp4"),
     );
-    let mut response = (StatusCode::NOT_IMPLEMENTED, Json(ApiError { detail })).into_response();
     response.headers_mut().insert(
         header::CONTENT_DISPOSITION,
         HeaderValue::from_str(&format!("attachment; filename=\"{filename}\"")).unwrap_or_else(
@@ -192,6 +241,86 @@ async fn download_clip_by_query(Query(query): Query<DownloadClipQuery>) -> Respo
         ),
     );
     response
+}
+
+async fn download_clip_by_query(Query(query): Query<DownloadClipQuery>) -> Response {
+    if query.url.trim().is_empty() {
+        return bad_request("url query parameter is required.");
+    }
+
+    if query.start < 0.0 || query.end <= query.start {
+        return bad_request("Invalid start/end query parameters: start must be >= 0 and < end.");
+    }
+
+    let stream_url = match dabar_core::downloader::resolve_stream_url(&query.url).await {
+        Ok(url) => url,
+        Err(err) => {
+            tracing::error!("Stream resolution failed for query clip {}: {err:?}", query.url);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiError {
+                    detail: format!("Failed to resolve media stream URL: {err}"),
+                }),
+            )
+                .into_response();
+        }
+    };
+
+    let clip_id = Uuid::new_v4();
+    let temp_path = std::env::temp_dir().join(format!("clip_{clip_id}.mp4"));
+    let extract_res = dabar_core::ffmpeg::extract_vertical_clip(
+        &stream_url,
+        &temp_path,
+        query.start,
+        query.end,
+    )
+    .await;
+
+    if let Err(err) = extract_res {
+        tracing::error!("FFmpeg query clip extraction failed for {}: {err:?}", query.url);
+        let _ = tokio::fs::remove_file(&temp_path).await;
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiError {
+                detail: format!("FFmpeg clip rendering failed: {err}"),
+            }),
+        )
+            .into_response();
+    }
+
+    let bytes = match tokio::fs::read(&temp_path).await {
+        Ok(bytes) => bytes,
+        Err(read_err) => {
+            let _ = tokio::fs::remove_file(&temp_path).await;
+            return server_error(anyhow::anyhow!("Reading clip file failed: {read_err}"));
+        }
+    };
+
+    let _ = tokio::fs::remove_file(&temp_path).await;
+
+    let filename = format!("dabar-clip-{:.0}s.mp4", query.start.max(0.0));
+    let mut response = (StatusCode::OK, bytes).into_response();
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("video/mp4"),
+    );
+    response.headers_mut().insert(
+        header::CONTENT_DISPOSITION,
+        HeaderValue::from_str(&format!("attachment; filename=\"{filename}\"")).unwrap_or_else(
+            |_| HeaderValue::from_static("attachment; filename=\"dabar-clip.mp4\""),
+        ),
+    );
+    response
+}
+
+fn bad_request(detail: &str) -> Response {
+    (
+        StatusCode::BAD_REQUEST,
+        Json(ApiError {
+            detail: detail.to_string(),
+        }),
+    )
+        .into_response()
 }
 
 fn not_found(detail: &str) -> Response {
@@ -213,13 +342,4 @@ fn server_error(error: anyhow::Error) -> Response {
         }),
     )
         .into_response()
-}
-
-#[allow(dead_code)]
-fn empty_mp4_response() -> Response {
-    Response::builder()
-        .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, "video/mp4")
-        .body(Body::empty())
-        .expect("empty response is valid")
 }

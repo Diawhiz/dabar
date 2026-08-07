@@ -2,14 +2,16 @@ use anyhow::{Context, Result};
 use std::path::Path;
 use tokio::process::Command;
 
-pub async fn render_vertical_clip(
-    input_path: &Path,
+pub async fn extract_vertical_clip(
+    input_source: &str,
     output_path: &Path,
     start_time: f32,
     end_time: f32,
 ) -> Result<()> {
-    if end_time <= start_time {
-        anyhow::bail!("clip end_time must be greater than start_time");
+    if start_time < 0.0 || end_time <= start_time {
+        anyhow::bail!(
+            "invalid clip duration bounds: start_time ({start_time:.2}) must be >= 0 and < end_time ({end_time:.2})"
+        );
     }
 
     let duration = end_time - start_time;
@@ -18,11 +20,11 @@ pub async fn render_vertical_clip(
         .arg("-ss")
         .arg(format!("{start_time:.3}"))
         .arg("-i")
-        .arg(input_path)
+        .arg(input_source)
         .arg("-t")
         .arg(format!("{duration:.3}"))
         .arg("-vf")
-        .arg("scale=1080:-2,crop=1080:1920")
+        .arg("split[original][blurred];[blurred]scale=1080:1920,gblur=sigma=20[bg];[original]scale=1080:-2[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2")
         .arg("-c:v")
         .arg("libx264")
         .arg("-preset")
@@ -32,13 +34,11 @@ pub async fn render_vertical_clip(
         .arg(output_path)
         .output()
         .await
-        .context("running ffmpeg")?;
+        .context("executing ffmpeg process")?;
 
     if !output.status.success() {
-        anyhow::bail!(
-            "ffmpeg failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("ffmpeg extraction failed: {}", stderr.trim());
     }
 
     Ok(())

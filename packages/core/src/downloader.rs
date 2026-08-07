@@ -59,3 +59,30 @@ pub async fn download_youtube_audio(
         .find(|line| line != path.to_string_lossy().as_ref());
     Ok(DownloadedAudio { path, title })
 }
+
+pub async fn resolve_stream_url(youtube_url: &str) -> Result<String> {
+    let output = Command::new("yt-dlp")
+        .arg("-g")
+        .arg("--extractor-args")
+        .arg("youtube:player_client=android_vr,tv")
+        .arg(youtube_url)
+        .output()
+        .await
+        .context("running yt-dlp -g to resolve media stream URL")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("yt-dlp stream resolution failed: {}", stderr.trim());
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let resolved_url = stdout
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .context("yt-dlp -g returned empty stdout")?
+        .to_string();
+
+    Ok(resolved_url)
+}
+

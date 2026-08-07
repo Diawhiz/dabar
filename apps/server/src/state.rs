@@ -81,6 +81,43 @@ impl AppState {
         Ok(Some(sermon))
     }
 
+    pub async fn get_highlight_with_sermon(
+        &self,
+        highlight_id: Uuid,
+    ) -> anyhow::Result<Option<(Highlight, Sermon)>> {
+        let hl_row = sqlx::query(
+            "SELECT id, sermon_id, title, start_time, end_time, score
+             FROM highlights
+             WHERE id = ?",
+        )
+        .bind(highlight_id.to_string())
+        .fetch_optional(&self.db)
+        .await
+        .context("fetching highlight")?;
+
+        let Some(hl_row) = hl_row else {
+            return Ok(None);
+        };
+
+        let highlight = Highlight {
+            id: Uuid::parse_str(hl_row.try_get::<String, _>("id")?.as_str())?,
+            title: hl_row.try_get("title")?,
+            start_time: hl_row.try_get::<f64, _>("start_time")? as f32,
+            end_time: hl_row.try_get::<f64, _>("end_time")? as f32,
+            score: hl_row.try_get::<f64, _>("score")? as f32,
+        };
+
+        let sermon_id_str: String = hl_row.try_get("sermon_id")?;
+        let sermon_id = Uuid::parse_str(&sermon_id_str)?;
+
+        let sermon = self
+            .get_sermon(sermon_id)
+            .await?
+            .context("parent sermon for highlight missing")?;
+
+        Ok(Some((highlight, sermon)))
+    }
+
     async fn list_highlights(&self, sermon_id: Uuid) -> anyhow::Result<Vec<Highlight>> {
         let rows = sqlx::query(
             "SELECT id, title, start_time, end_time, score

@@ -26,8 +26,6 @@ pub async fn download_youtube_audio(
         .arg("after_move:filepath")
         .arg("--print")
         .arg("title")
-        .arg("--extractor-args")
-        .arg("youtube:player_client=android_vr,tv")
         .arg("--output")
         .arg(&output_template)
         .arg(youtube_url);
@@ -62,8 +60,6 @@ pub async fn resolve_stream_url(youtube_url: &str) -> Result<String> {
     let mut cmd = get_binary_command("yt-dlp");
     apply_cookies_arg(&mut cmd);
     cmd.arg("-g")
-        .arg("--extractor-args")
-        .arg("youtube:player_client=android_vr,tv")
         .arg(youtube_url);
 
     let output = cmd
@@ -145,45 +141,76 @@ pub async fn check_yt_dlp_installed() -> Result<String> {
 }
 
 fn get_binary_command(name: &str) -> Command {
+    let mut target_path = PathBuf::from(name);
+
     if name == "yt-dlp" {
         if let Ok(custom_path) = std::env::var("YT_DLP_PATH") {
             let trimmed = custom_path.trim();
             if !trimmed.is_empty() {
                 let p = Path::new(trimmed);
                 if p.is_absolute() && p.exists() {
-                    return Command::new(p);
-                }
-                if let Ok(cwd) = std::env::current_dir() {
+                    target_path = p.to_path_buf();
+                } else if let Ok(cwd) = std::env::current_dir() {
                     let rel_candidate = cwd.join(p);
                     if rel_candidate.exists() {
-                        return Command::new(rel_candidate);
+                        target_path = rel_candidate;
+                    } else {
+                        target_path = PathBuf::from(trimmed);
                     }
+                } else {
+                    target_path = PathBuf::from(trimmed);
                 }
-                return Command::new(trimmed);
             }
         }
     }
 
-    let exe_name = if cfg!(windows) && !name.ends_with(".exe") {
-        format!("{name}.exe")
-    } else {
-        name.to_string()
-    };
+    if target_path == Path::new(name) {
+        let exe_name = if cfg!(windows) && !name.ends_with(".exe") {
+            format!("{name}.exe")
+        } else {
+            name.to_string()
+        };
 
-    if let Ok(cwd) = std::env::current_dir() {
-        let candidate = cwd.join("bin").join(&exe_name);
-        if candidate.exists() {
-            return Command::new(candidate);
+        if let Ok(cwd) = std::env::current_dir() {
+            let candidate = cwd.join("bin").join(&exe_name);
+            if candidate.exists() {
+                target_path = candidate;
+            }
+        }
+
+        if target_path == Path::new(name) {
+            if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
+                let candidate = PathBuf::from(&home).join(".local/bin").join(&exe_name);
+                if candidate.exists() {
+                    target_path = candidate;
+                }
+            }
         }
     }
 
-    if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
-        let candidate = PathBuf::from(&home).join(".local/bin").join(&exe_name);
-        if candidate.exists() {
-            return Command::new(candidate);
-        }
-    }
-
-    Command::new(name)
+    create_cmd_with_path(&target_path)
 }
 
+fn create_cmd_with_path(target_path: &Path) -> Command {
+    let mut cmd = Command::new(target_path);
+    let current_path = std::env::var("PATH").unwrap_or_default();
+    let separator = if cfg!(windows) { ";" } else { ":" };
+
+    if let Ok(cwd) = std::env::current_dir() {
+        let node_bin = cwd.join("bin").join("node").join("bin");
+        let local_bin = cwd.join("bin");
+        let home_bin = std::env::var("HOME")
+            .map(|h| PathBuf::from(h).join(".local/bin"))
+            .unwrap_or_else(|_| PathBuf::from("/home/render/.local/bin"));
+
+        let updated_path = format!(
+            "{}{separator}{}{separator}{}{separator}{current_path}",
+            node_bin.display(),
+            local_bin.display(),
+            home_bin.display()
+        );
+        cmd.env("PATH", updated_path);
+    }
+
+    cmd
+}

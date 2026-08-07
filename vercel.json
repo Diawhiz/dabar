@@ -1,5 +1,5 @@
 {
-  "buildCommand": "cd apps/web && npm install && npm run build",
+  "buildCommand": "cd apps/web && npm install --include=dev && npx vite build",
   "outputDirectory": "apps/web/dist",
   "rewrites": [
     {

@@ -18,9 +18,9 @@ mv "$FFMPEG_TEMP/ffmpeg" "$BIN_DIR/ffmpeg"
 rm -rf "$FFMPEG_TEMP"
 chmod +x "$BIN_DIR/ffmpeg"
 
-echo "==> Installing Node.js static binary..."
+echo "==> Installing Node.js v22 static binary (required by yt-dlp EJS)..."
 mkdir -p ./bin/node
-curl -sL https://nodejs.org/dist/v20.11.1/node-v20.11.1-linux-x64.tar.xz | tar -xJ -C "./bin/node" --strip-components=1
+curl -sL https://nodejs.org/dist/v22.14.0/node-v22.14.0-linux-x64.tar.xz | tar -xJ -C "./bin/node" --strip-components=1
 chmod +x ./bin/node/bin/node
 
 echo "==> Verifying binary installations..."

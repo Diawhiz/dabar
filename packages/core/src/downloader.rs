@@ -19,7 +19,11 @@ pub async fn download_youtube_audio(
     let output_template = output_dir.join("%(id)s.%(ext)s");
     let mut cmd = get_binary_command("yt-dlp");
     apply_cookies_arg(&mut cmd);
-    cmd.arg("--extract-audio")
+    cmd.arg("--js-runtimes")
+        .arg("node")
+        .arg("--remote-components")
+        .arg("ejs:github")
+        .arg("--extract-audio")
         .arg("--audio-format")
         .arg("m4a")
         .arg("--print")
@@ -59,7 +63,11 @@ pub async fn download_youtube_audio(
 pub async fn resolve_stream_url(youtube_url: &str) -> Result<String> {
     let mut cmd = get_binary_command("yt-dlp");
     apply_cookies_arg(&mut cmd);
-    cmd.arg("-g")
+    cmd.arg("--js-runtimes")
+        .arg("node")
+        .arg("--remote-components")
+        .arg("ejs:github")
+        .arg("-g")
         .arg(youtube_url);
 
     let output = cmd
@@ -83,6 +91,12 @@ pub async fn resolve_stream_url(youtube_url: &str) -> Result<String> {
     Ok(resolved_url)
 }
 
+fn apply_cookies_arg(cmd: &mut Command) {
+    if let Some(writable_path) = get_writable_cookies_path() {
+        cmd.arg("--cookies").arg(writable_path);
+    }
+}
+
 fn get_writable_cookies_path() -> Option<PathBuf> {
     if let Ok(cookies_path) = std::env::var("YT_DLP_COOKIES_PATH") {
         let trimmed = cookies_path.trim();
@@ -99,12 +113,6 @@ fn get_writable_cookies_path() -> Option<PathBuf> {
         }
     }
     None
-}
-
-fn apply_cookies_arg(cmd: &mut Command) {
-    if let Some(writable_path) = get_writable_cookies_path() {
-        cmd.arg("--cookies").arg(writable_path);
-    }
 }
 
 fn format_yt_dlp_error(action: &str, stderr: &str) -> anyhow::Error {

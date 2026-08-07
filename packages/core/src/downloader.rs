@@ -31,18 +31,8 @@ pub async fn download_youtube_audio(
         .await
         .with_context(|| format!("creating audio output directory {}", output_dir.display()))?;
 
-    // Primary: Attempt fast zero-CPU Cobalt API download
-    match download_via_cobalt(youtube_url, output_dir).await {
-        Ok(audio) => {
-            eprintln!("Audio downloaded successfully via Cobalt API!");
-            return Ok(audio);
-        }
-        Err(err) => {
-            eprintln!("Cobalt API download failed: {err:#}. Falling back to yt-dlp...");
-        }
-    }
-
-    download_via_yt_dlp(youtube_url, output_dir).await
+    // Cobalt API is the sole audio downloader
+    download_via_cobalt(youtube_url, output_dir).await
 }
 
 async fn download_via_cobalt(
@@ -140,138 +130,75 @@ async fn download_via_cobalt(
     Err(last_err)
 }
 
-async fn download_via_yt_dlp(
-    youtube_url: &str,
-    output_dir: &Path,
-) -> Result<DownloadedAudio> {
-    let output_template = output_dir.join("%(id)s.%(ext)s");
-    let mut cmd = get_binary_command("yt-dlp");
-    apply_cookies_arg(&mut cmd);
-    cmd.arg("--user-agent")
-        .arg("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-        .arg("--extractor-args")
-        .arg("youtube:player_client=mweb,web,ios")
-        .arg("--js-runtimes")
-        .arg("node")
-        .arg("--remote-components")
-        .arg("ejs:github")
-        .arg("--extract-audio")
-        .arg("--audio-format")
-        .arg("m4a")
-        .arg("--print")
-        .arg("after_move:filepath")
-        .arg("--print")
-        .arg("title")
-        .arg("--output")
-        .arg(&output_template)
-        .arg(youtube_url);
-
-    let mut output = cmd.output().await.context("running yt-dlp")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        if stderr.contains("cookies are no longer valid") || stderr.contains("rotated in the browser") {
-            eprintln!("Warning: YouTube cookies invalid/rotated. Retrying download without cookies...");
-            let mut retry_cmd = get_binary_command("yt-dlp");
-            retry_cmd
-                .arg("--user-agent")
-                .arg("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-                .arg("--extractor-args")
-                .arg("youtube:player_client=mweb,web,ios")
-                .arg("--js-runtimes")
-                .arg("node")
-                .arg("--remote-components")
-                .arg("ejs:github")
-                .arg("--extract-audio")
-                .arg("--audio-format")
-                .arg("m4a")
-                .arg("--print")
-                .arg("after_move:filepath")
-                .arg("--print")
-                .arg("title")
-                .arg("--output")
-                .arg(&output_template)
-                .arg(youtube_url);
-            output = retry_cmd.output().await.context("running yt-dlp retry without cookies")?;
-        }
-    }
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format_yt_dlp_error("download_youtube_audio", &stderr));
-    }
-
-    let lines: Vec<String> = String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(ToOwned::to_owned)
-        .collect();
-
-    let path = lines
-        .iter()
-        .find(|line| Path::new(line.as_str()).exists())
-        .map(PathBuf::from)
-        .context("yt-dlp did not report a downloaded audio path")?;
-
-    let title = lines
-        .into_iter()
-        .find(|line| line != path.to_string_lossy().as_ref());
-    Ok(DownloadedAudio { path, title })
-}
-
 pub async fn resolve_stream_url(youtube_url: &str) -> Result<String> {
-    let mut cmd = get_binary_command("yt-dlp");
-    apply_cookies_arg(&mut cmd);
-    cmd.arg("--user-agent")
-        .arg("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-        .arg("--extractor-args")
-        .arg("youtube:player_client=mweb,web,ios")
-        .arg("--js-runtimes")
-        .arg("node")
-        .arg("--remote-components")
-        .arg("ejs:github")
-        .arg("-g")
-        .arg(youtube_url);
+    let endpoints = if let Ok(custom) = std::env::var("COBALT_API_URL") {
+        vec![custom]
+    } else {
+        vec![
+            "https://api.cobalt.tools/".to_string(),
+            "https://api.cobalt.tools/api/json".to_string(),
+            "https://cobalt-api.kwi.li/".to_string(),
+        ]
+    };
 
-    let mut output = cmd
-        .output()
-        .await
-        .context("running yt-dlp -g to resolve media stream URL")?;
+    let client = reqwest::Client::builder()
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+        .timeout(std::time::Duration::from_secs(45))
+        .build()
+        .context("building reqwest client for Cobalt API")?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        if stderr.contains("cookies are no longer valid") || stderr.contains("rotated in the browser") {
-            let mut retry_cmd = get_binary_command("yt-dlp");
-            retry_cmd
-                .arg("--user-agent")
-                .arg("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-                .arg("--extractor-args")
-                .arg("youtube:player_client=mweb,web,ios")
-                .arg("--js-runtimes")
-                .arg("node")
-                .arg("--remote-components")
-                .arg("ejs:github")
-                .arg("-g")
-                .arg(youtube_url);
-            output = retry_cmd.output().await.context("running yt-dlp -g retry without cookies")?;
+    let mut last_err = anyhow::anyhow!("No Cobalt API endpoints available");
+
+    for endpoint in endpoints {
+        let req_body = serde_json::json!({
+            "url": youtube_url,
+            "downloadMode": "audio",
+            "audioFormat": "m4a"
+        });
+
+        let res = client
+            .post(&endpoint)
+            .header("accept", "application/json")
+            .header("content-type", "application/json")
+            .json(&req_body)
+            .send()
+            .await;
+
+        let response = match res {
+            Ok(r) => r,
+            Err(e) => {
+                last_err = anyhow::anyhow!("Cobalt endpoint {endpoint} request error: {e}");
+                continue;
+            }
+        };
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            last_err = anyhow::anyhow!("Cobalt endpoint {endpoint} HTTP {status}: {body}");
+            continue;
         }
+
+        let parsed: CobaltResponse = match response.json().await {
+            Ok(p) => p,
+            Err(e) => {
+                last_err = anyhow::anyhow!("Cobalt endpoint {endpoint} JSON parse error: {e}");
+                continue;
+            }
+        };
+
+        let stream_url = match parsed.url.or_else(|| parsed.picker.and_then(|p| p.first().map(|i| i.url.clone()))) {
+            Some(u) => u,
+            None => {
+                last_err = anyhow::anyhow!("Cobalt response did not contain download URL");
+                continue;
+            }
+        };
+
+        return Ok(stream_url);
     }
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format_yt_dlp_error("resolve_stream_url", &stderr));
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let resolved_url = stdout
-        .lines()
-        .map(str::trim)
-        .find(|line| !line.is_empty())
-        .context("yt-dlp -g returned empty stdout")?
-        .to_string();
-
-    Ok(resolved_url)
+    Err(last_err)
 }
 
 #[allow(dead_code)]
@@ -300,6 +227,7 @@ fn get_writable_cookies_path() -> Option<PathBuf> {
     None
 }
 
+#[allow(dead_code)]
 fn format_yt_dlp_error(action: &str, stderr: &str) -> anyhow::Error {
     let trimmed = stderr.trim();
     if trimmed.contains("Sign in to confirm you're not a bot")

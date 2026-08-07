@@ -1,8 +1,32 @@
 # Dabar (דָּבָר) 🎙️✨
 
-Dabar is a premium AI-powered sermon transcription, highlight extraction, and social clip creation platform built with a **Django REST Framework** backend and a **React + Vite + TailwindCSS** frontend.
+Dabar is a high-performance, enterprise-grade AI sermon transcription, highlight extraction, and vertical video clip generator built with a **Rust (Axum + Tokio)** backend engine, a **React + Vite + TailwindCSS** web dashboard, and a **Tauri v2** desktop launcher.
 
-Dabar uses a **Lightweight Audio & AI Highlight Pipeline**: it ingests YouTube video transcripts or extracts audio-only streams, runs **Groq Whisper Large V3 Turbo** for high-precision speech recognition, analyzes theological themes using **Llama 3.3 70B**, and generates timestamped social clips ready for Instagram Reels, YouTube Shorts, and TikTok.
+---
+
+## 🏗️ Monorepo Architecture (`apps/` & `packages/`)
+
+Dabar is structured as an enterprise monorepo:
+
+```text
+dabar/
+├── apps/
+│   ├── web/                    # React Web App (Vite + Tailwind -> Deploys to Vercel)
+│   │   ├── src/                # Components, pages, assets, API client
+│   │   └── package.json
+│   │
+│   ├── server/                 # Axum REST API Server (Rust -> Deploys to Render)
+│   │   ├── src/                # HTTP handlers, router & database state
+│   │   └── Cargo.toml          # Imports `packages/core`
+│   │
+│   └── desktop/                # Desktop App Shell (Tauri v2 for Mac / Windows)
+│       ├── src-tauri/          # Tauri IPC native Rust commands
+│       └── tauri.conf.json     # Bundles `apps/web/dist` automatically
+│
+└── packages/
+    └── core/                   # Shared Rust Engine
+        └── src/                # downloader.rs, whisper.rs, llm.rs, ffmpeg.rs, models.rs
+```
 
 ---
 
@@ -10,124 +34,92 @@ Dabar uses a **Lightweight Audio & AI Highlight Pipeline**: it ingests YouTube v
 
 ```mermaid
 flowchart TD
-    A[User Pastes YouTube Sermon URL] --> B{YouTube Transcript Available?}
+    A[User Pastes YouTube Sermon URL] --> B[Axum Web Server /api/sermons/]
+    B --> C[tokio::spawn Async Background Pipeline]
     
-    B -->|Yes - Instant Parsing| C[Group Subtitles into 35-45s Sermon Blocks]
-    B -->|No / Auto-Captions Disabled| D[yt-dlp Audio-Only Stream Extraction ~10MB]
+    C -->|Stage 1: Downloading| D[yt-dlp Audio Extraction android_vr client]
+    D -->|Stage 2: Transcribing| E[Groq Whisper Large V3 Turbo Speech Recognition]
+    E -->|Stage 3: Highlight Detection| F[Groq Llama 3.3 70B Key Moment Analysis]
+    F -->|Stage 4: Ready| G[SQLx Postgres / SQLite Transaction Commit]
     
-    D --> E[Groq Whisper Large V3 Turbo Speech Recognition]
-    E --> F[Group Whisper Segments by Sentence Boundaries]
-    
-    C --> G[Groq Llama 3.3 70B Semantic Analysis]
-    F --> G
-    
-    G -->|Extract 30-90s Key Moments| H[Merge Consecutive Highlight Segments]
-    H --> I[Index Master Transcript & AI Key Moments]
-    I --> J[Full Sermon Dashboard & Floating Audio Preview]
-    
-    J -->|User Clicks Create Clip| K[Interactive Clip Studio & Aspect Ratio Switcher]
-    K -->|Option 1: Ultra-Fast MP4 Download| L[FFmpeg Direct HTTP Stream Slice 2-4s]
-    K -->|Option 2: Direct Social Share| M[Instant Timestamped Share Link youtu.be?t=Xs]
+    G --> H[Full Sermon Dashboard & Interactive Studio]
+    H -->|User Clicks Download Clip| I[Axum Stream Endpoint /api/clips/:id/download/]
+    I --> J[FFmpeg 1080x1920 Blur-Pad Vertical 9:16 Video Slice]
+    J --> K[Browser Direct MP4 Download]
 ```
 
 ---
 
 ## Key Features 🚀
 
-- **Ultra-Fast Sermon Ingestion**: Uses YouTube auto-captions for <1s indexing, or extracts a lightweight audio stream (~10 MB) when subtitles are disabled.
-- **Groq Whisper Large V3 Turbo**: High-fidelity speech recognition with accurate sentence punctuation, capitalization, and segment-level timestamps.
-- **Llama 3.3 70B Key Moment Detection**: Advanced 70-billion parameter LLM identifies 30–90 second preaching moments (Core Message, Conviction Points, Gospel Calls, Illustrations).
-- **Segment Highlight Merging**: Automatically combines consecutive segments belonging to the same key moment into unified cards.
-- **Instant Preview Audio Player**: Listen to any transcript segment on demand via a sleek floating audio player bar.
-- **FFmpeg HTTP Stream Clip Slicing**: Slices target video clips directly from YouTube streams in 2–4 seconds without downloading the full video file.
-- **Timestamped Share Links**: Instantly copy or share timestamped sermon links (`https://youtu.be/ID?t=135`) to WhatsApp, X (Twitter), Facebook, and YouTube.
-- **Interactive Clip Studio**: Select 9:16 vertical (Reels/Shorts), 1:1 square (Feed), or 16:9 landscape aspect ratios.
+- **Zero-Timeout Async Background Processing**: Non-blocking `tokio::spawn` background worker manages stage transitions (`queued` $\rightarrow$ `downloading` $\rightarrow$ `transcribing` $\rightarrow$ `detecting` $\rightarrow$ `ready`).
+- **YouTube Cloud IP Bypass**: Configured with `yt-dlp` `player_client: ["android_vr", "tv"]` to bypass YouTube PO Token and SABR streaming restrictions.
+- **Groq Whisper Large V3 Turbo**: High-precision speech-to-text with segment timestamps and sentence boundary alignment.
+- **Groq Llama 3.3 70B Key Moment Detection**: 70-billion parameter LLM identifies 30–90 second high-impact preaching moments.
+- **FFmpeg 1080x1920 Blur-Pad Canvas**: Generates vertical 9:16 short-form video clips (Shorts/Reels/TikTok) with blurred background padding.
+- **Dual Database Engine**: SQLx connects to managed **PostgreSQL** on Render in production and **SQLite** locally.
+- **Tauri v2 Desktop App**: Packages the React UI into a native 15MB desktop app for local offline GPU video processing.
 
 ---
 
 ## Tech Stack 🛠️
 
-### Backend
-- **Framework**: Django 5.0, Django REST Framework (DRF)
-- **AI/LLM**: Groq Chat Completions API (`llama-3.3-70b-versatile`)
-- **Transcription**: Groq Audio API (`whisper-large-v3-turbo`)
-- **Audio Extraction & Stream Slicing**: `yt-dlp`, `static-ffmpeg`
-- **Subtitle Ingestion**: `youtube-transcript-api`
+### Backend & Core Engine
+- **Framework**: Rust (Axum 0.8, Tokio 1.39)
+- **Database**: SQLx 0.8 (PostgreSQL / SQLite)
+- **AI Models**: Groq Whisper (`whisper-large-v3-turbo`) & Groq LLM (`llama-3.3-70b-versatile`)
+- **Media Engine**: `yt-dlp`, `ffmpeg`
 
-### Frontend
-- **Framework**: React 19, React Router DOM v7
-- **Bundler**: Vite 6
-- **Styling**: Vanilla CSS + TailwindCSS 3.4
-- **Icons**: Lucide React
+### Frontend & Desktop
+- **Web**: React 19, Vite 6, TailwindCSS 3.4, Lucide Icons
+- **Desktop Shell**: Tauri v2
 
 ---
 
 ## Getting Started ⚙️
 
 ### Prerequisites
-- **Python**: 3.14+
-- **Node.js**: 18+
-- A **Groq API Key** (Get one at [console.groq.com](https://console.groq.com))
+- **Rust**: 1.75+ (`rustc`, `cargo`)
+- **Node.js**: 18+ (`npm`)
+- **FFmpeg** & **yt-dlp** installed on PATH
+- A **Groq API Key** ([console.groq.com](https://console.groq.com))
 
 ---
 
-### Backend Setup
+### Local Development Setup
 
-1. **Create and Activate Virtual Environment**:
-   ```bash
-   python -m venv venv
-   # On Windows (PowerShell):
-   .\venv\Scripts\Activate.ps1
-   # On macOS/Linux:
-   source venv/bin/activate
-   ```
-
-2. **Install Python Dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Configure Environment Variables**:
-   Create a `.env` file in the root directory:
+1. **Configure Environment Variables**:
+   Copy `.env.example` to `.env` in the root:
    ```env
-   DEBUG=True
-   SECRET_KEY=your-django-secret-key
    GROQ_API_KEY=your_groq_api_key_here
-   TRANSCRIPTION_BACKEND=groq
+   DATABASE_URL=sqlite://dabar.sqlite3?mode=rwc
+   PORT=8000
+   CORS_ALLOWED_ORIGINS=http://localhost:5173
    ```
 
-4. **Run Migrations & Start Django Server**:
+2. **Start the Rust Axum API Server**:
    ```bash
-   python manage.py migrate
-   python manage.py runserver
+   cargo run --bin dabar-server
    ```
-   The backend server runs at: `http://127.0.0.1:8000`
+   The backend API runs at `http://localhost:8000`.
 
----
-
-### Frontend Setup
-
-1. **Install Node Packages**:
+3. **Start the React Frontend Dev Server**:
    ```bash
-   npm install
-   ```
-
-2. **Run Vite Development Server**:
-   ```bash
+   cd apps/web
    npm run dev
    ```
-   The frontend application runs at: `http://localhost:5173`
-
-3. **Build for Production**:
-   ```bash
-   npm run build
-   ```
+   The frontend runs at `http://localhost:5173`.
 
 ---
 
-## Running Unit Tests 🧪
+## Cloud Deployment 🚀
 
-To verify Django REST endpoints and sermon processing logic:
-```bash
-python manage.py test
-```
+- **Backend (Render)**: Render uses native Rust deployment via `render.yaml` (`cargo build --release -p dabar-server`).
+- **Frontend (Vercel)**: Point Vercel root directory to `apps/web` (`apps/web/vercel.json`).
+
+---
+
+## Branch Strategy 🌿
+
+- **`main`**: Active Rust (Axum) + React + Tauri v2 monorepo.
+- **`backend/django-legacy`**: Preserved legacy Django REST Framework implementation.

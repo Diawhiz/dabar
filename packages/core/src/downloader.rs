@@ -8,6 +8,14 @@ pub struct DownloadedAudio {
     pub title: Option<String>,
 }
 
+#[derive(Debug, serde::Deserialize)]
+#[allow(dead_code)]
+struct CobaltResponse {
+    status: String,
+    url: Option<String>,
+    filename: Option<String>,
+}
+
 pub async fn download_youtube_audio(
     youtube_url: &str,
     output_dir: &Path,
@@ -16,6 +24,79 @@ pub async fn download_youtube_audio(
         .await
         .with_context(|| format!("creating audio output directory {}", output_dir.display()))?;
 
+    // Primary: Attempt fast zero-CPU Cobalt API download
+    match download_via_cobalt(youtube_url, output_dir).await {
+        Ok(audio) => {
+            eprintln!("Audio downloaded successfully via Cobalt API!");
+            return Ok(audio);
+        }
+        Err(err) => {
+            eprintln!("Cobalt API download failed: {err:#}. Falling back to yt-dlp...");
+        }
+    }
+
+    download_via_yt_dlp(youtube_url, output_dir).await
+}
+
+async fn download_via_cobalt(
+    youtube_url: &str,
+    output_dir: &Path,
+) -> Result<DownloadedAudio> {
+    let cobalt_url = std::env::var("COBALT_API_URL")
+        .unwrap_or_else(|_| "https://api.cobalt.tools/api/json".to_string());
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .build()
+        .context("building reqwest client for Cobalt API")?;
+
+    let res = client
+        .post(&cobalt_url)
+        .header("accept", "application/json")
+        .header("content-type", "application/json")
+        .json(&serde_json::json!({
+            "url": youtube_url,
+            "downloadMode": "audio",
+            "audioFormat": "m4a"
+        }))
+        .send()
+        .await
+        .context("sending Cobalt API request")?
+        .error_for_status()
+        .context("Cobalt API request returned error status")?
+        .json::<CobaltResponse>()
+        .await
+        .context("parsing Cobalt response")?;
+
+    let stream_url = res.url.context("Cobalt response did not contain download URL")?;
+    let filename = res.filename.unwrap_or_else(|| "sermon.m4a".to_string());
+    let dest_path = output_dir.join(&filename);
+
+    let bytes = client
+        .get(&stream_url)
+        .send()
+        .await
+        .context("fetching audio stream from Cobalt CDN")?
+        .error_for_status()
+        .context("Cobalt CDN audio download failed")?
+        .bytes()
+        .await
+        .context("reading audio bytes from Cobalt stream")?;
+
+    tokio::fs::write(&dest_path, bytes)
+        .await
+        .context("writing audio bytes to disk")?;
+
+    Ok(DownloadedAudio {
+        path: dest_path,
+        title: Some("Sermon Audio".to_string()),
+    })
+}
+
+async fn download_via_yt_dlp(
+    youtube_url: &str,
+    output_dir: &Path,
+) -> Result<DownloadedAudio> {
     let output_template = output_dir.join("%(id)s.%(ext)s");
     let mut cmd = get_binary_command("yt-dlp");
     apply_cookies_arg(&mut cmd);

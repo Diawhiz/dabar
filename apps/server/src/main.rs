@@ -19,17 +19,13 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let state = AppState::connect().await?;
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(Any)
+        .allow_headers(Any);
+
     let app = routes::router(state)
-        .layer(
-            CorsLayer::new()
-                .allow_origin([
-                    "http://localhost:5173".parse()?,
-                    "http://127.0.0.1:5173".parse()?,
-                    "https://dabar-beta.vercel.app".parse()?,
-                ])
-                .allow_methods(Any)
-                .allow_headers(Any),
-        )
+        .layer(cors)
         .layer(TraceLayer::new_for_http());
 
     let port = std::env::var("PORT")

@@ -23,6 +23,22 @@ struct CobaltPickerItem {
     url: String,
 }
 
+fn get_cobalt_endpoints() -> Vec<String> {
+    if let Ok(custom) = std::env::var("COBALT_API_URL") {
+        let trimmed = custom.trim();
+        if !trimmed.is_empty() {
+            return vec![trimmed.to_string()];
+        }
+    }
+
+    vec![
+        "https://api.cobalt.tools/".to_string(),
+        "https://cobalt.api.scie.dev/".to_string(),
+        "https://cobalt.pub/".to_string(),
+        "https://cobalt-api.kwi.li/".to_string(),
+    ]
+}
+
 pub async fn download_youtube_audio(
     youtube_url: &str,
     output_dir: &Path,
@@ -39,15 +55,7 @@ async fn download_via_cobalt(
     youtube_url: &str,
     output_dir: &Path,
 ) -> Result<DownloadedAudio> {
-    let endpoints = if let Ok(custom) = std::env::var("COBALT_API_URL") {
-        vec![custom]
-    } else {
-        vec![
-            "https://api.cobalt.tools/".to_string(),
-            "https://api.cobalt.tools/api/json".to_string(),
-            "https://cobalt-api.kwi.li/".to_string(),
-        ]
-    };
+    let endpoints = get_cobalt_endpoints();
 
     let client = reqwest::Client::builder()
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
@@ -131,15 +139,7 @@ async fn download_via_cobalt(
 }
 
 pub async fn resolve_stream_url(youtube_url: &str) -> Result<String> {
-    let endpoints = if let Ok(custom) = std::env::var("COBALT_API_URL") {
-        vec![custom]
-    } else {
-        vec![
-            "https://api.cobalt.tools/".to_string(),
-            "https://api.cobalt.tools/api/json".to_string(),
-            "https://cobalt-api.kwi.li/".to_string(),
-        ]
-    };
+    let endpoints = get_cobalt_endpoints();
 
     let client = reqwest::Client::builder()
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")

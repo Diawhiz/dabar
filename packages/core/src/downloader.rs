@@ -87,24 +87,27 @@ pub async fn resolve_stream_url(youtube_url: &str) -> Result<String> {
     Ok(resolved_url)
 }
 
-fn apply_cookies_arg(cmd: &mut Command) {
+fn get_writable_cookies_path() -> Option<PathBuf> {
     if let Ok(cookies_path) = std::env::var("YT_DLP_COOKIES_PATH") {
         let trimmed = cookies_path.trim();
         if !trimmed.is_empty() {
-            let p = Path::new(trimmed);
-            if p.is_absolute() && p.exists() {
-                cmd.arg("--cookies").arg(p);
-            } else if let Ok(cwd) = std::env::current_dir() {
-                let rel = cwd.join(p);
-                if rel.exists() {
-                    cmd.arg("--cookies").arg(rel);
-                } else {
-                    cmd.arg("--cookies").arg(trimmed);
+            let src = Path::new(trimmed);
+            if src.exists() {
+                let dest = std::env::temp_dir().join("dabar_cookies_writable.txt");
+                if let Err(e) = std::fs::copy(src, &dest) {
+                    eprintln!("Warning: failed to copy cookies file to writable location: {:?}", e);
+                    return Some(PathBuf::from(trimmed));
                 }
-            } else {
-                cmd.arg("--cookies").arg(trimmed);
+                return Some(dest);
             }
         }
+    }
+    None
+}
+
+fn apply_cookies_arg(cmd: &mut Command) {
+    if let Some(writable_path) = get_writable_cookies_path() {
+        cmd.arg("--cookies").arg(writable_path);
     }
 }
 

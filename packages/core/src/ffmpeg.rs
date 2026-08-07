@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tokio::process::Command;
 
 pub async fn extract_vertical_clip(
@@ -15,7 +15,7 @@ pub async fn extract_vertical_clip(
     }
 
     let duration = end_time - start_time;
-    let output = Command::new("ffmpeg")
+    let output = get_binary_command("ffmpeg")
         .arg("-y")
         .arg("-ss")
         .arg(format!("{start_time:.3}"))
@@ -42,4 +42,14 @@ pub async fn extract_vertical_clip(
     }
 
     Ok(())
+}
+
+fn get_binary_command(name: &str) -> Command {
+    if let Ok(home) = std::env::var("HOME") {
+        let candidate = PathBuf::from(home).join(".local/bin").join(name);
+        if candidate.exists() {
+            return Command::new(candidate);
+        }
+    }
+    Command::new(name)
 }

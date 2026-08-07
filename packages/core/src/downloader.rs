@@ -17,7 +17,7 @@ pub async fn download_youtube_audio(
         .with_context(|| format!("creating audio output directory {}", output_dir.display()))?;
 
     let output_template = output_dir.join("%(id)s.%(ext)s");
-    let output = Command::new("yt-dlp")
+    let output = get_binary_command("yt-dlp")
         .arg("--extract-audio")
         .arg("--audio-format")
         .arg("m4a")
@@ -61,7 +61,7 @@ pub async fn download_youtube_audio(
 }
 
 pub async fn resolve_stream_url(youtube_url: &str) -> Result<String> {
-    let output = Command::new("yt-dlp")
+    let output = get_binary_command("yt-dlp")
         .arg("-g")
         .arg("--extractor-args")
         .arg("youtube:player_client=android_vr,tv")
@@ -84,5 +84,15 @@ pub async fn resolve_stream_url(youtube_url: &str) -> Result<String> {
         .to_string();
 
     Ok(resolved_url)
+}
+
+fn get_binary_command(name: &str) -> Command {
+    if let Ok(home) = std::env::var("HOME") {
+        let candidate = PathBuf::from(home).join(".local/bin").join(name);
+        if candidate.exists() {
+            return Command::new(candidate);
+        }
+    }
+    Command::new(name)
 }
 

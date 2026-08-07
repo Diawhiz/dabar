@@ -2,8 +2,8 @@ services:
   - type: web
     name: dabar-backend
     env: rust
-    buildCommand: "cargo build --release -p dabar-server"
-    startCommand: "./target/release/dabar-server"
+    buildCommand: "chmod +x render-build.sh && ./render-build.sh"
+    startCommand: "PATH=$HOME/.local/bin:$PATH ./target/release/dabar-server"
     envVars:
       - key: PORT
         value: "10000"

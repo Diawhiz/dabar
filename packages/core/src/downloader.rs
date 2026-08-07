@@ -109,8 +109,19 @@ pub async fn check_yt_dlp_installed() -> Result<String> {
 fn get_binary_command(name: &str) -> Command {
     if name == "yt-dlp" {
         if let Ok(custom_path) = std::env::var("YT_DLP_PATH") {
-            if !custom_path.trim().is_empty() {
-                return Command::new(custom_path.trim());
+            let trimmed = custom_path.trim();
+            if !trimmed.is_empty() {
+                let p = Path::new(trimmed);
+                if p.is_absolute() && p.exists() {
+                    return Command::new(p);
+                }
+                if let Ok(cwd) = std::env::current_dir() {
+                    let rel_candidate = cwd.join(p);
+                    if rel_candidate.exists() {
+                        return Command::new(rel_candidate);
+                    }
+                }
+                return Command::new(trimmed);
             }
         }
     }

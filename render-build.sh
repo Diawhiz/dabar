@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 set -e
 
+mkdir -p ./bin
 BIN_DIR="$HOME/.local/bin"
 mkdir -p "$BIN_DIR"
-export PATH="$BIN_DIR:$PATH"
+export PATH="$BIN_DIR:$PWD/bin:$PATH"
 
-echo "==> Installing yt-dlp..."
-curl -sL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o "$BIN_DIR/yt-dlp"
-chmod +x "$BIN_DIR/yt-dlp"
+echo "==> Installing yt-dlp binary..."
+curl -sL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o ./bin/yt-dlp
+chmod +x ./bin/yt-dlp
+cp ./bin/yt-dlp "$BIN_DIR/yt-dlp"
 
 echo "==> Installing static ffmpeg..."
 FFMPEG_TEMP=$(mktemp -d)
@@ -17,7 +19,7 @@ rm -rf "$FFMPEG_TEMP"
 chmod +x "$BIN_DIR/ffmpeg"
 
 echo "==> Verifying binary installations..."
-"$BIN_DIR/yt-dlp" --version
+./bin/yt-dlp --version
 "$BIN_DIR/ffmpeg" -version | head -n 1
 
 echo "==> Compiling Dabar Rust Server..."

@@ -3,10 +3,12 @@ services:
     name: dabar-backend
     env: rust
     buildCommand: "chmod +x render-build.sh && ./render-build.sh"
-    startCommand: "PATH=$HOME/.local/bin:$PATH ./target/release/dabar-server"
+    startCommand: "PATH=$HOME/.local/bin:$PWD/bin:$PATH ./target/release/dabar-server"
     envVars:
       - key: PORT
         value: "10000"
+      - key: YT_DLP_PATH
+        value: "./bin/yt-dlp"
       - key: RUST_LOG
         value: "dabar_server=info,tower_http=info"
       - key: GROQ_API_KEY

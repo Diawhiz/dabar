@@ -5,7 +5,17 @@ services:
     buildCommand: "cargo build --release -p dabar-server"
     startCommand: "./target/release/dabar-server"
     envVars:
+      - key: PORT
+        value: "10000"
       - key: RUST_LOG
         value: "dabar_server=info,tower_http=info"
       - key: GROQ_API_KEY
         sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: dabar-db
+          property: connectionString
+
+databases:
+  - name: dabar-db
+    plan: free

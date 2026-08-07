@@ -34,7 +34,31 @@ pub async fn download_youtube_audio(
         .arg(&output_template)
         .arg(youtube_url);
 
-    let output = cmd.output().await.context("running yt-dlp")?;
+    let mut output = cmd.output().await.context("running yt-dlp")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("cookies are no longer valid") || stderr.contains("rotated in the browser") {
+            eprintln!("Warning: YouTube cookies invalid/rotated. Retrying download without cookies...");
+            let mut retry_cmd = get_binary_command("yt-dlp");
+            retry_cmd
+                .arg("--js-runtimes")
+                .arg("node")
+                .arg("--remote-components")
+                .arg("ejs:github")
+                .arg("--extract-audio")
+                .arg("--audio-format")
+                .arg("m4a")
+                .arg("--print")
+                .arg("after_move:filepath")
+                .arg("--print")
+                .arg("title")
+                .arg("--output")
+                .arg(&output_template)
+                .arg(youtube_url);
+            output = retry_cmd.output().await.context("running yt-dlp retry without cookies")?;
+        }
+    }
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -70,10 +94,25 @@ pub async fn resolve_stream_url(youtube_url: &str) -> Result<String> {
         .arg("-g")
         .arg(youtube_url);
 
-    let output = cmd
+    let mut output = cmd
         .output()
         .await
         .context("running yt-dlp -g to resolve media stream URL")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("cookies are no longer valid") || stderr.contains("rotated in the browser") {
+            let mut retry_cmd = get_binary_command("yt-dlp");
+            retry_cmd
+                .arg("--js-runtimes")
+                .arg("node")
+                .arg("--remote-components")
+                .arg("ejs:github")
+                .arg("-g")
+                .arg(youtube_url);
+            output = retry_cmd.output().await.context("running yt-dlp -g retry without cookies")?;
+        }
+    }
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);

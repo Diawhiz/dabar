@@ -1,17 +1,11 @@
 services:
   - type: web
     name: dabar-backend
-    env: python
-    buildCommand: "pip install -r requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate"
-    startCommand: "gunicorn dabar.wsgi:application"
+    env: rust
+    buildCommand: "cargo build --release -p dabar-server"
+    startCommand: "./target/release/dabar-server"
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.0
-      - key: SECRET_KEY
-        generateValue: true
-      - key: DEBUG
-        value: "False"
-      - key: ALLOWED_HOSTS
-        value: ".onrender.com,localhost,127.0.0.1"
-      - key: CORS_ALLOWED_ORIGINS
-        value: "http://localhost:5173"
+      - key: RUST_LOG
+        value: "dabar_server=info,tower_http=info"
+      - key: GROQ_API_KEY
+        sync: false

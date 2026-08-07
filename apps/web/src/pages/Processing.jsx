@@ -5,9 +5,9 @@ import Waveform from "../components/Waveform.jsx";
 import Btn from "../components/Btn.jsx";
 
 const STAGES = [
-  { key: "transcribing", label: "Transcribing the sermon…", detail: "Dabar is listening to every word." },
-  { key: "analyzing", label: "Finding key moments…", detail: "Looking for the quotes and teaching points that hit hardest." },
-  { key: "clipping", label: "Cutting clips…", detail: "Shaping each moment into a shareable vertical video." },
+  { key: "downloading", label: "Downloading sermon audio…", detail: "Dabar is retrieving the sermon audio stream." },
+  { key: "transcribing", label: "Transcribing the sermon…", detail: "Dabar is listening to every word using Whisper AI." },
+  { key: "detecting", label: "Finding key moments…", detail: "Looking for the quotes and teaching points that hit hardest." },
   { key: "ready", label: "Your clips are ready.", detail: "Head to the clip studio to review, edit, and export." },
 ];
 
@@ -21,10 +21,11 @@ export default function Processing() {
   // Determine current stage from sermon status
   function getStageIndex(status) {
     if (!status) return 0;
-    const s = status.toLowerCase();
+    const s = String(status).toLowerCase();
     if (s === "ready" || s.includes("complete")) return 3;
-    if (s.includes("clip") || s.includes("highlight") || s.includes("detect")) return 2;
-    if (s.includes("transcri") || s.includes("downloa")) return 1;
+    if (s.includes("detect") || s.includes("process") || s.includes("clip")) return 2;
+    if (s.includes("transcri")) return 1;
+    if (s.includes("downloa") || s.includes("queue")) return 0;
     return 0;
   }
 

@@ -36,7 +36,12 @@ pub async fn transcribe_audio(api_key: &str, audio_path: &Path) -> Result<Vec<Tr
         .text("response_format", "verbose_json")
         .part("file", file_part);
 
-    let transcription = reqwest::Client::new()
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(300))
+        .build()
+        .context("building reqwest client")?;
+
+    let transcription = client
         .post(GROQ_TRANSCRIPTIONS_URL)
         .bearer_auth(api_key)
         .multipart(form)

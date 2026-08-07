@@ -1,6 +1,6 @@
 use crate::models::{Highlight, TranscriptSegment};
 use anyhow::{Context, Result};
-use reqwest::Client;
+
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use uuid::Uuid;
@@ -41,7 +41,12 @@ pub async fn detect_key_moments(
         blocks
     );
 
-    let response = Client::new()
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .context("building reqwest client")?;
+
+    let response = client
         .post(GROQ_CHAT_URL)
         .bearer_auth(api_key)
         .json(&json!({

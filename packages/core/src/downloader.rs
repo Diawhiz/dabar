@@ -18,7 +18,8 @@ pub async fn download_youtube_audio(
 
     let output_template = output_dir.join("%(id)s.%(ext)s");
     let mut cmd = get_binary_command("yt-dlp");
-    apply_cookies_arg(&mut cmd);
+    // Disabled cookies because youtube:player_client=android does not support cookie authentication
+    // apply_cookies_arg(&mut cmd);
     cmd.arg("--extractor-args")
         .arg("youtube:player_client=android")
         .arg("--js-runtimes")
@@ -90,7 +91,8 @@ pub async fn download_youtube_audio(
 
 pub async fn resolve_stream_url(youtube_url: &str) -> Result<String> {
     let mut cmd = get_binary_command("yt-dlp");
-    apply_cookies_arg(&mut cmd);
+    // Disabled cookies because youtube:player_client=android does not support cookie authentication
+    // apply_cookies_arg(&mut cmd);
     cmd.arg("--extractor-args")
         .arg("youtube:player_client=android")
         .arg("--js-runtimes")
@@ -138,12 +140,14 @@ pub async fn resolve_stream_url(youtube_url: &str) -> Result<String> {
     Ok(resolved_url)
 }
 
+#[allow(dead_code)]
 fn apply_cookies_arg(cmd: &mut Command) {
     if let Some(writable_path) = get_writable_cookies_path() {
         cmd.arg("--cookies").arg(writable_path);
     }
 }
 
+#[allow(dead_code)]
 fn get_writable_cookies_path() -> Option<PathBuf> {
     if let Ok(cookies_path) = std::env::var("YT_DLP_COOKIES_PATH") {
         let trimmed = cookies_path.trim();

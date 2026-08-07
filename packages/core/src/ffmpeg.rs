@@ -45,11 +45,25 @@ pub async fn extract_vertical_clip(
 }
 
 fn get_binary_command(name: &str) -> Command {
-    if let Ok(home) = std::env::var("HOME") {
-        let candidate = PathBuf::from(home).join(".local/bin").join(name);
+    let exe_name = if cfg!(windows) && !name.ends_with(".exe") {
+        format!("{name}.exe")
+    } else {
+        name.to_string()
+    };
+
+    if let Ok(cwd) = std::env::current_dir() {
+        let candidate = cwd.join("bin").join(&exe_name);
         if candidate.exists() {
             return Command::new(candidate);
         }
     }
+
+    if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
+        let candidate = PathBuf::from(&home).join(".local/bin").join(&exe_name);
+        if candidate.exists() {
+            return Command::new(candidate);
+        }
+    }
+
     Command::new(name)
 }

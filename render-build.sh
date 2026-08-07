@@ -19,16 +19,14 @@ rm -rf "$FFMPEG_TEMP"
 chmod +x "$BIN_DIR/ffmpeg"
 
 echo "==> Installing Node.js static binary..."
-NODE_TEMP=$(mktemp -d)
-curl -sL https://nodejs.org/dist/v20.11.1/node-v20.11.1-linux-x64.tar.xz | tar -xJ -C "$NODE_TEMP" --strip-components=1
-mv "$NODE_TEMP/bin/node" "$BIN_DIR/node"
-rm -rf "$NODE_TEMP"
-chmod +x "$BIN_DIR/node"
+mkdir -p ./bin/node
+curl -sL https://nodejs.org/dist/v20.11.1/node-v20.11.1-linux-x64.tar.xz | tar -xJ -C "./bin/node" --strip-components=1
+chmod +x ./bin/node/bin/node
 
 echo "==> Verifying binary installations..."
 ./bin/yt-dlp --version
 "$BIN_DIR/ffmpeg" -version | head -n 1
-"$BIN_DIR/node" --version
+./bin/node/bin/node --version
 
 echo "==> Compiling Dabar Rust Server..."
 cargo build --release -p dabar-server

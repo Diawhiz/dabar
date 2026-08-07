@@ -3,7 +3,7 @@ services:
     name: dabar-backend
     env: rust
     buildCommand: "chmod +x render-build.sh && ./render-build.sh"
-    startCommand: "PATH=$HOME/.local/bin:$PWD/bin:$PATH ./target/release/dabar-server"
+    startCommand: "PATH=$HOME/.local/bin:$PWD/bin:$PWD/bin/node/bin:$PATH ./target/release/dabar-server"
     envVars:
       - key: PORT
         value: "10000"

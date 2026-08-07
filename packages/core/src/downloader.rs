@@ -19,7 +19,11 @@ pub async fn download_youtube_audio(
     let output_template = output_dir.join("%(id)s.%(ext)s");
     let mut cmd = get_binary_command("yt-dlp");
     apply_cookies_arg(&mut cmd);
-    cmd.arg("--js-runtimes")
+    cmd.arg("--user-agent")
+        .arg("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+        .arg("--extractor-args")
+        .arg("youtube:player_client=mweb,web,ios")
+        .arg("--js-runtimes")
         .arg("node")
         .arg("--remote-components")
         .arg("ejs:github")
@@ -42,6 +46,10 @@ pub async fn download_youtube_audio(
             eprintln!("Warning: YouTube cookies invalid/rotated. Retrying download without cookies...");
             let mut retry_cmd = get_binary_command("yt-dlp");
             retry_cmd
+                .arg("--user-agent")
+                .arg("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+                .arg("--extractor-args")
+                .arg("youtube:player_client=mweb,web,ios")
                 .arg("--js-runtimes")
                 .arg("node")
                 .arg("--remote-components")
@@ -87,7 +95,11 @@ pub async fn download_youtube_audio(
 pub async fn resolve_stream_url(youtube_url: &str) -> Result<String> {
     let mut cmd = get_binary_command("yt-dlp");
     apply_cookies_arg(&mut cmd);
-    cmd.arg("--js-runtimes")
+    cmd.arg("--user-agent")
+        .arg("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+        .arg("--extractor-args")
+        .arg("youtube:player_client=mweb,web,ios")
+        .arg("--js-runtimes")
         .arg("node")
         .arg("--remote-components")
         .arg("ejs:github")
@@ -104,6 +116,10 @@ pub async fn resolve_stream_url(youtube_url: &str) -> Result<String> {
         if stderr.contains("cookies are no longer valid") || stderr.contains("rotated in the browser") {
             let mut retry_cmd = get_binary_command("yt-dlp");
             retry_cmd
+                .arg("--user-agent")
+                .arg("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+                .arg("--extractor-args")
+                .arg("youtube:player_client=mweb,web,ios")
                 .arg("--js-runtimes")
                 .arg("node")
                 .arg("--remote-components")

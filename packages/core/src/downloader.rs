@@ -10,21 +10,69 @@ pub struct DownloadedAudio {
 
 #[derive(Debug, serde::Deserialize)]
 #[allow(dead_code)]
-struct CobaltResponse {
-    status: String,
-    url: Option<String>,
-    filename: Option<String>,
-    picker: Option<Vec<CobaltPickerItem>>,
+struct PipedStreamResponse {
+    title: Option<String>,
+    #[serde(rename = "audioStreams")]
+    audio_streams: Option<Vec<PipedAudioStream>>,
 }
 
 #[derive(Debug, serde::Deserialize)]
 #[allow(dead_code)]
-struct CobaltPickerItem {
+struct PipedAudioStream {
     url: String,
+    format: Option<String>,
+    quality: Option<String>,
+    #[serde(rename = "mimeType")]
+    mime_type: Option<String>,
 }
 
-fn get_cobalt_endpoints() -> Vec<String> {
-    if let Ok(custom) = std::env::var("COBALT_API_URL") {
+pub fn extract_youtube_id(url_or_id: &str) -> Option<String> {
+    let trimmed = url_or_id.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    // If it's already a raw 11-char ID
+    if trimmed.len() == 11 && !trimmed.contains('/') && !trimmed.contains('?') && !trimmed.contains('=') {
+        return Some(trimmed.to_string());
+    }
+
+    if let Some(pos) = trimmed.find("v=") {
+        let after = &trimmed[pos + 2..];
+        let id: String = after.chars().take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '-').collect();
+        if id.len() == 11 {
+            return Some(id);
+        }
+    }
+
+    if let Some(pos) = trimmed.find("youtu.be/") {
+        let after = &trimmed[pos + 9..];
+        let id: String = after.chars().take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '-').collect();
+        if id.len() == 11 {
+            return Some(id);
+        }
+    }
+
+    if let Some(pos) = trimmed.find("/embed/") {
+        let after = &trimmed[pos + 7..];
+        let id: String = after.chars().take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '-').collect();
+        if id.len() == 11 {
+            return Some(id);
+        }
+    }
+
+    if let Some(pos) = trimmed.find("/shorts/") {
+        let after = &trimmed[pos + 8..];
+        let id: String = after.chars().take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '-').collect();
+        if id.len() == 11 {
+            return Some(id);
+        }
+    }
+
+    None
+}
+
+fn get_piped_endpoints() -> Vec<String> {
+    if let Ok(custom) = std::env::var("PIPED_API_URL") {
         let trimmed = custom.trim();
         if !trimmed.is_empty() {
             return vec![trimmed.to_string()];
@@ -32,10 +80,11 @@ fn get_cobalt_endpoints() -> Vec<String> {
     }
 
     vec![
-        "https://api.cobalt.tools/".to_string(),
-        "https://cobalt.api.scie.dev/".to_string(),
-        "https://cobalt.pub/".to_string(),
-        "https://cobalt-api.kwi.li/".to_string(),
+        "https://api.piped.video".to_string(),
+        "https://pipedapi.kavin.rocks".to_string(),
+        "https://pipedapi.tokhmi.xyz".to_string(),
+        "https://pipedapi.moomoo.me".to_string(),
+        "https://pipedapi.privacy.com.de".to_string(),
     ]
 }
 
@@ -47,91 +96,91 @@ pub async fn download_youtube_audio(
         .await
         .with_context(|| format!("creating audio output directory {}", output_dir.display()))?;
 
-    // Cobalt API is the sole audio downloader
-    download_via_cobalt(youtube_url, output_dir).await
+    let video_id = extract_youtube_id(youtube_url)
+        .with_context(|| format!("could not extract YouTube video ID from {youtube_url}"))?;
+
+    download_via_piped(&video_id, output_dir).await
 }
 
-async fn download_via_cobalt(
-    youtube_url: &str,
+async fn download_via_piped(
+    video_id: &str,
     output_dir: &Path,
 ) -> Result<DownloadedAudio> {
-    let endpoints = get_cobalt_endpoints();
+    let endpoints = get_piped_endpoints();
 
     let client = reqwest::Client::builder()
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-        .timeout(std::time::Duration::from_secs(45))
+        .timeout(std::time::Duration::from_secs(30))
         .build()
-        .context("building reqwest client for Cobalt API")?;
+        .context("building reqwest client for Piped API")?;
 
-    let mut last_err = anyhow::anyhow!("No Cobalt API endpoints available");
+    let mut last_err = anyhow::anyhow!("No Piped API endpoints available");
 
-    for endpoint in endpoints {
-        let req_body = serde_json::json!({
-            "url": youtube_url,
-            "downloadMode": "audio",
-            "audioFormat": "m4a"
-        });
-
-        let res = client
-            .post(&endpoint)
-            .header("accept", "application/json")
-            .header("content-type", "application/json")
-            .json(&req_body)
-            .send()
-            .await;
+    for endpoint in &endpoints {
+        let stream_req_url = format!("{endpoint}/streams/{video_id}");
+        let res = client.get(&stream_req_url).send().await;
 
         let response = match res {
             Ok(r) => r,
             Err(e) => {
-                last_err = anyhow::anyhow!("Cobalt endpoint {endpoint} request error: {e}");
+                last_err = anyhow::anyhow!("Piped API endpoint {endpoint} request error: {e}");
                 continue;
             }
         };
 
         if !response.status().is_success() {
             let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            last_err = anyhow::anyhow!("Cobalt endpoint {endpoint} HTTP {status}: {body}");
+            last_err = anyhow::anyhow!("Piped API endpoint {endpoint} returned status {status}");
             continue;
         }
 
-        let parsed: CobaltResponse = match response.json().await {
+        let parsed: PipedStreamResponse = match response.json().await {
             Ok(p) => p,
             Err(e) => {
-                last_err = anyhow::anyhow!("Cobalt endpoint {endpoint} JSON parse error: {e}");
+                last_err = anyhow::anyhow!("Piped API endpoint {endpoint} JSON parse error: {e}");
                 continue;
             }
         };
 
-        let stream_url = match parsed.url.or_else(|| parsed.picker.and_then(|p| p.first().map(|i| i.url.clone()))) {
-            Some(u) => u,
-            None => {
-                last_err = anyhow::anyhow!("Cobalt endpoint {endpoint} response did not contain download URL");
+        let streams = match parsed.audio_streams {
+            Some(s) if !s.is_empty() => s,
+            _ => {
+                last_err = anyhow::anyhow!("Piped API endpoint {endpoint} returned no audio streams");
                 continue;
             }
         };
 
-        let filename = parsed.filename.unwrap_or_else(|| "sermon.m4a".to_string());
-        let dest_path = output_dir.join(&filename);
+        let selected_stream = streams
+            .iter()
+            .find(|s| {
+                s.mime_type
+                    .as_deref()
+                    .map(|m| m.contains("audio/mp4") || m.contains("audio/m4a"))
+                    .unwrap_or(false)
+                    || s.format.as_deref().map(|f| f == "M4A").unwrap_or(false)
+            })
+            .unwrap_or(&streams[0]);
+
+        let dest_path = output_dir.join(format!("{video_id}.m4a"));
 
         let bytes = client
-            .get(&stream_url)
+            .get(&selected_stream.url)
             .send()
             .await
-            .context("fetching audio stream from Cobalt CDN")?
+            .context("downloading audio stream from Piped CDN")?
             .error_for_status()
-            .context("Cobalt CDN audio download failed")?
+            .context("Piped CDN audio download failed")?
             .bytes()
             .await
-            .context("reading audio bytes from Cobalt stream")?;
+            .context("reading audio bytes from Piped stream")?;
 
         tokio::fs::write(&dest_path, bytes)
             .await
-            .context("writing audio bytes to disk")?;
+            .context("writing audio file to disk")?;
 
         return Ok(DownloadedAudio {
             path: dest_path,
-            title: Some("Sermon Audio".to_string()),
+            title: parsed.title,
         });
     }
 
@@ -139,63 +188,65 @@ async fn download_via_cobalt(
 }
 
 pub async fn resolve_stream_url(youtube_url: &str) -> Result<String> {
-    let endpoints = get_cobalt_endpoints();
+    let video_id = extract_youtube_id(youtube_url)
+        .with_context(|| format!("could not extract YouTube video ID from {youtube_url}"))?;
+
+    let endpoints = get_piped_endpoints();
 
     let client = reqwest::Client::builder()
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-        .timeout(std::time::Duration::from_secs(45))
+        .timeout(std::time::Duration::from_secs(30))
         .build()
-        .context("building reqwest client for Cobalt API")?;
+        .context("building reqwest client for Piped API")?;
 
-    let mut last_err = anyhow::anyhow!("No Cobalt API endpoints available");
+    let mut last_err = anyhow::anyhow!("No Piped API endpoints available");
 
-    for endpoint in endpoints {
-        let req_body = serde_json::json!({
-            "url": youtube_url,
-            "downloadMode": "audio",
-            "audioFormat": "m4a"
-        });
-
-        let res = client
-            .post(&endpoint)
-            .header("accept", "application/json")
-            .header("content-type", "application/json")
-            .json(&req_body)
-            .send()
-            .await;
+    for endpoint in &endpoints {
+        let stream_req_url = format!("{endpoint}/streams/{video_id}");
+        let res = client.get(&stream_req_url).send().await;
 
         let response = match res {
             Ok(r) => r,
             Err(e) => {
-                last_err = anyhow::anyhow!("Cobalt endpoint {endpoint} request error: {e}");
+                last_err = anyhow::anyhow!("Piped API endpoint {endpoint} request error: {e}");
                 continue;
             }
         };
 
         if !response.status().is_success() {
             let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            last_err = anyhow::anyhow!("Cobalt endpoint {endpoint} HTTP {status}: {body}");
+            last_err = anyhow::anyhow!("Piped API endpoint {endpoint} returned status {status}");
             continue;
         }
 
-        let parsed: CobaltResponse = match response.json().await {
+        let parsed: PipedStreamResponse = match response.json().await {
             Ok(p) => p,
             Err(e) => {
-                last_err = anyhow::anyhow!("Cobalt endpoint {endpoint} JSON parse error: {e}");
+                last_err = anyhow::anyhow!("Piped API endpoint {endpoint} JSON parse error: {e}");
                 continue;
             }
         };
 
-        let stream_url = match parsed.url.or_else(|| parsed.picker.and_then(|p| p.first().map(|i| i.url.clone()))) {
-            Some(u) => u,
-            None => {
-                last_err = anyhow::anyhow!("Cobalt response did not contain download URL");
+        let streams = match parsed.audio_streams {
+            Some(s) if !s.is_empty() => s,
+            _ => {
+                last_err = anyhow::anyhow!("Piped API endpoint {endpoint} returned no audio streams");
                 continue;
             }
         };
 
-        return Ok(stream_url);
+        let selected_stream = streams
+            .iter()
+            .find(|s| {
+                s.mime_type
+                    .as_deref()
+                    .map(|m| m.contains("audio/mp4") || m.contains("audio/m4a"))
+                    .unwrap_or(false)
+                    || s.format.as_deref().map(|f| f == "M4A").unwrap_or(false)
+            })
+            .unwrap_or(&streams[0]);
+
+        return Ok(selected_stream.url.clone());
     }
 
     Err(last_err)

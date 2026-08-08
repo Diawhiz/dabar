@@ -42,21 +42,6 @@ struct InvidiousFormat {
     format_type: Option<String>,
 }
 
-#[derive(Debug, serde::Deserialize)]
-#[allow(dead_code)]
-struct CobaltResponse {
-    status: String,
-    url: Option<String>,
-    filename: Option<String>,
-    picker: Option<Vec<CobaltPickerItem>>,
-}
-
-#[derive(Debug, serde::Deserialize)]
-#[allow(dead_code)]
-struct CobaltPickerItem {
-    url: String,
-}
-
 pub fn extract_youtube_id(url_or_id: &str) -> Option<String> {
     let trimmed = url_or_id.trim();
     if trimmed.is_empty() {
@@ -127,21 +112,6 @@ fn get_invidious_endpoints() -> Vec<String> {
     ]
 }
 
-fn get_cobalt_endpoints() -> Vec<String> {
-    if let Ok(custom) = std::env::var("COBALT_API_URL") {
-        let trimmed = custom.trim();
-        if !trimmed.is_empty() {
-            return vec![trimmed.to_string()];
-        }
-    }
-
-    vec![
-        "https://api.cobalt.tools/".to_string(),
-        "https://cobalt.api.scie.dev/".to_string(),
-        "https://cobalt.pub/".to_string(),
-    ]
-}
-
 pub async fn download_youtube_audio(
     youtube_url: &str,
     output_dir: &Path,
@@ -156,17 +126,11 @@ pub async fn download_youtube_audio(
     // Tier 1: Piped API
     match download_via_piped(&video_id, output_dir).await {
         Ok(audio) => return Ok(audio),
-        Err(err) => eprintln!("Piped API failed: {err:#}. Trying Invidious API..."),
+        Err(err) => eprintln!("Piped API failed: {err:#}. Falling back to Invidious API..."),
     }
 
     // Tier 2: Invidious API
-    match download_via_invidious(&video_id, output_dir).await {
-        Ok(audio) => return Ok(audio),
-        Err(err) => eprintln!("Invidious API failed: {err:#}. Trying Cobalt API..."),
-    }
-
-    // Tier 3: Cobalt API
-    download_via_cobalt(youtube_url, output_dir).await
+    download_via_invidious(&video_id, output_dir).await
 }
 
 async fn download_via_piped(
@@ -327,92 +291,6 @@ async fn download_via_invidious(
         return Ok(DownloadedAudio {
             path: dest_path,
             title: parsed.title,
-        });
-    }
-
-    Err(last_err)
-}
-
-async fn download_via_cobalt(
-    youtube_url: &str,
-    output_dir: &Path,
-) -> Result<DownloadedAudio> {
-    let endpoints = get_cobalt_endpoints();
-
-    let client = reqwest::Client::builder()
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .context("building reqwest client for Cobalt API")?;
-
-    let mut last_err = anyhow::anyhow!("No Cobalt API endpoints available");
-
-    for endpoint in &endpoints {
-        let req_body = serde_json::json!({
-            "url": youtube_url,
-            "downloadMode": "audio",
-            "audioFormat": "m4a"
-        });
-
-        let res = client
-            .post(endpoint)
-            .header("accept", "application/json")
-            .header("content-type", "application/json")
-            .json(&req_body)
-            .send()
-            .await;
-
-        let response = match res {
-            Ok(r) => r,
-            Err(e) => {
-                last_err = anyhow::anyhow!("Cobalt endpoint {endpoint} request error: {e}");
-                continue;
-            }
-        };
-
-        if !response.status().is_success() {
-            let status = response.status();
-            last_err = anyhow::anyhow!("Cobalt endpoint {endpoint} HTTP {status}");
-            continue;
-        }
-
-        let parsed: CobaltResponse = match response.json().await {
-            Ok(p) => p,
-            Err(e) => {
-                last_err = anyhow::anyhow!("Cobalt endpoint {endpoint} JSON parse error: {e}");
-                continue;
-            }
-        };
-
-        let stream_url = match parsed.url.or_else(|| parsed.picker.and_then(|p| p.first().map(|i| i.url.clone()))) {
-            Some(u) => u,
-            None => {
-                last_err = anyhow::anyhow!("Cobalt endpoint {endpoint} response did not contain download URL");
-                continue;
-            }
-        };
-
-        let filename = parsed.filename.unwrap_or_else(|| "sermon.m4a".to_string());
-        let dest_path = output_dir.join(&filename);
-
-        let bytes = client
-            .get(&stream_url)
-            .send()
-            .await
-            .context("fetching audio stream from Cobalt CDN")?
-            .error_for_status()
-            .context("Cobalt CDN audio download failed")?
-            .bytes()
-            .await
-            .context("reading audio bytes from Cobalt stream")?;
-
-        tokio::fs::write(&dest_path, bytes)
-            .await
-            .context("writing audio bytes to disk")?;
-
-        return Ok(DownloadedAudio {
-            path: dest_path,
-            title: Some("Sermon Audio".to_string()),
         });
     }
 

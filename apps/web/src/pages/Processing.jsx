@@ -4,157 +4,144 @@ import { getSermon, onPipelineProgress } from "../lib/api.js";
 import Btn from "../components/Btn.jsx";
 
 const STAGES = [
-  { key: "downloading", label: "Loading sermon audio…", detail: "Retrieving audio stream or reading local file." },
-  { key: "transcribing", label: "Transcribing the sermon…", detail: "Listening to every word with Whisper speech recognition." },
-  { key: "detecting", label: "Finding key moments…", detail: "Analyzing teaching moments and theological highlights." },
-  { key: "ready", label: "Your clips are ready.", detail: "Head to the clip studio to review, edit, and export." },
+  { key: "downloading", label: "Preparing Audio", detail: "Getting the recording ready on your computer" },
+  { key: "transcribing", label: "Listening & Transcribing", detail: "Converting speech into high-precision text" },
+  { key: "detecting", label: "Organizing & Finding Clips", detail: "Structuring paragraphs, checking scripture, and ranking highlights" },
+  { key: "ready", label: "Complete", detail: "Your sermon manuscript and clips are ready" },
 ];
 
 export default function Processing() {
   const { sermonId } = useParams();
-  const [sermon, setSermon] = useState(null);
-  const [currentStageKey, setCurrentStageKey] = useState("downloading");
-  const [stageProgress, setStageProgress] = useState(10);
-  const [statusDetail, setStatusDetail] = useState("");
-  const [error, setError] = useState("");
-  const [isComplete, setIsComplete] = useState(false);
   const navigate = useNavigate();
-
-  function getStageIndex(key) {
-    if (!key) return 0;
-    const s = String(key).toLowerCase();
-    if (s === "ready" || s.includes("complete")) return 3;
-    if (s.includes("detect") || s.includes("process") || s.includes("clip")) return 2;
-    if (s.includes("transcri")) return 1;
-    return 0;
-  }
+  const [sermon, setSermon] = useState(null);
+  const [progressState, setProgressState] = useState({ stage: "downloading", percent: 10, detail: "" });
 
   useEffect(() => {
-    if (!sermonId) return;
+    let unlisten = null;
 
-    let unlistenFn = null;
-
-    // Load initial sermon state from DB
-    getSermon(sermonId)
-      .then((data) => {
-        if (data) {
-          setSermon(data);
-          const st = (data.status || "").toLowerCase();
-          setCurrentStageKey(st);
-          if (st === "ready") {
-            setIsComplete(true);
-            setStageProgress(100);
-          } else if (st === "failed") {
-            setError(data.error_message || "Processing failed.");
-          }
+    getSermon(sermonId).then((s) => {
+      if (s) {
+        setSermon(s);
+        const status = (s.status || "").toLowerCase();
+        if (status === "ready" || status === "complete" || status.includes("clip")) {
+          setProgressState({ stage: "ready", percent: 100, detail: "All clips and manuscript ready" });
         }
-      })
-      .catch((err) => {
-        console.warn("Could not fetch sermon:", err);
-      });
-
-    // Subscribe to live Tauri pipeline progress events
-    onPipelineProgress((event) => {
-      if (!event || event.sermon_id !== sermonId) return;
-
-      if (event.is_error) {
-        setError(event.detail || "Processing encountered an error.");
-        setCurrentStageKey("failed");
-      } else if (event.is_complete || event.stage === "ready") {
-        setIsComplete(true);
-        setCurrentStageKey("ready");
-        setStageProgress(100);
-        setStatusDetail(event.detail);
-        // Refresh full sermon data from DB
-        getSermon(sermonId).then((data) => { if (data) setSermon(data); });
-      } else {
-        setCurrentStageKey(event.stage);
-        setStageProgress(event.progress || 50);
-        if (event.detail) setStatusDetail(event.detail);
       }
-    }).then((fn) => {
-      unlistenFn = fn;
     });
 
+    onPipelineProgress((event) => {
+      if (event && event.sermon_id === sermonId) {
+        setProgressState({
+          stage: event.stage || "transcribing",
+          percent: Math.round(event.progress_percent || 0),
+          detail: event.detail || "",
+        });
+      }
+    }).then((fn) => { unlisten = fn; });
+
     return () => {
-      if (typeof unlistenFn === "function") unlistenFn();
+      if (typeof unlisten === "function") unlisten();
     };
   }, [sermonId]);
 
-  const stageIndex = getStageIndex(currentStageKey);
-  const currentStage = STAGES[stageIndex] || STAGES[0];
-  const overallProgress = isComplete ? 100 : Math.min(95, Math.round(((stageIndex + stageProgress / 100) / STAGES.length) * 100));
+  const isComplete = progressState.stage === "ready" || progressState.percent >= 100;
+  const currentStageIndex = STAGES.findIndex((s) => s.key === progressState.stage);
+  const stageIndex = currentStageIndex === -1 ? 1 : currentStageIndex;
 
   return (
-    <div className="mx-auto max-w-2xl py-8 space-y-10">
-      <div>
-        <h1 className="font-display text-3xl font-bold tracking-tight">
-          {isComplete ? "All done." : "Dabar is working…"}
+    <div className="mx-auto max-w-xl py-10 space-y-8 animate-fade-in">
+      {/* Title */}
+      <div className="text-center space-y-2">
+        <span className="text-[11px] font-sans font-semibold uppercase tracking-wider text-amber bg-surface px-3 py-1 rounded-full border border-border">
+          {isComplete ? "Processing Complete" : "Working in Background"}
+        </span>
+        <h1 className="font-display text-2xl sm:text-3xl font-bold tracking-tight text-ink">
+          {sermon?.title || "Preparing your sermon…"}
         </h1>
-        <p className="mt-2 text-sm text-muted">
-          {sermon?.title || sermon?.youtube_url || "Processing your sermon."}
+        <p className="text-xs text-muted font-sans max-w-md mx-auto">
+          {isComplete
+            ? "Every word has been transcribed and key teaching moments have been curated."
+            : "You can leave this window open or let it finish in the background."}
         </p>
       </div>
 
-      {error && (
-        <div className="rounded-card border border-ember/30 bg-ember/5 px-4 py-3 text-sm text-ember flex items-start gap-2">
-          <i className="bx bx-error-circle text-lg shrink-0 mt-0.5" aria-hidden="true" />
-          <span>{error}</span>
-        </div>
-      )}
-
-      {/* Progress bar */}
-      <div className="rounded-card border border-border bg-paper p-6 shadow-card space-y-4">
+      {/* Progress Card */}
+      <div className="rounded-2xl border border-border bg-paper p-6 shadow-sm space-y-4 font-sans">
         <div className="flex items-center justify-between">
-          <span className="text-sm font-semibold text-ink">{currentStage.label}</span>
-          <span className="text-sm font-bold text-ember">{overallProgress}%</span>
+          <span className="text-xs font-semibold text-ink">
+            {STAGES[stageIndex]?.label || "Processing"}
+          </span>
+          <span className="text-xs font-bold text-amber font-mono">
+            {progressState.percent}%
+          </span>
         </div>
+
+        {/* Progress bar */}
         <div className="h-2 w-full rounded-full bg-surface overflow-hidden">
           <div
-            className="h-full rounded-full bg-ember transition-all duration-500 ease-out"
-            style={{ width: `${overallProgress}%` }}
+            className="h-full rounded-full bg-amber transition-all duration-500 ease-out"
+            style={{ width: `${progressState.percent}%` }}
           />
         </div>
-        <p className="text-xs text-muted">{statusDetail || currentStage.detail}</p>
+
+        <p className="text-[11px] text-muted">
+          {progressState.detail || STAGES[stageIndex]?.detail}
+        </p>
       </div>
 
-      {/* Stage checklist */}
-      <div className="space-y-3 px-1">
-        {STAGES.map((stage, i) => {
+      {/* Stage Checklist */}
+      <div className="space-y-3 px-2 font-sans">
+        {STAGES.map((stg, i) => {
           const done = i < stageIndex || isComplete;
           const active = i === stageIndex && !isComplete;
           return (
-            <div key={stage.key} className="flex items-center gap-3">
+            <div key={stg.key} className="flex items-center gap-3.5">
               {done ? (
-                <i className="bx bx-check-circle text-xl text-ember" aria-label={`${stage.label} complete`} />
+                <i className="bx bx-check-circle text-lg text-amber" />
               ) : active ? (
-                <i className="bx bx-loader-alt bx-spin text-xl text-ember" aria-label={`${stage.label} in progress`} />
+                <i className="bx bx-loader-alt bx-spin text-lg text-amber" />
               ) : (
-                <i className="bx bx-circle text-xl text-border" aria-label={`${stage.label} pending`} />
+                <i className="bx bx-circle text-lg text-border" />
               )}
-              <span className={`text-sm ${done ? "text-muted line-through" : active ? "text-ink font-medium" : "text-muted/60"}`}>
-                {stage.label}
+              <span className={`text-xs ${done ? "text-muted line-through" : active ? "text-ink font-semibold" : "text-muted/50"}`}>
+                {stg.label}
               </span>
             </div>
           );
         })}
       </div>
 
-      {/* CTA when complete */}
-      {isComplete && (
-        <Btn onClick={() => navigate(`/clips/${sermonId}`)} size="lg" className="w-full">
-          <i className="bx bx-film text-lg" aria-hidden="true" />
-          Review clips & transcript
+      {/* Complete CTA */}
+      {isComplete ? (
+        <Btn onClick={() => navigate(`/clips/${sermonId}`)} size="lg" className="w-full shadow-md">
+          <i className="bx bx-film text-lg" />
+          Open Manuscript & Clips Studio
         </Btn>
+      ) : (
+        <div className="text-center pt-2">
+          <button
+            type="button"
+            onClick={() => navigate("/dashboard")}
+            className="text-xs text-muted hover:text-ink font-sans underline underline-offset-4"
+          >
+            Back to Sermon Desk (continues in background)
+          </button>
+        </div>
       )}
 
-      {/* Transcript preview */}
+      {/* Live Incoming Transcript preview */}
       {sermon?.transcript_segments && sermon.transcript_segments.length > 0 && (
-        <div className="rounded-card bg-surface p-5 border border-border">
-          <p className="text-xs font-semibold text-ink uppercase tracking-wider mb-2">Incoming Transcript</p>
-          <p className="text-sm text-muted leading-relaxed italic">
-            "{sermon.transcript_segments.slice(0, 8).map((s) => s.text).join(" ").slice(0, 300)}
-            {sermon.transcript_segments.map((s) => s.text).join(" ").length > 300 ? "…" : ""}"
+        <div className="rounded-2xl bg-surface/70 p-5 border border-border/80 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-sans font-bold uppercase tracking-wider text-muted">
+              Live Transcript Preview
+            </span>
+            <span className="text-[10px] font-sans text-amber font-medium">
+              {sermon.transcript_segments.length} sentences captured
+            </span>
+          </div>
+          <p className="text-xs text-ink-secondary leading-relaxed italic font-serif">
+            "{sermon.transcript_segments.slice(0, 6).map((s) => s.text).join(" ").slice(0, 240)}…"
           </p>
         </div>
       )}

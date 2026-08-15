@@ -2,91 +2,147 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Illumination Design Tokens ──────────────────────────────────── */
+/* ── Dabar Illumination & Manuscript Design Tokens ───────────────── */
 :root {
-  --base: #1C1815;
-  --unconfirmed: #8A7F73;
-  --confirmed: #28231E;
-  --accent: #D4913A; /* Warm Amber */
-  --ember: #D4913A;
-  --paper: #FAF6EF;
-  --surface: #F0E9DF;
-  --surface-dark: #28231E;
-  --border: #E2D9CC;
-  --border-dark: #3D352E;
-  --ink: #1C1815;
-  --muted: #7A6F62;
+  --base-dark: #161311;
+  --base-light: #FBF8F2;
+  
+  --paper: #FBF8F2;
+  --paper-elevated: #FFFFFF;
+  --surface: #F3ECE2;
+  --surface-warm: #EAE1D3;
+  --border: #E5DBD0;
+  --border-subtle: #EDE5DC;
+  
+  --ink: #1E1A17;
+  --ink-secondary: #594F46;
+  --muted: #7E7368;
+  --unconfirmed: #968A7E;
+  
+  --amber: #D48B38;
+  --amber-light: #F6EBDD;
+  --amber-glow: rgba(212, 139, 56, 0.18);
+  --amber-border: rgba(212, 139, 56, 0.35);
+
+  --font-display: "Fraunces", Georgia, serif;
+  --font-body: "Source Serif 4", Georgia, serif;
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
-/* ── Base Layer ──────────────────────────────────────── */
+/* ── Base Reset & Typography ─────────────────────────────────────── */
 @layer base {
   body {
     background-color: var(--paper);
     color: var(--ink);
-    font-family: "Source Serif 4", Georgia, serif;
-    font-feature-settings: "cv02", "cv03", "cv11";
+    font-family: var(--font-body);
+    font-size: 16px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   h1, h2, h3, h4, h5, h6 {
-    font-family: "Fraunces", Georgia, serif;
-    letter-spacing: -0.02em;
+    font-family: var(--font-display);
+    font-weight: 600;
+    color: var(--ink);
+    letter-spacing: -0.015em;
   }
 
-  /* Focus ring — warm amber, visible on keyboard nav */
+  /* Accessible focus ring in warm amber */
   *:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--amber);
     outline-offset: 2px;
   }
 
-  /* Selection */
+  /* Selection highlight */
   ::selection {
-    background-color: var(--accent);
-    color: #fff;
+    background-color: var(--amber);
+    color: #FFFFFF;
   }
 }
 
-/* ── Illumination Transcript Reading View ────────────── */
-.transcript-word-dim {
-  color: var(--unconfirmed);
-  transition: color 0.25s ease, text-shadow 0.25s ease;
+/* ── Manuscript & Illumination Classes ───────────────────────────── */
+
+/* Paragraph container */
+.manuscript-para {
+  position: relative;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+}
+.manuscript-para:hover {
+  background-color: rgba(212, 139, 56, 0.04);
+}
+.manuscript-para.is-active-playing {
+  background-color: rgba(212, 139, 56, 0.08);
+  box-shadow: inset 3px 0 0 var(--amber);
 }
 
+/* Unconfirmed / raw speech text */
+.transcript-word-dim {
+  color: var(--unconfirmed);
+  transition: color 0.3s ease, text-shadow 0.3s ease;
+}
+
+/* Confirmed / highlighted lit text */
 .transcript-word-lit {
   color: var(--ink);
   font-weight: 500;
-  text-shadow: 0 0 10px rgba(212, 145, 58, 0.2);
+  text-shadow: 0 0 12px var(--amber-glow);
 }
 
+/* Key moment paragraph wash */
 .transcript-key-moment {
-  background-color: rgba(212, 145, 58, 0.08);
-  border-left: 3px solid var(--accent);
-  border-radius: 0 8px 8px 0;
-  padding: 0.75rem 1rem;
-  margin: 0.5rem 0;
+  background-color: rgba(212, 139, 56, 0.07);
+  border-left: 3px solid var(--amber);
+  border-radius: 0 0.5rem 0.5rem 0;
+  padding: 1rem 1.25rem;
+  margin: 1rem 0;
   transition: background-color 0.2s ease;
 }
-
 .transcript-key-moment:hover {
-  background-color: rgba(212, 145, 58, 0.13);
+  background-color: rgba(212, 139, 56, 0.12);
 }
 
-/* ── Custom Scrollbar ────────────────────────────────── */
+/* Scripture citation pill */
+.scripture-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background-color: var(--amber-light);
+  color: #8C5516;
+  border: 1px solid var(--amber-border);
+  padding: 0.15rem 0.55rem;
+  border-radius: 9999px;
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.scripture-pill:hover {
+  background-color: var(--amber);
+  color: #FFFFFF;
+}
+
+/* ── Custom Scrollbar ────────────────────────────────────────────── */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
 }
 ::-webkit-scrollbar-track {
   background: var(--paper);
 }
 ::-webkit-scrollbar-thumb {
   background: var(--border);
-  border-radius: 3px;
+  border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--muted);
 }
 
-/* ── Reel Strip scroll container ─────────────────────── */
+/* ── Reel Strip Scroll Container ─────────────────────────────────── */
 .reel-strip {
   display: flex;
   gap: 1.25rem;
@@ -96,14 +152,14 @@
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
-  padding-bottom: 0.5rem;
+  padding-bottom: 0.75rem;
 }
 .reel-strip > * {
   scroll-snap-align: start;
   flex-shrink: 0;
 }
 
-/* ── Reduced motion ──────────────────────────────────── */
+/* ── Accessibility: Reduced Motion ───────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;

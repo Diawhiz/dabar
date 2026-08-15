@@ -4,164 +4,183 @@ import { createSermon, pickMediaFile } from "../lib/api.js";
 import Btn from "../components/Btn.jsx";
 
 export default function Upload() {
-  const [mode, setMode] = useState("file"); // "file" | "youtube"
-  const [url, setUrl] = useState("");
-  const [selectedFile, setSelectedFile] = useState(null);
-  const [error, setError] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [sourceType, setSourceType] = useState("file"); // "file" | "youtube"
+  const [youtubeUrl, setYoutubeUrl] = useState("");
+  const [selectedFilePath, setSelectedFilePath] = useState(null);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [isProcessing, setIsProcessing] = useState(false);
   const navigate = useNavigate();
 
-  async function handlePickFile() {
+  async function handleBrowseFile() {
+    setErrorMessage("");
     try {
       const path = await pickMediaFile();
       if (path) {
-        setSelectedFile(path);
-        setError("");
+        setSelectedFilePath(path);
       }
     } catch (err) {
-      setError(err.message || "Failed to open file picker.");
+      setErrorMessage("Could not open file explorer. Please try again.");
     }
   }
 
   async function handleSubmit(e) {
     e.preventDefault();
-    setError("");
+    setErrorMessage("");
 
     let source = "";
-    if (mode === "youtube") {
-      const trimmed = url.trim();
+    if (sourceType === "youtube") {
+      const trimmed = youtubeUrl.trim();
       if (!trimmed) {
-        setError("Please paste a YouTube sermon link.");
+        setErrorMessage("Please paste a valid YouTube sermon link.");
         return;
       }
       if (!trimmed.includes("youtube.com/") && !trimmed.includes("youtu.be/")) {
-        setError("That doesn't look like a valid YouTube link.");
+        setErrorMessage("That doesn't look like a valid YouTube video link.");
         return;
       }
       source = trimmed;
     } else {
-      if (!selectedFile) {
-        setError("Please select a local audio or video file.");
+      if (!selectedFilePath) {
+        setErrorMessage("Please choose a sermon recording from your computer.");
         return;
       }
-      source = selectedFile;
+      source = selectedFilePath;
     }
 
-    setIsSubmitting(true);
+    setIsProcessing(true);
     try {
       const result = await createSermon(source);
       navigate(`/processing/${result.id}`);
     } catch (err) {
-      setError(err.message || "Something went wrong — please try again.");
+      setErrorMessage(err.message || "Could not begin processing this sermon. Please try again.");
     } finally {
-      setIsSubmitting(false);
+      setIsProcessing(false);
     }
   }
 
+  const fileName = selectedFilePath ? selectedFilePath.split(/[/\\]/).pop() : null;
+
   return (
-    <div className="mx-auto max-w-xl py-8 space-y-8">
-      <div>
-        <h1 className="font-display text-3xl font-bold tracking-tight">Add a sermon</h1>
-        <p className="mt-2 text-sm text-muted leading-relaxed">
-          Import a sermon recording or paste a YouTube link. Dabar will transcribe every word,
-          structure the text, and extract key moments.
+    <div className="mx-auto max-w-xl py-6 space-y-8 animate-fade-in">
+      {/* Header */}
+      <div className="text-center space-y-2">
+        <h1 className="font-display text-3xl font-bold tracking-tight text-ink">
+          Add a Sermon
+        </h1>
+        <p className="text-sm text-muted max-w-md mx-auto leading-relaxed">
+          Select a recording from your computer or paste a YouTube link. Dabar will transcribe, structure the manuscript, and highlight key clips.
         </p>
       </div>
 
-      {/* Mode selection tabs */}
-      <div className="flex border-b border-border gap-6 text-sm font-medium">
+      {/* Mode Switcher */}
+      <div className="flex p-1 rounded-xl bg-surface border border-border/80 font-sans max-w-md mx-auto">
         <button
           type="button"
-          onClick={() => { setMode("file"); setError(""); }}
-          className={`pb-3 transition-colors relative flex items-center gap-2 ${
-            mode === "file"
-              ? "text-ember font-semibold border-b-2 border-ember"
+          onClick={() => { setSourceType("file"); setErrorMessage(""); }}
+          className={`flex-1 py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
+            sourceType === "file"
+              ? "bg-paper text-ink shadow-xs border border-border/60"
               : "text-muted hover:text-ink"
           }`}
         >
-          <i className="bx bx-file text-base" aria-hidden="true" />
-          Local Audio / Video
+          <i className="bx bx-folder text-base" />
+          File on this Computer
         </button>
 
         <button
           type="button"
-          onClick={() => { setMode("youtube"); setError(""); }}
-          className={`pb-3 transition-colors relative flex items-center gap-2 ${
-            mode === "youtube"
-              ? "text-ember font-semibold border-b-2 border-ember"
+          onClick={() => { setSourceType("youtube"); setErrorMessage(""); }}
+          className={`flex-1 py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
+            sourceType === "youtube"
+              ? "bg-paper text-ink shadow-xs border border-border/60"
               : "text-muted hover:text-ink"
           }`}
         >
-          <i className="bx bxl-youtube text-base" aria-hidden="true" />
-          YouTube URL
+          <i className="bx bxl-youtube text-base text-red-600" />
+          YouTube Link
         </button>
       </div>
 
+      {/* Form */}
       <form onSubmit={handleSubmit} className="space-y-6">
-        {mode === "file" ? (
-          <div className="space-y-3">
-            <div
-              onClick={handlePickFile}
-              className="cursor-pointer rounded-card border-2 border-dashed border-border hover:border-ember bg-surface/50 hover:bg-surface p-8 text-center transition-all flex flex-col items-center justify-center gap-3"
-            >
-              <div className="w-12 h-12 rounded-full bg-paper flex items-center justify-center text-ember text-2xl shadow-sm">
-                <i className={`bx ${selectedFile ? "bx-check" : "bx-upload"}`} aria-hidden="true" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-ink">
-                  {selectedFile ? selectedFile.split(/[/\\]/).pop() : "Click to select a sermon file"}
-                </p>
-                <p className="text-xs text-muted mt-1">
-                  Supports MP4, MOV, MKV, MP3, WAV, M4A, OGG, Opus
-                </p>
-              </div>
-              {selectedFile && (
-                <span className="text-xs text-ember font-medium truncate max-w-xs block">
-                  {selectedFile}
-                </span>
-              )}
+        {sourceType === "file" ? (
+          <div
+            onClick={handleBrowseFile}
+            className="group cursor-pointer rounded-2xl border-2 border-dashed border-border hover:border-amber/80 bg-paper hover:bg-surface/40 p-8 text-center transition-all flex flex-col items-center justify-center gap-3.5 shadow-xs"
+          >
+            <div className="w-12 h-12 rounded-2xl bg-surface group-hover:bg-amber/10 flex items-center justify-center text-amber text-2xl transition-colors shadow-xs">
+              <i className={`bx ${selectedFilePath ? "bx-check-circle" : "bx-cloud-upload"}`} />
             </div>
+
+            <div className="space-y-1">
+              <p className="font-display text-base font-semibold text-ink">
+                {fileName || "Click to select sermon file"}
+              </p>
+              <p className="text-xs text-muted font-sans">
+                Supports video (MP4, MOV, MKV) and audio (MP3, WAV, M4A)
+              </p>
+            </div>
+
+            {selectedFilePath && (
+              <div className="mt-1 px-3 py-1 rounded-full bg-surface border border-border text-[11px] text-amber font-mono font-medium truncate max-w-sm">
+                {selectedFilePath}
+              </div>
+            )}
           </div>
         ) : (
-          <label className="block">
-            <span className="text-sm font-medium text-ink mb-2 block">YouTube sermon link</span>
+          <div className="space-y-2 font-sans">
+            <label className="text-xs font-semibold text-ink block">
+              YouTube Video Link
+            </label>
             <div className="relative">
-              <i className="bx bx-link-alt absolute left-4 top-1/2 -translate-y-1/2 text-lg text-muted" aria-hidden="true" />
+              <i className="bx bx-link-alt absolute left-4 top-1/2 -translate-y-1/2 text-muted text-base" />
               <input
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://youtube.com/watch?v=..."
-                className="w-full rounded-card border border-border bg-paper pl-11 pr-4 py-3 text-sm text-ink placeholder:text-muted/50 outline-none transition-colors focus:border-ember"
+                type="text"
+                value={youtubeUrl}
+                onChange={(e) => setYoutubeUrl(e.target.value)}
+                placeholder="https://www.youtube.com/watch?v=..."
+                className="w-full rounded-xl border border-border bg-paper pl-11 pr-4 py-3 text-sm text-ink placeholder:text-muted/50 outline-none transition-colors focus:border-amber"
               />
             </div>
-          </label>
-        )}
-
-        {error && (
-          <div className="rounded-card border border-ember/30 bg-ember/5 px-4 py-3 text-sm text-ember flex items-start gap-2">
-            <i className="bx bx-error-circle text-lg shrink-0 mt-0.5" aria-hidden="true" />
-            <span>{error}</span>
           </div>
         )}
 
-        <Btn type="submit" className="w-full" size="lg" disabled={isSubmitting || (mode === "file" && !selectedFile)}>
-          {isSubmitting ? (
+        {/* Error notification */}
+        {errorMessage && (
+          <div className="rounded-xl border border-amber/30 bg-amber-light px-4 py-3 text-xs text-[#8C5516] flex items-center gap-2.5 font-sans">
+            <i className="bx bx-error-circle text-base shrink-0" />
+            <span>{errorMessage}</span>
+          </div>
+        )}
+
+        {/* Submit CTA */}
+        <Btn
+          type="submit"
+          className="w-full shadow-sm"
+          size="lg"
+          disabled={isProcessing || (sourceType === "file" && !selectedFilePath)}
+        >
+          {isProcessing ? (
             <>
-              <i className="bx bx-loader-alt bx-spin text-lg" aria-hidden="true" />
-              Starting pipeline…
+              <i className="bx bx-loader-alt bx-spin text-lg" />
+              Opening Sermon…
             </>
           ) : (
             <>
-              <i className="bx bx-play text-lg" aria-hidden="true" />
-              Start processing
+              <i className="bx bx-sparkles text-lg" />
+              Begin Transcribing & Finding Clips
             </>
           )}
         </Btn>
       </form>
 
-      <div className="rounded-card bg-surface px-5 py-4 text-xs text-muted leading-relaxed">
+      {/* Helpful reassurance note */}
+      <div className="rounded-xl bg-surface/60 border border-border/70 p-4 text-xs text-muted leading-relaxed font-sans text-center space-y-1">
+        <p className="font-semibold text-ink-secondary">
+          🔒 Private & Local
+        </p>
         <p>
-          <strong className="text-ink">Local & Fast:</strong> Files are processed on your PC using local hardware acceleration. If connected to the internet, Dabar will also identify high-impact moments for short-form clips.
+          Your sermon recordings remain safe on your device. Audio is turned into text, Bible citations are matched, and clips are prepared directly on your computer.
         </p>
       </div>
     </div>

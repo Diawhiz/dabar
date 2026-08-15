@@ -5,20 +5,30 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        display: ['"Fraunces"', "Georgia", "serif"],
-        body: ['"Source Serif 4"', "Georgia", "serif"],
-        sans: ["system-ui", "-apple-system", "BlinkMacSystemFont", '"Segoe UI"', "Roboto", "sans-serif"],
+        sans: ["Inter", "system-ui", "-apple-system", "sans-serif"],
+        mono: ['"IBM Plex Mono"', "Menlo", "Monaco", "Consolas", "monospace"],
       },
       colors: {
         base: "var(--bg-base)",
         surface: "var(--bg-surface)",
         "surface-hover": "var(--bg-surface-hover)",
+        "surface-active": "var(--bg-surface-active)",
         border: "var(--border-base)",
+        "border-strong": "var(--border-strong)",
         primary: "var(--text-primary)",
         secondary: "var(--text-secondary)",
-        unconfirmed: "var(--text-unconfirmed)",
-        confirmed: "var(--text-confirmed)",
+        muted: "var(--text-muted)",
         accent: "var(--accent)",
+        "accent-muted": "var(--accent-muted)",
+        success: "var(--success)",
+        warning: "var(--warning)",
+        danger: "var(--danger)",
+      },
+      fontSize: {
+        "2xs": ["0.65rem", { lineHeight: "1rem" }],
+      },
+      spacing: {
+        sidebar: "200px",
       },
     },
   },

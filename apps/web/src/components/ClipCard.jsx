@@ -9,69 +9,71 @@ function friendlyDuration(durationStr) {
       const [endM, endS] = parts[1].split(":").map(Number);
       if (!isNaN(startM) && !isNaN(startS) && !isNaN(endM) && !isNaN(endS)) {
         const totalSecs = (endM * 60 + endS) - (startM * 60 + startS);
-        if (totalSecs < 60) return `${totalSecs} sec`;
+        if (totalSecs < 60) return `${totalSecs}s`;
         const m = Math.floor(totalSecs / 60);
         const s = totalSecs % 60;
-        return s > 0 ? `${m}m ${s}s` : `${m} min`;
+        return s > 0 ? `${m}m ${s}s` : `${m}m`;
       }
     }
   }
   return durationStr;
 }
 
-export default function ClipCard({ clip, onPreview, onExport, isExporting, featured = false }) {
+export default function ClipCard({
+  clip,
+  onPreview,
+  onExport,
+  isExporting,
+  featured = false,
+}) {
   const durationLabel = friendlyDuration(clip.duration);
 
   if (featured) {
     return (
-      <article className="rounded-xl border border-accent bg-surface p-6 relative overflow-hidden transition-all space-y-4">
-        {/* Top Gold Corner Tag */}
-        <div className="absolute top-0 right-0 bg-accent text-white text-[10px] font-sans font-bold uppercase tracking-wider px-3 py-1 rounded-bl-xl flex items-center gap-1">
-          <i className="bx bxs-star" />
-          Primary Highlight
-        </div>
-
-        {/* Metadata */}
-        <div className="flex items-center gap-2 text-xs text-secondary font-sans pt-1">
-          <span className="inline-flex items-center gap-1.5 font-semibold text-accent">
-            <i className="bx bx-mobile text-sm" />
-            Phone Clip
+      <article className="border border-border bg-surface rounded-md p-4 relative space-y-3">
+        {/* Top Tag */}
+        <div className="flex items-center justify-between">
+          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-accent">
+            <i className="bx bxs-star text-xs" />
+            Primary Highlight
           </span>
-          <span>·</span>
-          <span>{durationLabel}</span>
-          <span>·</span>
-          <span className="font-mono text-secondary">{clip.duration}</span>
+          <div className="flex items-center gap-2 font-mono text-[11px] text-secondary">
+            <span>{durationLabel}</span>
+            <span>·</span>
+            <span>{clip.duration}</span>
+          </div>
         </div>
 
         {/* Title */}
-        <h3 className="font-display text-xl font-bold text-primary leading-snug">
+        <h3 className="text-sm font-semibold text-primary leading-snug">
           {clip.title}
         </h3>
 
         {/* Pastoral why */}
         {clip.why && (
-          <div className="rounded-lg bg-base border border-border p-3 space-y-1">
-            <span className="text-[10px] font-sans font-bold uppercase tracking-wider text-secondary block">
-              Teaching Focus
-            </span>
-            <p className="text-xs text-primary leading-relaxed font-serif italic">
+          <div className="border-l-2 border-accent/40 bg-surface-hover/60 px-3 py-1.5 rounded-r">
+            <p className="text-xs text-secondary leading-relaxed">
               "{clip.why}"
             </p>
           </div>
         )}
 
-        {/* Actions */}
-        <div className="pt-2 flex items-center gap-3 font-sans">
+        {/* Action buttons */}
+        <div className="flex items-center gap-2 pt-1">
           {onPreview && (
-            <Btn size="sm" variant="outline" onClick={() => onPreview(clip)}>
-              <i className="bx bx-play text-base text-accent" />
-              Preview Moment
+            <Btn size="sm" variant="secondary" onClick={() => onPreview(clip)}>
+              <i className="bx bx-play text-xs text-accent" />
+              <span>Preview</span>
             </Btn>
           )}
           {onExport && (
             <Btn size="sm" onClick={() => onExport(clip)} disabled={isExporting}>
-              <i className={`bx ${isExporting ? "bx-loader-alt bx-spin" : "bx-download"} text-base`} />
-              {isExporting ? "Exporting…" : "Export Clip"}
+              <i
+                className={`bx ${
+                  isExporting ? "bx-loader-alt bx-spin" : "bx-download"
+                } text-xs`}
+              />
+              <span>{isExporting ? "Exporting…" : "Export Clip"}</span>
             </Btn>
           )}
         </div>
@@ -80,40 +82,40 @@ export default function ClipCard({ clip, onPreview, onExport, isExporting, featu
   }
 
   return (
-    <article className="w-full rounded-xl border border-border bg-surface p-5 transition-colors hover:border-accent flex flex-col justify-between space-y-4">
-      <div className="space-y-2">
+    <article className="border border-border bg-surface rounded-md p-3.5 flex flex-col justify-between space-y-3 hover:border-border-strong transition-colors">
+      <div className="space-y-1.5">
         {/* Top metadata */}
-        <div className="flex items-center justify-between text-xs text-secondary font-sans">
-          <span className="inline-flex items-center gap-1 text-accent font-semibold">
-            <i className="bx bx-mobile text-sm" />
+        <div className="flex items-center justify-between text-[11px]">
+          <span className="text-accent font-medium flex items-center gap-1">
+            <i className="bx bx-mobile text-xs" />
             Vertical
           </span>
-          <span className="text-[11px] font-mono text-secondary">{durationLabel}</span>
+          <span className="font-mono text-muted">{durationLabel}</span>
         </div>
 
         {/* Title */}
-        <h3 className="font-display text-base font-bold leading-snug text-primary line-clamp-2">
+        <h3 className="text-xs font-semibold text-primary leading-snug line-clamp-2">
           {clip.title}
         </h3>
 
-        {/* Note */}
+        {/* Why note */}
         {clip.why && (
-          <p className="text-xs text-secondary font-serif line-clamp-2 bg-base p-2.5 rounded-lg border border-border">
+          <p className="text-[11px] text-secondary line-clamp-2 leading-relaxed">
             {clip.why}
           </p>
         )}
       </div>
 
-      {/* Footer buttons */}
-      <div className="pt-3 border-t border-border flex items-center gap-2 font-sans">
+      {/* Buttons */}
+      <div className="pt-2 border-t border-border flex items-center gap-1.5">
         {onPreview && (
           <button
             type="button"
             onClick={() => onPreview(clip)}
-            className="flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold text-primary bg-base hover:bg-surface-hover border border-border transition-colors flex items-center justify-center gap-1"
+            className="flex-1 py-1 px-2 rounded bg-surface-hover hover:bg-surface-active text-xs text-primary border border-border transition-colors flex items-center justify-center gap-1"
           >
-            <i className="bx bx-play text-sm text-accent" />
-            Preview
+            <i className="bx bx-play text-xs text-accent" />
+            <span>Preview</span>
           </button>
         )}
         {onExport && (
@@ -121,10 +123,14 @@ export default function ClipCard({ clip, onPreview, onExport, isExporting, featu
             type="button"
             onClick={() => onExport(clip)}
             disabled={isExporting}
-            className="flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold text-white bg-accent hover:opacity-90 transition-opacity flex items-center justify-center gap-1"
+            className="flex-1 py-1 px-2 rounded bg-accent text-white hover:bg-[var(--accent-hover)] text-xs font-medium transition-colors flex items-center justify-center gap-1"
           >
-            <i className={`bx ${isExporting ? "bx-loader-alt bx-spin" : "bx-download"} text-sm`} />
-            {isExporting ? "Saving…" : "Export"}
+            <i
+              className={`bx ${
+                isExporting ? "bx-loader-alt bx-spin" : "bx-download"
+              } text-xs`}
+            />
+            <span>{isExporting ? "Saving…" : "Export"}</span>
           </button>
         )}
       </div>

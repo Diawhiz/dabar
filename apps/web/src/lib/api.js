@@ -200,3 +200,61 @@ export async function onPipelineProgress(callback) {
   }
   return () => {};
 }
+
+/**
+ * Subscribe to download progress events (FFmpeg, Whisper model downloads).
+ * Payload: { component: string, downloaded: number, total: number }
+ * Returns an unlisten function.
+ */
+export async function onDownloadProgress(callback) {
+  const tauriEvent = await getTauriEvent();
+  if (tauriEvent) {
+    return await tauriEvent.listen("download-progress", (event) => {
+      callback(event.payload);
+    });
+  }
+  return () => {};
+}
+
+/**
+ * Download FFmpeg binary to the app data directory.
+ * Progress reported via onDownloadProgress events.
+ */
+export async function downloadFfmpeg() {
+  const core = await getTauriCore();
+  if (core) {
+    return await core.invoke("download_ffmpeg");
+  }
+  throw new Error("Tauri runtime not available");
+}
+
+/**
+ * Download a Whisper GGML model to the app data directory.
+ * @param {"base"|"tiny"} model - which model to download
+ * Progress reported via onDownloadProgress events.
+ */
+export async function downloadWhisperModel(model = "base") {
+  const core = await getTauriCore();
+  if (core) {
+    return await core.invoke("download_whisper_model", { model });
+  }
+  throw new Error("Tauri runtime not available");
+}
+
+/**
+ * Get offline readiness status — which components are already downloaded.
+ * Returns { ffmpeg_ready, yt_dlp_ready, whisper_base_ready, whisper_tiny_ready }
+ */
+export async function getOfflineStatus() {
+  const core = await getTauriCore();
+  if (core) {
+    return await core.invoke("get_offline_status");
+  }
+  // Browser fallback
+  return {
+    ffmpeg_ready: false,
+    yt_dlp_ready: false,
+    whisper_base_ready: false,
+    whisper_tiny_ready: false,
+  };
+}

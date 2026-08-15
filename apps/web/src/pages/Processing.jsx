@@ -4,17 +4,22 @@ import { getSermon, onPipelineProgress } from "../lib/api.js";
 import Btn from "../components/Btn.jsx";
 
 const STAGES = [
-  { key: "downloading", label: "Preparing audio" },
-  { key: "transcribing", label: "Transcribing speech to text" },
-  { key: "detecting", label: "Structuring paragraphs & finding moments" },
-  { key: "ready", label: "Ready" },
+  { key: "downloading", label: "Locating and preparing audio stream" },
+  { key: "transcribing", label: "Speech-to-text transcription" },
+  { key: "detecting", label: "Structuring paragraphs & key moment detection" },
+  { key: "ready", label: "Pipeline complete — clips generated" },
 ];
 
 export default function Processing() {
   const { sermonId } = useParams();
   const navigate = useNavigate();
   const [sermon, setSermon] = useState(null);
-  const [progressState, setProgressState] = useState({ stage: "downloading", percent: 10, detail: "" });
+  const [progressState, setProgressState] = useState({
+    stage: "downloading",
+    percent: 10,
+    detail: "Locating sermon source…",
+    isError: false,
+  });
 
   useEffect(() => {
     let unlisten = null;
@@ -24,7 +29,12 @@ export default function Processing() {
         setSermon(s);
         const status = (s.status || "").toLowerCase();
         if (status === "ready" || status === "complete" || status.includes("clip")) {
-          setProgressState({ stage: "ready", percent: 100, detail: "Sermon processing complete" });
+          setProgressState({
+            stage: "ready",
+            percent: 100,
+            detail: "Processing complete. Highlights and full transcript are ready.",
+            isError: false,
+          });
         }
       }
     });
@@ -33,11 +43,14 @@ export default function Processing() {
       if (event && event.sermon_id === sermonId) {
         setProgressState({
           stage: event.stage || "transcribing",
-          percent: Math.round(event.progress_percent || 0),
+          percent: Math.round(event.progress || 0),
           detail: event.detail || "",
+          isError: Boolean(event.is_error),
         });
       }
-    }).then((fn) => { unlisten = fn; });
+    }).then((fn) => {
+      unlisten = fn;
+    });
 
     return () => {
       if (typeof unlisten === "function") unlisten();
@@ -49,93 +62,113 @@ export default function Processing() {
   const stageIndex = currentStageIndex === -1 ? 1 : currentStageIndex;
 
   return (
-    <div className="mx-auto max-w-lg py-8 space-y-6">
-      {/* ── Header ──────────────────────────────────────────────── */}
-      <div className="border-b border-border pb-4 space-y-1">
-        <span className="text-[11px] font-sans font-semibold uppercase tracking-wider text-accent">
-          {isComplete ? "Complete" : "In Progress"}
-        </span>
-        <h1 className="font-display text-2xl font-bold text-primary">
-          {sermon?.title || "Transcribing Sermon…"}
-        </h1>
-      </div>
-
-      {/* ── Progress Bar ────────────────────────────────────────── */}
-      <div className="rounded-xl border border-border bg-surface p-5 space-y-3 font-sans">
-        <div className="flex items-center justify-between text-xs">
-          <span className="font-semibold text-primary">
-            {STAGES[stageIndex]?.label || "Processing"}
-          </span>
-          <span className="font-mono font-bold text-accent">
-            {progressState.percent}%
-          </span>
-        </div>
-
-        <div className="h-1.5 w-full rounded-full bg-base overflow-hidden">
-          <div
-            className="h-full rounded-full bg-accent transition-all duration-300 ease-out"
-            style={{ width: `${progressState.percent}%` }}
-          />
-        </div>
-
-        {progressState.detail && (
-          <p className="text-[11px] text-secondary">
-            {progressState.detail}
+    <div className="flex flex-col min-h-screen">
+      <header className="page-header">
+        <div>
+          <h1 className="text-base font-semibold text-primary">Processing Pipeline</h1>
+          <p className="text-xs text-secondary mt-0.5">
+            {sermon?.title || "Transcribing sermon recording…"}
           </p>
-        )}
-      </div>
+        </div>
+      </header>
 
-      {/* ── Step Indicators ─────────────────────────────────────── */}
-      <div className="space-y-2.5 px-1 font-sans">
-        {STAGES.map((stg, i) => {
-          const done = i < stageIndex || isComplete;
-          const active = i === stageIndex && !isComplete;
-          return (
-            <div key={stg.key} className="flex items-center gap-3 text-xs">
-              {done ? (
-                <i className="bx bxs-check-circle text-accent text-base" />
-              ) : active ? (
-                <i className="bx bx-loader-alt bx-spin text-accent text-base" />
-              ) : (
-                <i className="bx bx-circle text-secondary text-base" />
-              )}
-              <span className={done ? "text-secondary line-through" : active ? "text-primary font-semibold" : "text-secondary/60"}>
-                {stg.label}
+      <div className="page-content flex justify-center py-12">
+        <div className="w-full max-w-md space-y-6">
+          {/* Progress Card */}
+          <div className="border border-border rounded-md bg-surface p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-primary">
+                {STAGES[stageIndex]?.label || "Processing…"}
+              </span>
+              <span className="font-mono text-xs font-bold text-accent">
+                {progressState.percent}%
               </span>
             </div>
-          );
-        })}
-      </div>
 
-      {/* ── Actions when complete ───────────────────────────────── */}
-      {isComplete ? (
-        <div className="pt-2 flex flex-col sm:flex-row gap-3 font-sans">
-          <button
-            onClick={() => navigate(`/transcript/${sermonId}`)}
-            className="flex-1 py-2.5 px-4 rounded-lg bg-base border border-border text-primary hover:border-accent text-xs font-semibold flex items-center justify-center gap-2 transition-colors"
-          >
-            <i className="bx bx-file text-base text-accent" />
-            Read Manuscript
-          </button>
-          <button
-            onClick={() => navigate(`/clips/${sermonId}`)}
-            className="flex-1 py-2.5 px-4 rounded-lg bg-accent text-white hover:opacity-90 text-xs font-semibold flex items-center justify-center gap-2 transition-opacity"
-          >
-            <i className="bx bx-cut text-base" />
-            Review Clips
-          </button>
+            {/* Progress Track */}
+            <div className="download-bar-track">
+              <div
+                className="download-bar-fill"
+                style={{ width: `${progressState.percent}%` }}
+              />
+            </div>
+
+            {progressState.detail && (
+              <p className="text-[11px] text-secondary font-mono">
+                {progressState.detail}
+              </p>
+            )}
+          </div>
+
+          {/* Checklist */}
+          <div className="border border-border rounded-md bg-surface divide-y divide-border overflow-hidden">
+            {STAGES.map((stg, i) => {
+              const isDone = i < stageIndex || isComplete;
+              const isActive = i === stageIndex && !isComplete;
+
+              return (
+                <div
+                  key={stg.key}
+                  className="px-4 py-2.5 flex items-center justify-between text-xs"
+                >
+                  <span
+                    className={
+                      isDone
+                        ? "text-secondary line-through"
+                        : isActive
+                        ? "text-primary font-medium"
+                        : "text-muted"
+                    }
+                  >
+                    {stg.label}
+                  </span>
+                  <div>
+                    {isDone ? (
+                      <i className="bx bxs-check-circle text-success text-base" />
+                    ) : isActive ? (
+                      <i className="bx bx-loader-alt bx-spin text-accent text-base" />
+                    ) : (
+                      <i className="bx bx-circle text-muted text-base" />
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Actions */}
+          {isComplete ? (
+            <div className="flex items-center gap-3 pt-2">
+              <Btn
+                variant="secondary"
+                className="flex-1"
+                onClick={() => navigate(`/transcript/${sermonId}`)}
+              >
+                <i className="bx bx-file text-sm" />
+                <span>Read Manuscript</span>
+              </Btn>
+              <Btn
+                variant="primary"
+                className="flex-1"
+                onClick={() => navigate(`/clips/${sermonId}`)}
+              >
+                <i className="bx bx-cut text-sm" />
+                <span>Review Clips</span>
+              </Btn>
+            </div>
+          ) : (
+            <div className="text-center pt-2">
+              <button
+                type="button"
+                onClick={() => navigate("/dashboard")}
+                className="text-xs text-secondary hover:text-primary underline underline-offset-4"
+              >
+                Return to library (pipeline continues in background)
+              </button>
+            </div>
+          )}
         </div>
-      ) : (
-        <div className="text-center pt-2">
-          <button
-            type="button"
-            onClick={() => navigate("/dashboard")}
-            className="text-xs text-secondary hover:text-primary font-sans underline underline-offset-4"
-          >
-            Back to sermons (runs in background)
-          </button>
-        </div>
-      )}
+      </div>
     </div>
   );
 }

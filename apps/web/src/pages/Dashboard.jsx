@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { listSermons } from "../lib/api.js";
 import { recentSermons } from "../data/mockData.js";
@@ -8,6 +8,7 @@ import Btn from "../components/Btn.jsx";
 export default function Dashboard() {
   const [sermons, setSermons] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [filterQuery, setFilterQuery] = useState("");
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -29,140 +30,211 @@ export default function Dashboard() {
         if (mounted) setIsLoading(false);
       });
 
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, []);
 
+  const filtered = useMemo(() => {
+    if (!filterQuery.trim()) return sermons;
+    const q = filterQuery.toLowerCase();
+    return sermons.filter((s) => {
+      const title = (s.title || "").toLowerCase();
+      const speaker = (s.speaker || "").toLowerCase();
+      return title.includes(q) || speaker.includes(q);
+    });
+  }, [sermons, filterQuery]);
+
   return (
-    <div className="space-y-6 pb-16">
-      {/* ── Screen Header ────────────────────────────────────────── */}
-      <div className="border-b border-border pb-4 flex items-center justify-between">
+    <div className="flex flex-col min-h-screen">
+      {/* ── Page Header ───────────────────────────────────────────── */}
+      <header className="page-header">
         <div>
-          <h1 className="font-display text-2xl sm:text-3xl font-bold text-primary">
-            Sermon Library
-          </h1>
-          <p className="text-xs text-secondary font-sans mt-0.5">
-            {sermons.length} {sermons.length === 1 ? "sermon" : "sermons"} in your local library
+          <h1 className="text-base font-semibold text-primary">Sermon Library</h1>
+          <p className="text-xs text-secondary mt-0.5">
+            {sermons.length} {sermons.length === 1 ? "recording" : "recordings"} in local storage
           </p>
         </div>
 
-        <Btn onClick={() => navigate("/upload")}>
-          <i className="bx bx-upload text-base" />
-          <span>Add a Sermon</span>
-        </Btn>
-      </div>
-
-      {/* ── Sermon Manuscript List ────────────────────────────────── */}
-      {isLoading ? (
-        <div className="py-20 text-center space-y-2 font-sans">
-          <i className="bx bx-loader-alt bx-spin text-2xl text-accent" />
-          <p className="text-xs text-secondary">Loading sermons…</p>
-        </div>
-      ) : sermons.length > 0 ? (
-        <div className="rounded-xl border border-border bg-surface divide-y divide-border overflow-hidden">
-          {sermons.map((sermon) => {
-            const cleanTitle = cleanSermonTitle(sermon.title);
-            const isReady = (sermon.status || "").toLowerCase().includes("clip") ||
-              (sermon.status || "").toLowerCase().includes("ready") ||
-              (sermon.status || "").toLowerCase().includes("complete");
-            const clipsCount = sermon.highlights?.length || (sermon.clips_count || 0);
-
-            return (
-              <div
-                key={sermon.id}
-                className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-surface-hover transition-colors"
-              >
-                {/* Left: Metadata & Title */}
-                <div className="space-y-1.5 min-w-0">
-                  {/* Render actual metadata only if present — zero fake template text */}
-                  {(sermon.speaker || sermon.date || sermon.duration) && (
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-secondary font-sans">
-                      {sermon.speaker && (
-                        <span className="font-semibold text-primary">{sermon.speaker}</span>
-                      )}
-                      {sermon.speaker && (sermon.date || sermon.duration) && (
-                        <span>·</span>
-                      )}
-                      {sermon.date && <span>{sermon.date}</span>}
-                      {sermon.date && sermon.duration && <span>·</span>}
-                      {sermon.duration && <span>{sermon.duration}</span>}
-                    </div>
-                  )}
-
-                  {/* Clean title — fully legible, high contrast */}
-                  <h2
-                    onClick={() => navigate(isReady ? `/clips/${sermon.id}` : `/processing/${sermon.id}`)}
-                    className="font-display text-base sm:text-lg font-bold text-primary cursor-pointer hover:text-accent transition-colors leading-snug"
-                  >
-                    {cleanTitle}
-                  </h2>
-
-                  {/* Scripture Badges if detected */}
-                  {sermon.scripture_references && sermon.scripture_references.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 pt-1 font-sans">
-                      {sermon.scripture_references.map((ref, idx) => (
-                        <span key={idx} className="scripture-badge">
-                          <i className="bx bx-book-open text-xs" />
-                          <span>{ref}</span>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Right: Actions */}
-                <div className="flex items-center gap-2 shrink-0 font-sans">
-                  {isReady ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => navigate(`/transcript/${sermon.id}`)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-base border border-border text-primary hover:border-accent transition-colors"
-                      >
-                        <i className="bx bx-file text-sm text-accent" />
-                        <span>Manuscript</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => navigate(`/clips/${sermon.id}`)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-accent text-white hover:opacity-90 transition-opacity"
-                      >
-                        <i className="bx bx-cut text-sm" />
-                        <span>Clips ({clipsCount})</span>
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => navigate(`/processing/${sermon.id}`)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-secondary bg-base border border-border"
-                    >
-                      <i className="bx bx-loader-alt bx-spin text-sm text-accent" />
-                      <span>Processing…</span>
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        <div className="rounded-xl border border-border bg-surface p-12 text-center space-y-3 font-sans">
-          <div className="w-10 h-10 rounded-full bg-base text-accent flex items-center justify-center mx-auto text-xl border border-border">
-            <i className="bx bx-book-open" />
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-primary">Your sermon library is empty</p>
-            <p className="text-xs text-secondary mt-0.5">
-              Add a sermon file or YouTube link to start.
-            </p>
-          </div>
-          <Btn onClick={() => navigate("/upload")} size="sm">
-            <i className="bx bx-upload text-sm" />
-            <span>Add a Sermon</span>
+        <div className="flex items-center gap-2">
+          <Btn onClick={() => navigate("/upload")}>
+            <i className="bx bx-plus text-sm" />
+            <span>Add Sermon</span>
           </Btn>
         </div>
-      )}
+      </header>
+
+      {/* ── Search & Filter Toolbar ───────────────────────────────── */}
+      <div className="px-6 py-3 border-b border-border bg-surface/50 flex items-center justify-between gap-4">
+        <div className="relative flex-1 max-w-xs">
+          <i className="bx bx-search absolute left-2.5 top-1/2 -translate-y-1/2 text-muted text-sm" />
+          <input
+            type="text"
+            value={filterQuery}
+            onChange={(e) => setFilterQuery(e.target.value)}
+            placeholder="Filter by title or speaker…"
+            className="w-full bg-surface border border-border rounded pl-8 pr-3 py-1 text-xs text-primary placeholder:text-muted outline-none focus:border-accent"
+          />
+        </div>
+        {filterQuery && (
+          <button
+            onClick={() => setFilterQuery("")}
+            className="text-xs text-secondary hover:text-primary"
+          >
+            Clear filter
+          </button>
+        )}
+      </div>
+
+      {/* ── Table Content ─────────────────────────────────────────── */}
+      <div className="page-content flex-1">
+        {isLoading ? (
+          <div className="py-20 text-center space-y-2">
+            <i className="bx bx-loader-alt bx-spin text-xl text-accent" />
+            <p className="text-xs text-secondary">Loading sermons…</p>
+          </div>
+        ) : filtered.length > 0 ? (
+          <div className="border border-border rounded-md bg-surface overflow-hidden">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th style={{ width: "40%" }}>Sermon Title</th>
+                  <th style={{ width: "20%" }}>Speaker</th>
+                  <th style={{ width: "15%" }}>Duration</th>
+                  <th style={{ width: "10%" }}>Status</th>
+                  <th style={{ width: "15%", textAlign: "right" }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((sermon) => {
+                  const cleanTitle = cleanSermonTitle(sermon.title);
+                  const statusStr = (sermon.status || "").toLowerCase();
+                  const isReady =
+                    statusStr.includes("clip") ||
+                    statusStr.includes("ready") ||
+                    statusStr.includes("complete");
+                  const isFailed = statusStr.includes("fail") || statusStr.includes("error");
+                  const clipsCount = sermon.highlights?.length || (sermon.clips_count || 0);
+
+                  return (
+                    <tr key={sermon.id}>
+                      {/* Title */}
+                      <td>
+                        <div className="flex flex-col">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              navigate(isReady ? `/clips/${sermon.id}` : `/processing/${sermon.id}`)
+                            }
+                            className="text-left font-medium text-primary hover:text-accent transition-colors leading-snug"
+                          >
+                            {cleanTitle}
+                          </button>
+                          {sermon.date && (
+                            <span className="text-[11px] text-muted font-mono mt-0.5">
+                              {sermon.date}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Speaker */}
+                      <td className="text-secondary">
+                        {sermon.speaker || <span className="text-muted">—</span>}
+                      </td>
+
+                      {/* Duration */}
+                      <td>
+                        {sermon.duration ? (
+                          <span className="font-mono text-xs text-secondary">
+                            {sermon.duration}
+                          </span>
+                        ) : (
+                          <span className="text-muted">—</span>
+                        )}
+                      </td>
+
+                      {/* Status */}
+                      <td>
+                        {isReady ? (
+                          <span className="status-pill ready">
+                            <i className="bx bxs-check-circle text-xs" />
+                            <span>Ready</span>
+                          </span>
+                        ) : isFailed ? (
+                          <span className="status-pill failed">
+                            <i className="bx bx-error-circle text-xs" />
+                            <span>Failed</span>
+                          </span>
+                        ) : (
+                          <span className="status-pill processing">
+                            <i className="bx bx-loader-alt bx-spin text-xs" />
+                            <span>Processing</span>
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Actions */}
+                      <td style={{ textAlign: "right" }}>
+                        <div className="flex items-center justify-end gap-1.5">
+                          {isReady ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => navigate(`/transcript/${sermon.id}`)}
+                                className="px-2 py-1 rounded bg-surface-hover hover:bg-surface-active text-xs text-primary border border-border transition-colors"
+                                title="Open Manuscript"
+                              >
+                                Manuscript
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => navigate(`/clips/${sermon.id}`)}
+                                className="px-2 py-1 rounded bg-accent text-white hover:bg-[var(--accent-hover)] text-xs font-medium transition-colors"
+                                title="Open Clips Studio"
+                              >
+                                Clips {clipsCount > 0 ? `(${clipsCount})` : ""}
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => navigate(`/processing/${sermon.id}`)}
+                              className="px-2 py-1 rounded bg-surface-hover text-xs text-secondary border border-border"
+                            >
+                              View Progress
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="border border-border rounded-md bg-surface p-12 text-center space-y-3">
+            <div className="w-8 h-8 rounded bg-surface-hover text-accent flex items-center justify-center mx-auto text-base border border-border">
+              <i className="bx bx-folder" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-primary">No sermons found</p>
+              <p className="text-[11px] text-muted mt-0.5">
+                {filterQuery
+                  ? "Try a different search term or clear the filter."
+                  : "Add your first audio or video recording to get started."}
+              </p>
+            </div>
+            {!filterQuery && (
+              <Btn size="sm" onClick={() => navigate("/upload")}>
+                <i className="bx bx-plus text-xs" />
+                <span>Add Sermon</span>
+              </Btn>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

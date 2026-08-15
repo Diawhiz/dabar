@@ -4,6 +4,7 @@ import { listSermons, getSermon } from "../lib/api.js";
 import { highlights as mockHighlights } from "../data/mockData.js";
 import { cleanSermonTitle, formatSeconds } from "../lib/formatters.js";
 import ManuscriptView from "../components/ManuscriptView.jsx";
+import Btn from "../components/Btn.jsx";
 
 export default function Transcript() {
   const { sermonId } = useParams();
@@ -60,7 +61,7 @@ export default function Transcript() {
           });
           setSegments(items);
         } else {
-          // Fallback mock segments with real text
+          // Fallback mock segments with clean text
           const fallback = mockHighlights.map((hl, i) => ({
             id: hl.id,
             start: i * 45,
@@ -80,7 +81,9 @@ export default function Transcript() {
     }
 
     loadTranscript();
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, [sermonId]);
 
   const cleanTitle = cleanSermonTitle(sermon?.title);
@@ -110,80 +113,75 @@ export default function Transcript() {
     setIsPlaying((prev) => !prev);
   }
 
-  const durationStr = segments.length > 0 ? formatSeconds(segments[segments.length - 1].end) : null;
+  const durationStr =
+    segments.length > 0 ? formatSeconds(segments[segments.length - 1].end) : null;
 
   return (
-    <div className="space-y-6 pb-28">
-      {/* ── Screen Header — High contrast, fully legible ──────────── */}
-      <div className="border-b border-border pb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="space-y-1">
-          {/* Render real metadata only if present */}
-          {(sermon?.speaker || durationStr || sermon?.date) && (
-            <div className="flex flex-wrap items-center gap-2 text-xs font-sans text-secondary">
-              <span className="font-semibold text-accent">Manuscript</span>
-              {sermon?.speaker && (
-                <>
-                  <span>·</span>
-                  <span className="text-primary font-medium">{sermon.speaker}</span>
-                </>
-              )}
-              {durationStr && (
-                <>
-                  <span>·</span>
-                  <span>{durationStr}</span>
-                </>
-              )}
-            </div>
-          )}
-
-          <h1 className="font-display text-2xl sm:text-3xl font-bold text-primary leading-snug">
+    <div className="flex flex-col min-h-screen pb-24">
+      {/* ── Page Header ───────────────────────────────────────────── */}
+      <header className="page-header">
+        <div className="space-y-0.5 min-w-0">
+          <div className="flex items-center gap-2 text-[11px] text-secondary font-mono">
+            <span className="text-accent font-semibold">Manuscript</span>
+            {sermon?.speaker && (
+              <>
+                <span>·</span>
+                <span className="text-primary">{sermon.speaker}</span>
+              </>
+            )}
+            {durationStr && (
+              <>
+                <span>·</span>
+                <span>{durationStr}</span>
+              </>
+            )}
+          </div>
+          <h1 className="text-base font-semibold text-primary truncate">
             {cleanTitle}
           </h1>
         </div>
 
-        {/* Task navigation */}
-        <div className="flex items-center gap-2 font-sans shrink-0">
-          <button
-            type="button"
+        <div className="flex items-center gap-2 shrink-0">
+          <Btn
+            variant="secondary"
             onClick={() => navigate(`/clips/${sermonId || sermon?.id}`)}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold bg-surface hover:bg-surface-hover text-primary border border-border transition-colors"
           >
-            <i className="bx bx-cut text-base text-accent" />
+            <i className="bx bx-cut text-sm text-accent" />
             <span>Clips ({highlightsCount})</span>
-          </button>
+          </Btn>
         </div>
-      </div>
+      </header>
 
-      {/* ── Search Bar ───────────────────────────────────────────── */}
-      <div className="flex items-center gap-3 font-sans max-w-xl">
-        <div className="relative flex-1">
-          <i className="bx bx-search absolute left-3.5 top-1/2 -translate-y-1/2 text-secondary text-base" />
+      {/* ── Search Toolbar ────────────────────────────────────────── */}
+      <div className="px-6 py-2.5 border-b border-border bg-surface/40 flex items-center justify-between gap-4">
+        <div className="relative flex-1 max-w-sm">
+          <i className="bx bx-search absolute left-2.5 top-1/2 -translate-y-1/2 text-muted text-sm" />
           <input
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search words or Bible verses in transcript…"
-            className="w-full rounded-lg border border-border bg-surface px-9 py-2 text-xs text-primary placeholder:text-secondary outline-none focus:border-accent transition-colors"
+            placeholder="Search words or Scripture in transcript…"
+            className="w-full bg-surface border border-border rounded pl-8 pr-3 py-1 text-xs text-primary placeholder:text-muted outline-none focus:border-accent"
           />
         </div>
         {searchTerm && (
           <button
             onClick={() => setSearchTerm("")}
-            className="text-xs text-secondary hover:text-primary px-2.5 py-1.5 rounded bg-surface"
+            className="text-xs text-secondary hover:text-primary"
           >
-            Clear
+            Clear ({filteredSegments.length} matches)
           </button>
         )}
       </div>
 
-      {/* ── Manuscript Column ────────────────────────────────────── */}
-      {isLoading ? (
-        <div className="py-24 text-center space-y-2 font-sans">
-          <i className="bx bx-loader-alt bx-spin text-2xl text-accent" />
-          <p className="text-xs text-secondary">Opening sermon manuscript…</p>
-        </div>
-      ) : (
-        <div className="pt-2">
+      {/* ── Manuscript Column ─────────────────────────────────────── */}
+      <div className="page-content flex-1">
+        {isLoading ? (
+          <div className="py-20 text-center space-y-2">
+            <i className="bx bx-loader-alt bx-spin text-xl text-accent" />
+            <p className="text-xs text-secondary">Loading manuscript…</p>
+          </div>
+        ) : (
           <ManuscriptView
             segments={filteredSegments}
             currentTime={playbackTime}
@@ -192,47 +190,57 @@ export default function Transcript() {
             onTogglePlay={handleTogglePlay}
             onUpdateSegmentText={handleUpdateSegmentText}
           />
-        </div>
-      )}
+        )}
+      </div>
 
-      {/* ── Floating Quiet Audio Dock ────────────────────────────── */}
-      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-surface border border-border shadow-lg rounded-full px-4 py-2 flex items-center gap-4 text-xs font-sans">
+      {/* ── Fixed Bottom Audio Bar ────────────────────────────────── */}
+      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 bg-surface border border-border rounded-full px-4 py-1.5 shadow-lg flex items-center gap-3 text-xs">
         <button
           type="button"
           onClick={handleTogglePlay}
-          className="w-7 h-7 rounded-full bg-accent text-white flex items-center justify-center hover:opacity-90 transition-opacity"
-          aria-label={isPlaying ? "Pause playback" : "Play playback"}
+          className="w-6 h-6 rounded-full bg-accent text-white flex items-center justify-center hover:bg-[var(--accent-hover)] transition-colors"
+          aria-label={isPlaying ? "Pause audio" : "Play audio"}
         >
-          <i className={`bx ${isPlaying ? "bx-pause" : "bx-play"} text-lg`} />
+          <i className={`bx ${isPlaying ? "bx-pause" : "bx-play"} text-base`} />
         </button>
 
-        <div className="flex items-center gap-1.5 font-mono text-[11px]">
+        <div className="flex items-center gap-1 font-mono text-[11px]">
           <span className="font-bold text-primary">{formatSeconds(playbackTime)}</span>
           {durationStr && (
             <>
-              <span className="text-secondary">/</span>
+              <span className="text-muted">/</span>
               <span className="text-secondary">{durationStr}</span>
             </>
           )}
         </div>
 
         <div
-          className="w-24 sm:w-44 h-1.5 bg-base rounded-full overflow-hidden cursor-pointer"
+          className="w-28 sm:w-48 h-1 bg-base rounded-full overflow-hidden cursor-pointer"
           onClick={(e) => {
             const rect = e.currentTarget.getBoundingClientRect();
             const ratio = (e.clientX - rect.left) / rect.width;
-            const total = segments.length > 0 ? segments[segments.length - 1].end : 2700;
+            const total =
+              segments.length > 0 ? segments[segments.length - 1].end : 2700;
             handleSeek(ratio * total);
           }}
         >
           <div
             className="h-full bg-accent rounded-full"
-            style={{ width: `${Math.min(100, (playbackTime / (segments.length > 0 ? segments[segments.length - 1].end : 2700)) * 100)}%` }}
+            style={{
+              width: `${Math.min(
+                100,
+                (playbackTime /
+                  (segments.length > 0
+                    ? segments[segments.length - 1].end
+                    : 2700)) *
+                  100
+              )}%`,
+            }}
           />
         </div>
 
-        <span className="text-[11px] text-secondary hidden sm:inline">
-          <kbd className="px-1 py-0.5 rounded bg-base border border-border text-[9px] font-mono text-primary font-bold">Space</kbd> Play/Pause
+        <span className="text-[10px] text-muted hidden sm:inline font-mono">
+          [Space] Play/Pause
         </span>
       </div>
     </div>

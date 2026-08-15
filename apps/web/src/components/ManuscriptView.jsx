@@ -46,7 +46,7 @@ export default function ManuscriptView({
     if (foundIdx !== -1 && foundIdx !== activeIdx) {
       setActiveIdx(foundIdx);
     }
-  }, [currentTime, segments]);
+  }, [currentTime, segments, activeIdx]);
 
   useEffect(() => {
     function handleKeyDown(e) {
@@ -105,181 +105,190 @@ export default function ManuscriptView({
         return key;
       }
     }
-    const match = text.match(/\b(Genesis|Exodus|Leviticus|Numbers|Deuteronomy|Joshua|Judges|Ruth|1 Samuel|2 Samuel|1 Kings|2 Kings|Psalms?|Proverbs|Ecclesiastes|Song of Solomon|Isaiah|Jeremiah|Lamentations|Ezekiel|Daniel|Hosea|Joel|Amos|Obadiah|Jonah|Micah|Nahum|Habakkuk|Zephaniah|Haggai|Zechariah|Malachi|Matthew|Mark|Luke|John|Acts|Romans|1 Corinthians|2 Corinthians|Galatians|Ephesians|Philippians|Colossians|1 Thessalonians|2 Thessalonians|1 Timothy|2 Timothy|Titus|Philemon|Hebrews|James|1 Peter|2 Peter|1 John|2 John|3 John|Jude|Revelation)\s+(\d{1,3}):(\d{1,3})\b/i);
+    const match = text.match(
+      /\b(Genesis|Exodus|Leviticus|Numbers|Deuteronomy|Joshua|Judges|Ruth|1 Samuel|2 Samuel|1 Kings|2 Kings|Psalms?|Proverbs|Ecclesiastes|Song of Solomon|Isaiah|Jeremiah|Lamentations|Ezekiel|Daniel|Hosea|Joel|Amos|Obadiah|Jonah|Micah|Nahum|Habakkuk|Zephaniah|Haggai|Zechariah|Malachi|Matthew|Mark|Luke|John|Acts|Romans|1 Corinthians|2 Corinthians|Galatians|Ephesians|Philippians|Colossians|1 Thessalonians|2 Thessalonians|1 Timothy|2 Timothy|Titus|Philemon|Hebrews|James|1 Peter|2 Peter|1 John|2 John|3 John|Jude|Revelation)\s+(\d{1,3}):(\d{1,3})\b/i
+    );
     return match ? match[0] : null;
   }
 
   return (
-    <div className="space-y-4">
-      {/* ── Single Manuscript Column with Quiet Left Margin ─────── */}
-      <div className="space-y-3 max-w-3xl font-body text-[16px] leading-[1.8]">
-        {segments.map((seg, idx) => {
-          const isActive = activeIdx === idx;
-          const isConfirmed = Boolean(confirmedSegments[idx]);
-          const isKeyMoment = seg.is_highlight;
-          const detectedRef = detectScripture(seg.text);
-          const isRefConfirmed = detectedRef && confirmedScriptures[detectedRef];
-          const isRefDismissed = detectedRef && dismissedScriptures[detectedRef];
+    <div className="space-y-1 max-w-3xl">
+      {segments.map((seg, idx) => {
+        const isActive = activeIdx === idx;
+        const isConfirmed = Boolean(confirmedSegments[idx]);
+        const isKeyMoment = seg.is_highlight;
+        const detectedRef = detectScripture(seg.text);
+        const isRefConfirmed = detectedRef && confirmedScriptures[detectedRef];
+        const isRefDismissed = detectedRef && dismissedScriptures[detectedRef];
 
-          return (
-            <div
-              key={seg.id || idx}
-              className={`manuscript-row group ${
-                isKeyMoment
-                  ? "transcript-key-moment"
-                  : isActive
-                  ? "is-active"
-                  : ""
-              }`}
-            >
-              {/* Quiet Left Margin: Timestamp */}
-              <div className="w-14 sm:w-16 shrink-0 text-right pt-0.5 select-none font-sans">
-                <button
-                  type="button"
+        return (
+          <div
+            key={seg.id || idx}
+            className={`manuscript-row group ${
+              isKeyMoment
+                ? "transcript-key-moment"
+                : isActive
+                ? "is-active"
+                : ""
+            }`}
+          >
+            {/* Timestamp Gutter */}
+            <div className="w-12 shrink-0 text-right pt-0.5 select-none font-mono">
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveIdx(idx);
+                  if (onSeek) onSeek(seg.start);
+                }}
+                className={`text-[11px] transition-colors ${
+                  isActive
+                    ? "text-accent font-bold"
+                    : "text-muted hover:text-accent"
+                }`}
+                title="Play from timestamp"
+              >
+                {formatSeconds(seg.start)}
+              </button>
+            </div>
+
+            {/* Paragraph Text Body */}
+            <div className="flex-1 min-w-0">
+              {isKeyMoment && (
+                <div className="flex items-center gap-1 text-[11px] font-semibold text-accent mb-0.5">
+                  <i className="bx bxs-star text-xs" />
+                  <span>{seg.highlight_title || "Key teaching moment"}</span>
+                </div>
+              )}
+
+              {editingIdx === idx ? (
+                <div className="space-y-2 py-1">
+                  <textarea
+                    value={editText}
+                    onChange={(e) => setEditText(e.target.value)}
+                    rows={3}
+                    className="field-input text-xs leading-relaxed"
+                    autoFocus
+                  />
+                  <div className="flex items-center gap-2">
+                    <Btn size="sm" onClick={() => handleSaveEdit(idx)}>
+                      Save Edit
+                    </Btn>
+                    <button
+                      type="button"
+                      onClick={() => setEditingIdx(null)}
+                      className="px-2 py-1 rounded text-xs text-secondary hover:text-primary"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div
                   onClick={() => {
                     setActiveIdx(idx);
                     if (onSeek) onSeek(seg.start);
                   }}
-                  className={`text-[11px] font-mono transition-colors ${
-                    isActive
-                      ? "text-accent font-bold"
-                      : "text-secondary hover:text-accent"
-                  }`}
-                  title="Play from here"
+                  onDoubleClick={() => handleStartEdit(idx, seg.text)}
+                  className="cursor-pointer"
                 >
-                  {formatSeconds(seg.start)}
-                </button>
-              </div>
-
-              {/* Center Content Column */}
-              <div className="flex-1 min-w-0">
-                {isKeyMoment && (
-                  <div className="flex items-center gap-1.5 text-xs font-sans font-semibold text-accent mb-1">
-                    <i className="bx bxs-star text-xs" />
-                    <span>{seg.highlight_title || "Key teaching moment"}</span>
-                  </div>
-                )}
-
-                {editingIdx === idx ? (
-                  <div className="space-y-2 font-sans">
-                    <textarea
-                      value={editText}
-                      onChange={(e) => setEditText(e.target.value)}
-                      rows={3}
-                      className="w-full rounded-lg border border-accent bg-surface p-3 text-sm text-primary outline-none font-serif leading-relaxed"
-                      autoFocus
-                    />
-                    <div className="flex items-center gap-2">
-                      <Btn size="sm" onClick={() => handleSaveEdit(idx)}>
-                        Save & Confirm
-                      </Btn>
-                      <button
-                        type="button"
-                        onClick={() => setEditingIdx(null)}
-                        className="px-3 py-1.5 rounded-lg text-xs text-secondary hover:text-primary transition-colors"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div
-                    onClick={() => {
-                      setActiveIdx(idx);
-                      if (onSeek) onSeek(seg.start);
-                    }}
-                    onDoubleClick={() => handleStartEdit(idx, seg.text)}
-                    className="cursor-pointer"
+                  <p
+                    className={`text-xs leading-relaxed transition-colors ${
+                      isKeyMoment
+                        ? "text-primary font-medium"
+                        : isConfirmed || isActive
+                        ? "transcript-lit"
+                        : "transcript-dim hover:text-primary"
+                    }`}
                   >
-                    <p
-                      className={`transition-all duration-150 ${
-                        isKeyMoment
-                          ? "text-primary font-medium"
-                          : isConfirmed || isActive
-                          ? "transcript-lit"
-                          : "transcript-dim hover:text-primary"
-                      }`}
-                    >
-                      {seg.text}
-                    </p>
-                  </div>
-                )}
+                    {seg.text}
+                  </p>
+                </div>
+              )}
 
-                {/* Scripture Side-by-side verification */}
-                {detectedRef && !isRefDismissed && (
-                  <div className="mt-2.5 rounded-lg border border-border bg-surface p-3 text-xs space-y-1 font-sans">
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-accent flex items-center gap-1.5">
-                        <i className="bx bx-book-open text-sm" />
-                        Scripture Reference: {detectedRef}
-                      </span>
-                      <div className="flex items-center gap-1.5">
-                        {!isRefConfirmed ? (
-                          <>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setConfirmedScriptures((p) => ({ ...p, [detectedRef]: true }));
-                              }}
-                              className="px-2.5 py-0.5 rounded bg-accent text-white font-semibold text-[11px]"
-                            >
-                              Verify
-                            </button>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setDismissedScriptures((p) => ({ ...p, [detectedRef]: true }));
-                              }}
-                              className="px-2 py-0.5 rounded text-secondary hover:text-primary text-[11px]"
-                            >
-                              Dismiss
-                            </button>
-                          </>
-                        ) : (
-                          <span className="text-accent font-semibold flex items-center gap-1 text-[11px]">
-                            <i className="bx bxs-check-circle text-xs" />
-                            Verified in transcript
-                          </span>
-                        )}
-                      </div>
+              {/* Scripture Verification Banner */}
+              {detectedRef && !isRefDismissed && (
+                <div className="mt-2 border border-border bg-surface p-2.5 rounded text-xs space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-accent flex items-center gap-1">
+                      <i className="bx bx-book-open text-xs" />
+                      Scripture: {detectedRef}
+                    </span>
+                    <div className="flex items-center gap-1">
+                      {!isRefConfirmed ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setConfirmedScriptures((p) => ({
+                                ...p,
+                                [detectedRef]: true,
+                              }));
+                            }}
+                            className="px-2 py-0.5 rounded bg-accent text-white text-[10px] font-medium"
+                          >
+                            Verify
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDismissedScriptures((p) => ({
+                                ...p,
+                                [detectedRef]: true,
+                              }));
+                            }}
+                            className="px-1.5 py-0.5 rounded text-muted hover:text-primary text-[10px]"
+                          >
+                            Dismiss
+                          </button>
+                        </>
+                      ) : (
+                        <span className="text-success text-[10px] font-medium flex items-center gap-0.5">
+                          <i className="bx bxs-check-circle text-xs" />
+                          Verified
+                        </span>
+                      )}
                     </div>
-
-                    {SCRIPTURE_TEXTS[detectedRef] && (
-                      <p className="text-secondary italic border-l-2 border-accent/40 pl-2 mt-1 font-serif">
-                        "{SCRIPTURE_TEXTS[detectedRef]}"
-                      </p>
-                    )}
                   </div>
-                )}
-              </div>
 
-              {/* Hover Actions */}
-              <div className="opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity shrink-0 flex items-center gap-1 pt-0.5">
-                <button
-                  type="button"
-                  onClick={() => handleConfirmSegment(idx)}
-                  className={`p-1 rounded text-xs transition-colors ${
-                    isConfirmed ? "text-accent" : "text-secondary hover:text-accent"
-                  }`}
-                  title={isConfirmed ? "Mark as unconfirmed" : "Mark as confirmed"}
-                >
-                  <i className={`bx ${isConfirmed ? "bxs-check-circle" : "bx-check-circle"} text-base`} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleStartEdit(idx, seg.text)}
-                  className="p-1 rounded text-secondary hover:text-primary text-xs"
-                  title="Edit paragraph"
-                >
-                  <i className="bx bx-edit text-base" />
-                </button>
-              </div>
+                  {SCRIPTURE_TEXTS[detectedRef] && (
+                    <p className="text-muted italic border-l border-accent/40 pl-2 mt-1 text-[11px]">
+                      "{SCRIPTURE_TEXTS[detectedRef]}"
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
-          );
-        })}
-      </div>
+
+            {/* Hover Actions */}
+            <div className="opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity shrink-0 flex items-center gap-1 pt-0.5">
+              <button
+                type="button"
+                onClick={() => handleConfirmSegment(idx)}
+                className={`p-1 rounded text-xs transition-colors ${
+                  isConfirmed ? "text-success" : "text-muted hover:text-primary"
+                }`}
+                title={isConfirmed ? "Mark unconfirmed" : "Mark confirmed"}
+              >
+                <i
+                  className={`bx ${
+                    isConfirmed ? "bxs-check-circle" : "bx-check-circle"
+                  } text-sm`}
+                />
+              </button>
+              <button
+                type="button"
+                onClick={() => handleStartEdit(idx, seg.text)}
+                className="p-1 rounded text-muted hover:text-primary text-xs"
+                title="Edit text"
+              >
+                <i className="bx bx-edit text-sm" />
+              </button>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

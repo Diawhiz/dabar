@@ -51,7 +51,8 @@ async fn start_pipeline(
 
     // Determine a preliminary title
     let title = match &pipeline_source {
-        PipelineSource::YouTube(_) => "Processing…".to_string(),
+        PipelineSource::YouTube(_) => "Processing\u2026".to_string(),
+        PipelineSource::GoogleDrive(_) => "Processing\u2026".to_string(),
         PipelineSource::LocalFile(p) => p
             .file_stem()
             .and_then(|s| s.to_str())
@@ -232,6 +233,59 @@ async fn download_yt_dlp(state: State<'_, AppState>) -> Result<String, String> {
     Ok(path.to_string_lossy().to_string())
 }
 
+/// Download static FFmpeg binary to the app data directory.
+/// Emits download-progress events: { component: "ffmpeg", downloaded: u64, total: u64 }
+#[tauri::command]
+async fn download_ffmpeg(app: AppHandle, state: State<'_, AppState>) -> Result<String, String> {
+    let app_data_dir = state.app_data_dir.clone();
+    let app_clone = app.clone();
+    let path = deps::download_ffmpeg(&app_data_dir, move |downloaded, total| {
+        let _ = app_clone.emit(
+            "download-progress",
+            serde_json::json!({
+                "component": "ffmpeg",
+                "downloaded": downloaded,
+                "total": total,
+            }),
+        );
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+/// Download the Whisper GGML model (base or tiny) to the app data directory.
+/// Emits download-progress events: { component: "whisper_<model>", downloaded: u64, total: u64 }
+#[tauri::command]
+async fn download_whisper_model(
+    model: String,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let app_data_dir = state.app_data_dir.clone();
+    let app_clone = app.clone();
+    let model_label = model.clone();
+    let path = deps::download_whisper_model(&app_data_dir, &model, move |downloaded, total| {
+        let _ = app_clone.emit(
+            "download-progress",
+            serde_json::json!({
+                "component": format!("whisper_{model_label}"),
+                "downloaded": downloaded,
+                "total": total,
+            }),
+        );
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+/// Return offline readiness status for the Settings screen.
+#[tauri::command]
+async fn get_offline_status(state: State<'_, AppState>) -> Result<deps::OfflineStatus, String> {
+    Ok(deps::get_offline_status(&state.app_data_dir).await)
+}
+
 /// Open a file or folder in the OS file explorer.
 #[tauri::command]
 async fn open_in_explorer(path: String, _app: AppHandle) -> Result<(), String> {
@@ -352,6 +406,9 @@ pub fn run() {
             save_settings,
             check_dependencies,
             download_yt_dlp,
+            download_ffmpeg,
+            download_whisper_model,
+            get_offline_status,
             open_in_explorer,
             get_hardware_info,
         ])

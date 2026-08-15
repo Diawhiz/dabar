@@ -17,10 +17,11 @@ pub struct PipelineEvent {
     pub is_complete: bool,
 }
 
-/// Source input for the pipeline — either a YouTube URL or a local file path.
+/// Source input for the pipeline — YouTube URL, Google Drive share link, or local file path.
 #[derive(Debug, Clone)]
 pub enum PipelineSource {
     YouTube(String),
+    GoogleDrive(String),
     LocalFile(PathBuf),
 }
 
@@ -29,6 +30,8 @@ impl PipelineSource {
         let trimmed = source.trim();
         if trimmed.contains("youtube.com/") || trimmed.contains("youtu.be/") {
             PipelineSource::YouTube(trimmed.to_string())
+        } else if dabar_core::downloader::is_gdrive_url(trimmed) {
+            PipelineSource::GoogleDrive(trimmed.to_string())
         } else {
             PipelineSource::LocalFile(PathBuf::from(trimmed))
         }
@@ -38,6 +41,7 @@ impl PipelineSource {
     pub fn as_stored_str(&self) -> String {
         match self {
             PipelineSource::YouTube(url) => url.clone(),
+            PipelineSource::GoogleDrive(url) => url.clone(),
             PipelineSource::LocalFile(path) => path.to_string_lossy().to_string(),
         }
     }
@@ -119,6 +123,16 @@ pub async fn run_pipeline(
             emit(&app, sermon_id, "downloading", 100, "Audio downloaded successfully.");
             downloaded.path
         }
+        PipelineSource::GoogleDrive(url) => {
+            emit(&app, sermon_id, "downloading", 10, "Downloading audio from Google Drive…");
+            let downloaded = dabar_core::downloader::download_gdrive_audio(url, &temp_dir).await?;
+            if let Some(title) = &downloaded.title {
+                let _ = db.update_title(sermon_id, title).await;
+            }
+            db.save_checkpoint(sermon_id, "downloading", &downloaded.path.to_string_lossy()).await?;
+            emit(&app, sermon_id, "downloading", 100, "Audio downloaded from Google Drive.");
+            downloaded.path
+        }
         PipelineSource::LocalFile(path) => {
             // Validate the file exists and is readable
             if !path.exists() {
@@ -155,7 +169,7 @@ pub async fn run_pipeline(
     .await?;
 
     // Clean up temp download after successful transcription
-    if matches!(source, PipelineSource::YouTube(_)) {
+    if matches!(source, PipelineSource::YouTube(_) | PipelineSource::GoogleDrive(_)) {
         let _ = tokio::fs::remove_dir_all(&temp_dir).await;
     }
 
@@ -185,7 +199,7 @@ pub async fn run_pipeline(
     // ── Stage 4: Save results ─────────────────────────────────────────────────
 
     let stored_title = match &source {
-        PipelineSource::YouTube(_) => None,
+        PipelineSource::YouTube(_) | PipelineSource::GoogleDrive(_) => None,
         PipelineSource::LocalFile(p) => p.file_stem().and_then(|s| s.to_str()).map(|s| s.to_string()),
     };
 

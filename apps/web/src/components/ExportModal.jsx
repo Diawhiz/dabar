@@ -1,129 +1,141 @@
 import { useState } from "react";
 import Btn from "./Btn.jsx";
-import { openInExplorer } from "../lib/api.js";
 
 const FORMAT_OPTIONS = [
   {
     id: "vertical",
     label: "Phone Size",
-    subtitle: "Reels, TikTok & Shorts",
-    ratioClass: "aspect-[9/16] w-36",
+    subtitle: "9:16 vertical for Shorts, Reels & TikTok",
+    ratioClass: "aspect-[9/16] w-32",
     icon: "bx-mobile",
   },
   {
     id: "square",
     label: "Square",
-    subtitle: "Instagram Feed",
-    ratioClass: "aspect-square w-44",
+    subtitle: "1:1 for Instagram & Facebook feeds",
+    ratioClass: "aspect-square w-36",
     icon: "bx-square",
   },
   {
     id: "widescreen",
     label: "Landscape",
-    subtitle: "YouTube & Screens",
-    ratioClass: "aspect-video w-52",
+    subtitle: "16:9 for YouTube & screen presentations",
+    ratioClass: "aspect-video w-44",
     icon: "bx-tv",
   },
 ];
 
 const CAPTION_STYLES = [
-  { id: "ember", label: "Warm Glow", desc: "Key spoken words illuminated in amber" },
-  { id: "minimal", label: "Clean Editorial", desc: "Warm serif subtitle text" },
-  { id: "subtitle", label: "Classic Bar", desc: "High contrast for loud environments" },
+  { id: "ember", label: "Keyword Highlight", desc: "Spoken emphasis highlighted in blue" },
+  { id: "minimal", label: "Clean Subtitle", desc: "Crisp, uncluttered text at the bottom" },
+  { id: "subtitle", label: "Solid Bar", desc: "High-contrast dark bar behind text" },
 ];
 
-export default function ExportModal({ clip, sermonTitle, videoId, onClose, onConfirmExport, isRendering, exportedPath }) {
+export default function ExportModal({
+  clip,
+  sermonTitle,
+  videoId,
+  onClose,
+  onConfirmExport,
+  isRendering,
+  exportedPath,
+}) {
   const [selectedFormat, setSelectedFormat] = useState("vertical");
   const [selectedCaption, setSelectedCaption] = useState("ember");
   const [fileName, setFileName] = useState(() => {
     const cleanTitle = (clip?.highlight_title || clip?.title || "Sermon Clip")
       .replace(/[^a-zA-Z0-9 -]/g, "")
       .trim();
-    return `${cleanTitle} (Phone Clip)`;
+    return `${cleanTitle} (Vertical Clip)`;
   });
 
   if (!clip) return null;
 
-  const currentFormat = FORMAT_OPTIONS.find((f) => f.id === selectedFormat) || FORMAT_OPTIONS[0];
+  const currentFormat =
+    FORMAT_OPTIONS.find((f) => f.id === selectedFormat) || FORMAT_OPTIONS[0];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs font-sans">
-      <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl border border-border bg-base shadow-2xl flex flex-col">
-        {/* ── Modal Header ────────────────────────────────────────── */}
-        <div className="flex items-center justify-between border-b border-border px-6 py-4">
+      <div className="w-full max-w-2xl rounded-lg border border-border bg-surface shadow-2xl flex flex-col overflow-hidden">
+        {/* Modal Header */}
+        <div className="flex items-center justify-between border-b border-border px-5 py-3 bg-surface-hover/30">
           <div>
-            <h2 className="font-display text-lg font-bold text-primary">Export Video Clip</h2>
-            <p className="text-xs text-secondary mt-0.5">
-              Select size and caption styling before saving to your computer.
+            <h2 className="text-sm font-semibold text-primary">Export Video Clip</h2>
+            <p className="text-[11px] text-secondary">
+              Configure aspect ratio and caption styling for export.
             </p>
           </div>
           <button
             onClick={onClose}
-            className="w-7 h-7 rounded-lg text-secondary hover:text-primary flex items-center justify-center"
+            className="w-6 h-6 rounded text-muted hover:text-primary flex items-center justify-center"
           >
-            <i className="bx bx-x text-xl" />
+            <i className="bx bx-x text-lg" />
           </button>
         </div>
 
-        {/* ── Modal Body ──────────────────────────────────────────── */}
-        <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-          {/* Left: Frame Preview */}
-          <div className="flex flex-col items-center justify-center bg-surface rounded-xl p-5 border border-border min-h-[340px] relative overflow-hidden">
-            <span className="text-[10px] font-bold text-accent uppercase tracking-wider mb-3">
+        {/* Modal Body */}
+        <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
+          {/* Left: Preview */}
+          <div className="flex flex-col items-center justify-center bg-base rounded border border-border p-4 min-h-[280px]">
+            <span className="text-[10px] font-mono font-semibold text-accent uppercase tracking-wider mb-2">
               {currentFormat.label} Preview
             </span>
 
-            <div className={`relative ${currentFormat.ratioClass} bg-base rounded-lg overflow-hidden border border-border flex items-center justify-center transition-all duration-200`}>
+            <div
+              className={`relative ${currentFormat.ratioClass} bg-surface rounded overflow-hidden border border-border flex items-center justify-center`}
+            >
               {videoId ? (
                 <iframe
-                  src={`https://www.youtube.com/embed/${videoId}?start=${Math.floor(clip.start || 0)}&end=${Math.ceil(clip.end || 60)}&autoplay=1&mute=1&controls=0&loop=1&rel=0`}
+                  src={`https://www.youtube.com/embed/${videoId}?start=${Math.floor(
+                    clip.start || 0
+                  )}&end=${Math.ceil(clip.end || 60)}&autoplay=1&mute=1&controls=0&loop=1&rel=0`}
                   title="Clip Reflow Preview"
-                  className="w-full h-full object-cover scale-150 pointer-events-none opacity-75"
+                  className="w-full h-full object-cover scale-150 pointer-events-none opacity-80"
                 />
               ) : (
-                <div className="text-center p-3">
-                  <i className="bx bx-film text-2xl text-accent mb-1" />
-                  <p className="text-[10px] text-secondary">Video Stream</p>
+                <div className="text-center p-2">
+                  <i className="bx bx-film text-xl text-accent mb-1" />
+                  <p className="text-[9px] text-secondary">Local Media</p>
                 </div>
               )}
 
               {/* Caption Overlay */}
-              <div className="absolute bottom-4 left-2 right-2 text-center pointer-events-none px-2">
+              <div className="absolute bottom-3 left-1.5 right-1.5 text-center pointer-events-none px-1">
                 {selectedCaption === "ember" && (
-                  <div className="px-2 py-0.5 bg-base/80 rounded inline-block shadow-sm">
-                    <p className="font-display text-[10px] text-primary leading-tight">
+                  <div className="px-1.5 py-0.5 bg-black/75 rounded inline-block">
+                    <p className="text-[9px] text-white leading-tight">
                       "The Word is <span className="text-accent font-bold">living</span> and active."
                     </p>
                   </div>
                 )}
                 {selectedCaption === "minimal" && (
-                  <p className="font-display text-[10px] text-primary drop-shadow-sm leading-tight">
-                    "{clip.text ? clip.text.slice(0, 40) + "…" : "Message clip"}"
+                  <p className="text-[9px] text-white drop-shadow leading-tight">
+                    "{clip.text ? clip.text.slice(0, 35) + "…" : "Sermon clip"}"
                   </p>
                 )}
                 {selectedCaption === "subtitle" && (
-                  <div className="bg-base px-1.5 py-0.5 rounded inline-block">
-                    <p className="font-sans text-[9px] font-bold text-primary uppercase">
-                      {clip.highlight_title || "Key Moment"}
+                  <div className="bg-black/90 px-1 py-0.5 rounded inline-block">
+                    <p className="text-[8px] font-bold text-white uppercase">
+                      {clip.highlight_title || "Key Teaching Moment"}
                     </p>
                   </div>
                 )}
               </div>
             </div>
 
-            <p className="text-[11px] text-secondary mt-3 text-center truncate max-w-xs">
-              {clip.highlight_title || clip.title} · {Math.round((clip.end || 30) - (clip.start || 0))}s
+            <p className="text-[10px] text-muted font-mono mt-2 truncate max-w-[180px]">
+              {clip.highlight_title || clip.title}
             </p>
           </div>
 
           {/* Right: Controls */}
-          <div className="space-y-5">
+          <div className="space-y-4 text-xs">
             {/* Format choice */}
-            <div className="space-y-1.5">
-              <span className="text-xs font-bold text-primary block">
-                1. Video Format
-              </span>
-              <div className="grid grid-cols-3 gap-2">
+            <div className="space-y-1">
+              <label className="font-semibold text-primary block">
+                1. Aspect Ratio
+              </label>
+              <div className="grid grid-cols-3 gap-1.5">
                 {FORMAT_OPTIONS.map((fmt) => {
                   const isSelected = selectedFormat === fmt.id;
                   return (
@@ -133,19 +145,27 @@ export default function ExportModal({ clip, sermonTitle, videoId, onClose, onCon
                       onClick={() => {
                         setSelectedFormat(fmt.id);
                         setFileName((prev) => {
-                          const base = prev.replace(/\s*\((Phone Clip|Square|Landscape)\)/i, "");
+                          const base = prev.replace(
+                            /\s*\((Vertical Clip|Phone Size|Square|Landscape)\)/i,
+                            ""
+                          );
                           return `${base} (${fmt.label})`;
                         });
                       }}
-                      className={`p-2.5 rounded-lg border text-left transition-colors ${
+                      className={`p-2 rounded border text-left transition-colors ${
                         isSelected
-                          ? "border-accent bg-surface shadow-xs"
-                          : "border-border bg-base hover:bg-surface text-secondary"
+                          ? "border-accent bg-surface-active"
+                          : "border-border bg-surface hover:bg-surface-hover text-secondary"
                       }`}
                     >
-                      <i className={`bx ${fmt.icon} text-base mb-1 ${isSelected ? "text-accent" : "text-secondary"}`} />
-                      <p className="text-xs font-bold text-primary leading-tight">{fmt.label}</p>
-                      <p className="text-[9px] text-secondary mt-0.5 leading-tight">{fmt.subtitle}</p>
+                      <i
+                        className={`bx ${fmt.icon} text-sm mb-0.5 block ${
+                          isSelected ? "text-accent" : "text-muted"
+                        }`}
+                      />
+                      <p className="font-medium text-primary leading-tight text-[11px]">
+                        {fmt.label}
+                      </p>
                     </button>
                   );
                 })}
@@ -153,10 +173,10 @@ export default function ExportModal({ clip, sermonTitle, videoId, onClose, onCon
             </div>
 
             {/* Caption style */}
-            <div className="space-y-1.5">
-              <span className="text-xs font-bold text-primary block">
+            <div className="space-y-1">
+              <label className="font-semibold text-primary block">
                 2. Caption Style
-              </span>
+              </label>
               <div className="space-y-1">
                 {CAPTION_STYLES.map((style) => {
                   const isSelected = selectedCaption === style.id;
@@ -165,18 +185,20 @@ export default function ExportModal({ clip, sermonTitle, videoId, onClose, onCon
                       key={style.id}
                       type="button"
                       onClick={() => setSelectedCaption(style.id)}
-                      className={`w-full p-2 rounded-lg border text-left flex items-center justify-between transition-colors ${
+                      className={`w-full p-2 rounded border text-left flex items-center justify-between transition-colors ${
                         isSelected
-                          ? "border-accent bg-surface"
-                          : "border-border bg-base hover:bg-surface text-secondary"
+                          ? "border-accent bg-surface-active"
+                          : "border-border bg-surface hover:bg-surface-hover text-secondary"
                       }`}
                     >
                       <div>
-                        <p className="text-xs font-bold text-primary leading-tight">{style.label}</p>
-                        <p className="text-[10px] text-secondary">{style.desc}</p>
+                        <p className="font-medium text-primary text-[11px]">
+                          {style.label}
+                        </p>
+                        <p className="text-[10px] text-muted">{style.desc}</p>
                       </div>
                       {isSelected && (
-                        <i className="bx bxs-check-circle text-base text-accent" />
+                        <i className="bx bxs-check-circle text-sm text-accent" />
                       )}
                     </button>
                   );
@@ -186,37 +208,42 @@ export default function ExportModal({ clip, sermonTitle, videoId, onClose, onCon
 
             {/* File name */}
             <div className="space-y-1">
-              <span className="text-xs font-bold text-primary block">
-                3. File Name
-              </span>
+              <label className="font-semibold text-primary block">
+                3. Output File Name
+              </label>
               <input
                 type="text"
                 value={fileName}
                 onChange={(e) => setFileName(e.target.value)}
-                className="w-full rounded-lg border border-border bg-surface px-3 py-1.5 text-xs text-primary outline-none focus:border-accent"
-                placeholder="Clip file name"
+                className="w-full rounded border border-border bg-base px-2.5 py-1 text-xs text-primary outline-none focus:border-accent font-mono"
               />
-              <p className="text-[10px] text-secondary">
-                Saves to <strong className="text-primary">Videos/Dabar/</strong> on your PC.
+              <p className="text-[10px] text-muted">
+                Rendered directly to local output directory via FFmpeg.
               </p>
             </div>
 
-            {/* Action buttons */}
+            {/* Footer Buttons */}
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
               <button
                 type="button"
                 onClick={onClose}
-                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-secondary hover:text-primary transition-colors"
+                className="px-3 py-1 rounded text-xs text-secondary hover:text-primary"
               >
                 Cancel
               </button>
               <Btn
                 size="sm"
-                onClick={() => onConfirmExport(clip, selectedFormat, selectedCaption, fileName)}
+                onClick={() =>
+                  onConfirmExport(clip, selectedFormat, selectedCaption, fileName)
+                }
                 disabled={isRendering}
               >
-                <i className={`bx ${isRendering ? "bx-loader-alt bx-spin" : "bx-download"} text-sm`} />
-                {isRendering ? "Saving Clip…" : "Save Video Clip"}
+                <i
+                  className={`bx ${
+                    isRendering ? "bx-loader-alt bx-spin" : "bx-download"
+                  } text-xs`}
+                />
+                <span>{isRendering ? "Rendering Clip…" : "Export Clip"}</span>
               </Btn>
             </div>
           </div>

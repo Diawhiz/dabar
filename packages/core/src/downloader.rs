@@ -8,6 +8,123 @@ pub struct DownloadedAudio {
     pub title: Option<String>,
 }
 
+/// Returns true if the given URL is a Google Drive file share link.
+///
+/// Accepts both `drive.google.com/file/d/<ID>/...` and `drive.google.com/open?id=<ID>` formats.
+pub fn is_gdrive_url(url: &str) -> bool {
+    let s = url.trim();
+    s.contains("drive.google.com/file/d/")
+        || s.contains("drive.google.com/open?id=")
+        || (s.contains("drive.google.com/") && s.contains("/view"))
+}
+
+/// Extract the Google Drive file ID from a share link.
+///
+/// Handles:
+/// - `https://drive.google.com/file/d/<ID>/view?usp=sharing`
+/// - `https://drive.google.com/open?id=<ID>`
+pub fn extract_gdrive_id(url: &str) -> Option<String> {
+    let trimmed = url.trim();
+
+    // Format: /file/d/<ID>/
+    if let Some(pos) = trimmed.find("/file/d/") {
+        let after = &trimmed[pos + 8..];
+        let id: String = after
+            .chars()
+            .take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '-')
+            .collect();
+        if id.len() > 10 {
+            return Some(id);
+        }
+    }
+
+    // Format: ?id=<ID> or &id=<ID>
+    if let Some(pos) = trimmed.find("id=") {
+        let after = &trimmed[pos + 3..];
+        let id: String = after
+            .chars()
+            .take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '-')
+            .collect();
+        if id.len() > 10 {
+            return Some(id);
+        }
+    }
+
+    None
+}
+
+/// Download audio from a Google Drive share link using yt-dlp.
+///
+/// yt-dlp supports Google Drive natively. The link must have public
+/// ("Anyone with the link") share permission enabled.
+/// Returns the downloaded file path and the filename as title.
+pub async fn download_gdrive_audio(
+    gdrive_url: &str,
+    output_dir: &Path,
+) -> Result<DownloadedAudio> {
+    tokio::fs::create_dir_all(output_dir)
+        .await
+        .with_context(|| format!("creating audio output directory {}", output_dir.display()))?;
+
+    let file_id = extract_gdrive_id(gdrive_url).with_context(|| {
+        format!("could not extract Google Drive file ID from '{gdrive_url}' — expected a valid drive.google.com share link")
+    })?;
+
+    let dest_template = output_dir.join(&file_id);
+
+    let mut cmd = get_binary_command("yt-dlp");
+    cmd.arg("-f")
+        .arg("ba[abr<=128]/ba/bestaudio/b")
+        .arg("-N")
+        .arg("4")
+        .arg("--print")
+        .arg("after_video:title")
+        .arg("--no-check-certificates")
+        .arg("--no-playlist")
+        .arg("--no-cache-dir")
+        .arg("-o")
+        .arg(format!("{}.%(ext)s", dest_template.display()))
+        .arg(gdrive_url);
+
+    let output = cmd
+        .output()
+        .await
+        .context("failed to spawn yt-dlp for Google Drive download — is yt-dlp installed?")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let msg = stderr.trim();
+
+        if msg.contains("Permission denied") || msg.contains("Access denied") || msg.contains("403") {
+            anyhow::bail!(
+                "Google Drive download failed: the file is private or restricted. \
+                 Set the share link to 'Anyone with the link can view' and try again."
+            );
+        }
+        if msg.contains("No such file") || msg.contains("404") {
+            anyhow::bail!(
+                "Google Drive download failed: the file could not be found. \
+                 Please check the link is correct and the file still exists."
+            );
+        }
+        anyhow::bail!("yt-dlp failed to download from Google Drive: {msg}");
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let title = stdout
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(str::to_string);
+
+    let found_path = find_downloaded_file(output_dir, &file_id).await?;
+
+    Ok(DownloadedAudio {
+        path: found_path,
+        title,
+    })
+}
+
 /// Extract a YouTube video ID from various URL formats or a raw 11-char ID.
 pub fn extract_youtube_id(url_or_id: &str) -> Option<String> {
     let trimmed = url_or_id.trim();
@@ -449,6 +566,27 @@ mod tests {
 
         let err_bot = format_yt_dlp_error("test", "ERROR: Sign in to confirm you're not a bot");
         assert!(err_bot.to_string().contains("bot-detection"));
+    }
+
+    #[test]
+    fn test_is_gdrive_url() {
+        assert!(is_gdrive_url("https://drive.google.com/file/d/1a2b3c4d5e6f7g8h9i0j/view?usp=sharing"));
+        assert!(is_gdrive_url("https://drive.google.com/open?id=1a2b3c4d5e6f7g8h9i0j"));
+        assert!(!is_gdrive_url("https://www.youtube.com/watch?v=dQw4w9WgXcQ"));
+        assert!(!is_gdrive_url("/path/to/local/file.mp4"));
+    }
+
+    #[test]
+    fn test_extract_gdrive_id() {
+        assert_eq!(
+            extract_gdrive_id("https://drive.google.com/file/d/1a2b3c4d5e6f7g8h9i0j/view?usp=sharing"),
+            Some("1a2b3c4d5e6f7g8h9i0j".to_string())
+        );
+        assert_eq!(
+            extract_gdrive_id("https://drive.google.com/open?id=1a2b3c4d5e6f7g8h9i0j"),
+            Some("1a2b3c4d5e6f7g8h9i0j".to_string())
+        );
+        assert_eq!(extract_gdrive_id("https://youtube.com"), None);
     }
 }
 

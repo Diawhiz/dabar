@@ -84,7 +84,7 @@ export default function Upload() {
           }`}
         >
           <i className="bx bx-upload text-sm" />
-          File on this Computer
+          <span>File on this Computer</span>
         </button>
 
         <button
@@ -97,7 +97,7 @@ export default function Upload() {
           }`}
         >
           <i className="bx bx-link text-sm" />
-          YouTube Link
+          <span>YouTube Link</span>
         </button>
       </div>
 
@@ -159,12 +159,12 @@ export default function Upload() {
           {isProcessing ? (
             <>
               <i className="bx bx-loader-alt bx-spin text-base" />
-              Starting…
+              <span>Starting…</span>
             </>
           ) : (
             <>
               <i className="bx bx-play text-base" />
-              Transcribe Sermon
+              <span>Transcribe Sermon</span>
             </>
           )}
         </Btn>

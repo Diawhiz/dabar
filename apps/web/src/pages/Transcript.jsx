@@ -2,14 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { listSermons, getSermon } from "../lib/api.js";
 import { highlights as mockHighlights } from "../data/mockData.js";
+import { cleanSermonTitle, formatSeconds } from "../lib/formatters.js";
 import ManuscriptView from "../components/ManuscriptView.jsx";
-
-function formatSeconds(secs) {
-  if (!secs && secs !== 0) return "00:00";
-  const m = Math.floor(secs / 60);
-  const s = Math.floor(secs % 60);
-  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-}
 
 export default function Transcript() {
   const { sermonId } = useParams();
@@ -66,7 +60,7 @@ export default function Transcript() {
           });
           setSegments(items);
         } else {
-          // Fallback mock segments
+          // Fallback mock segments with real text
           const fallback = mockHighlights.map((hl, i) => ({
             id: hl.id,
             start: i * 45,
@@ -88,6 +82,8 @@ export default function Transcript() {
     loadTranscript();
     return () => { mounted = false; };
   }, [sermonId]);
+
+  const cleanTitle = cleanSermonTitle(sermon?.title);
 
   const filteredSegments = useMemo(() => {
     if (!searchTerm.trim()) return segments;
@@ -114,34 +110,46 @@ export default function Transcript() {
     setIsPlaying((prev) => !prev);
   }
 
-  const durationStr = segments.length > 0 ? formatSeconds(segments[segments.length - 1].end) : "45:00";
+  const durationStr = segments.length > 0 ? formatSeconds(segments[segments.length - 1].end) : null;
 
   return (
     <div className="space-y-6 pb-28">
-      {/* ── Screen Header ────────────────────────────────────────── */}
+      {/* ── Screen Header — High contrast, fully legible ──────────── */}
       <div className="border-b border-border pb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 text-xs font-sans text-secondary mb-1">
-            <span className="font-semibold text-accent">Manuscript</span>
-            <span>·</span>
-            <span>{sermon?.speaker || "Speaker"}</span>
-            <span>·</span>
-            <span>{durationStr} runtime</span>
-          </div>
-          <h1 className="font-display text-2xl sm:text-3xl font-bold text-primary">
-            {sermon?.title || "Sermon Transcript"}
+        <div className="space-y-1">
+          {/* Render real metadata only if present */}
+          {(sermon?.speaker || durationStr || sermon?.date) && (
+            <div className="flex flex-wrap items-center gap-2 text-xs font-sans text-secondary">
+              <span className="font-semibold text-accent">Manuscript</span>
+              {sermon?.speaker && (
+                <>
+                  <span>·</span>
+                  <span className="text-primary font-medium">{sermon.speaker}</span>
+                </>
+              )}
+              {durationStr && (
+                <>
+                  <span>·</span>
+                  <span>{durationStr}</span>
+                </>
+              )}
+            </div>
+          )}
+
+          <h1 className="font-display text-2xl sm:text-3xl font-bold text-primary leading-snug">
+            {cleanTitle}
           </h1>
         </div>
 
         {/* Task navigation */}
-        <div className="flex items-center gap-2 font-sans">
+        <div className="flex items-center gap-2 font-sans shrink-0">
           <button
             type="button"
             onClick={() => navigate(`/clips/${sermonId || sermon?.id}`)}
-            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold bg-surface hover:bg-surface-hover text-primary border border-border transition-colors"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold bg-surface hover:bg-surface-hover text-primary border border-border transition-colors"
           >
             <i className="bx bx-cut text-base text-accent" />
-            View Clips ({highlightsCount})
+            <span>Clips ({highlightsCount})</span>
           </button>
         </div>
       </div>
@@ -154,7 +162,7 @@ export default function Transcript() {
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search words, Bible verses, or topics in transcript…"
+            placeholder="Search words or Bible verses in transcript…"
             className="w-full rounded-lg border border-border bg-surface px-9 py-2 text-xs text-primary placeholder:text-secondary outline-none focus:border-accent transition-colors"
           />
         </div>
@@ -193,15 +201,19 @@ export default function Transcript() {
           type="button"
           onClick={handleTogglePlay}
           className="w-7 h-7 rounded-full bg-accent text-white flex items-center justify-center hover:opacity-90 transition-opacity"
-          aria-label={isPlaying ? "Pause audio" : "Play audio"}
+          aria-label={isPlaying ? "Pause playback" : "Play playback"}
         >
           <i className={`bx ${isPlaying ? "bx-pause" : "bx-play"} text-lg`} />
         </button>
 
         <div className="flex items-center gap-1.5 font-mono text-[11px]">
           <span className="font-bold text-primary">{formatSeconds(playbackTime)}</span>
-          <span className="text-secondary">/</span>
-          <span className="text-secondary">{durationStr}</span>
+          {durationStr && (
+            <>
+              <span className="text-secondary">/</span>
+              <span className="text-secondary">{durationStr}</span>
+            </>
+          )}
         </div>
 
         <div
@@ -220,7 +232,7 @@ export default function Transcript() {
         </div>
 
         <span className="text-[11px] text-secondary hidden sm:inline">
-          <kbd className="px-1 py-0.5 rounded bg-base border border-border text-[9px] font-mono text-primary">Space</kbd> Play
+          <kbd className="px-1 py-0.5 rounded bg-base border border-border text-[9px] font-mono text-primary font-bold">Space</kbd> Play/Pause
         </span>
       </div>
     </div>

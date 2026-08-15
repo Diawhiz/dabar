@@ -2,15 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { listSermons, getSermon, renderClip, openInExplorer } from "../lib/api.js";
 import { highlights as mockHighlights } from "../data/mockData.js";
+import { cleanSermonTitle, formatSeconds } from "../lib/formatters.js";
 import ClipCard from "../components/ClipCard.jsx";
 import ExportModal from "../components/ExportModal.jsx";
-
-function formatSeconds(secs) {
-  if (!secs && secs !== 0) return "0:00";
-  const m = Math.floor(secs / 60);
-  const s = Math.floor(secs % 60);
-  return `${m}:${String(s).padStart(2, "0")}`;
-}
 
 function extractVideoId(url) {
   if (!url) return null;
@@ -64,20 +58,20 @@ export default function Clips() {
             score: hl.score,
             title: hl.title,
             highlight_title: hl.title,
-            why: hl.reason || hl.suggested_hook_text || "Key pastoral teaching moment",
+            why: hl.reason || hl.suggested_hook_text || "Key teaching moment",
             duration: `${formatSeconds(hl.start_time)} – ${formatSeconds(hl.end_time)}`,
             is_highlight: true,
           }));
           setHighlights(structured);
         } else {
-          // Fallback mock
+          // Fallback mock moments
           const fallback = mockHighlights.map((hl, i) => ({
             id: hl.id,
             start: i * 45,
             end: (i + 1) * 45,
             title: hl.title,
             highlight_title: hl.title,
-            why: hl.why || "Message on unwavering faith and trust.",
+            why: hl.why || "Teaching on steadfast faith.",
             text: hl.transcript,
             duration: `${formatSeconds(i * 45)} – ${formatSeconds((i + 1) * 45)}`,
             is_highlight: true,
@@ -95,6 +89,7 @@ export default function Clips() {
     return () => { mounted = false; };
   }, [sermonId]);
 
+  const cleanTitle = cleanSermonTitle(sermon?.title);
   const videoId = extractVideoId(sermonUrl);
 
   const topMoment = useMemo(() => (highlights.length > 0 ? highlights[0] : null), [highlights]);
@@ -119,40 +114,46 @@ export default function Clips() {
 
   return (
     <div className="space-y-8 pb-20">
-      {/* ── Screen Header ────────────────────────────────────────── */}
+      {/* ── Screen Header — High contrast, fully legible ──────────── */}
       <div className="border-b border-border pb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 text-xs font-sans text-secondary mb-1">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2 text-xs font-sans text-secondary">
             <span className="font-semibold text-accent">Clips Studio</span>
             <span>·</span>
             <span>{highlights.length} {highlights.length === 1 ? "moment" : "moments"} ready</span>
+            {sermon?.speaker && (
+              <>
+                <span>·</span>
+                <span className="text-primary font-medium">{sermon.speaker}</span>
+              </>
+            )}
           </div>
-          <h1 className="font-display text-2xl sm:text-3xl font-bold text-primary">
-            {sermon?.title || "Sermon Clips"}
+          <h1 className="font-display text-2xl sm:text-3xl font-bold text-primary leading-snug">
+            {cleanTitle}
           </h1>
         </div>
 
         {/* Task navigation */}
-        <div className="flex items-center gap-2 font-sans">
+        <div className="flex items-center gap-2 font-sans shrink-0">
           <button
             type="button"
             onClick={() => navigate(`/transcript/${sermonId || sermon?.id}`)}
-            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold bg-surface hover:bg-surface-hover text-primary border border-border transition-colors"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold bg-surface hover:bg-surface-hover text-primary border border-border transition-colors"
           >
             <i className="bx bx-file text-base text-accent" />
-            Read Full Manuscript
+            <span>Read Full Manuscript</span>
           </button>
         </div>
       </div>
 
       {/* ── Export Success Toast ──────────────────────────────────── */}
       {exportedNotice && (
-        <div className="rounded-xl border border-accent/40 bg-surface p-4 flex items-center justify-between gap-4 font-sans animate-fade-in">
+        <div className="rounded-xl border border-accent/40 bg-surface p-4 flex items-center justify-between gap-4 font-sans">
           <div className="flex items-center gap-3">
             <i className="bx bx-check-circle text-2xl text-accent shrink-0" />
             <div>
               <p className="text-xs font-bold text-primary">
-                "{exportedNotice.title}" saved successfully!
+                "{exportedNotice.title}" saved to disk
               </p>
               <p className="text-[11px] text-secondary truncate max-w-md">{exportedNotice.path}</p>
             </div>
@@ -160,14 +161,15 @@ export default function Clips() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => openInExplorer(exportedNotice.path)}
-              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-base border border-border text-primary hover:border-accent flex items-center gap-1.5 transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-base border border-border text-primary hover:border-accent transition-colors"
             >
               <i className="bx bx-folder text-base" />
-              Show in Folder
+              <span>Show in Folder</span>
             </button>
             <button
               onClick={() => setExportedNotice(null)}
               className="text-secondary hover:text-primary p-1"
+              aria-label="Dismiss notification"
             >
               <i className="bx bx-x text-lg" />
             </button>
@@ -189,9 +191,9 @@ export default function Clips() {
               <div className="flex items-center justify-between font-sans">
                 <span className="text-xs font-bold uppercase tracking-wider text-accent flex items-center gap-1.5">
                   <i className="bx bxs-star text-sm" />
-                  Primary Highlight
+                  <span>Primary Highlight</span>
                 </span>
-                <span className="text-xs text-secondary">Highest spiritual clarity</span>
+                <span className="text-xs text-secondary">Highest clarity</span>
               </div>
               <ClipCard
                 clip={topMoment}
@@ -227,9 +229,9 @@ export default function Clips() {
             </section>
           )}
 
-          {/* Inline Video Player Modal/Section */}
+          {/* Inline Video Player Preview */}
           {previewClip && videoId && (
-            <div className="rounded-2xl border border-border bg-[#120F0D] p-5 shadow-xl font-sans">
+            <div className="rounded-xl border border-border bg-[#120F0D] p-5 shadow-xl font-sans">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2 text-xs">
                   <span className="font-bold text-accent uppercase tracking-wider">Previewing Clip</span>
@@ -242,10 +244,10 @@ export default function Clips() {
                   className="text-secondary hover:text-white text-xs flex items-center gap-1"
                 >
                   <i className="bx bx-x text-lg" />
-                  Close
+                  <span>Close</span>
                 </button>
               </div>
-              <div className="aspect-video w-full rounded-xl overflow-hidden border border-border">
+              <div className="aspect-video w-full rounded-lg overflow-hidden border border-border">
                 <iframe
                   src={`https://www.youtube.com/embed/${videoId}?start=${Math.floor(previewClip.start)}&end=${Math.ceil(previewClip.end)}&autoplay=1&rel=0`}
                   title="Clip preview"
@@ -263,7 +265,7 @@ export default function Clips() {
       {exportModalClip && (
         <ExportModal
           clip={exportModalClip}
-          sermonTitle={sermon?.title}
+          sermonTitle={cleanTitle}
           videoId={videoId}
           onClose={() => setExportModalClip(null)}
           onConfirmExport={handleConfirmExport}

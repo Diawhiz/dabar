@@ -2,21 +2,25 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Light Mode (Default) ────────────────────────────────────────── */
+/* ── Light Mode (Warm Paper) ─────────────────────────────────────── */
 :root {
   --bg-base: #FAF6EF;
   --bg-surface: #F2EAE0;
-  --bg-surface-hover: #EAE0D4;
-  --border-base: #E0D5C7;
+  --bg-surface-hover: #E7DDD1;
+  --border-base: #DFD4C5;
   --border-focus: #D4913A;
 
+  /* Primary text is always high contrast, fully legible warm near-black */
   --text-primary: #1C1815;
-  --text-secondary: #7A6F62;
+  --text-secondary: #6B6055;
+  
+  /* Dimness is EXCLUSIVELY for unconfirmed transcript body text */
   --text-unconfirmed: #7A6F62;
   --text-confirmed: #1C1815;
 
+  /* Single Accent Color: #D4913A (Warm Amber/Gold) */
   --accent: #D4913A;
-  --accent-glow: rgba(212, 145, 58, 0.22);
+  --accent-glow: rgba(212, 145, 58, 0.25);
   --accent-wash: rgba(212, 145, 58, 0.09);
   --accent-wash-hover: rgba(212, 145, 58, 0.15);
   --accent-pill-bg: rgba(212, 145, 58, 0.12);
@@ -28,21 +32,25 @@
   --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
-/* ── Dark Mode ───────────────────────────────────────────────────── */
+/* ── Dark Mode (Warm Charcoal Brown) ─────────────────────────────── */
 html.dark {
   --bg-base: #1C1815;
-  --bg-surface: #25201C;
-  --bg-surface-hover: #2E2823;
-  --border-base: #362E27;
+  --bg-surface: #26201B;
+  --bg-surface-hover: #312A24;
+  --border-base: #3B332B;
   --border-focus: #D4913A;
 
+  /* Primary text is always high contrast, fully legible warm cream */
   --text-primary: #F5EFE6;
   --text-secondary: #8A7F73;
+  
+  /* Dimness is EXCLUSIVELY for unconfirmed transcript body text */
   --text-unconfirmed: #8A7F73;
   --text-confirmed: #F5EFE6;
 
+  /* Single Accent Color: #D4913A (Warm Amber/Gold) */
   --accent: #D4913A;
-  --accent-glow: rgba(212, 145, 58, 0.28);
+  --accent-glow: rgba(212, 145, 58, 0.30);
   --accent-wash: rgba(212, 145, 58, 0.12);
   --accent-wash-hover: rgba(212, 145, 58, 0.18);
   --accent-pill-bg: rgba(212, 145, 58, 0.18);
@@ -50,7 +58,7 @@ html.dark {
   --accent-pill-border: rgba(212, 145, 58, 0.45);
 }
 
-/* ── Base Layer ──────────────────────────────────────────────────── */
+/* ── Base Reset ──────────────────────────────────────────────────── */
 @layer base {
   body {
     background-color: var(--bg-base);
@@ -63,6 +71,7 @@ html.dark {
     transition: background-color 0.15s ease, color 0.15s ease;
   }
 
+  /* Titles are always fully legible and high-contrast */
   h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-display);
     font-weight: 600;
@@ -81,9 +90,48 @@ html.dark {
   }
 }
 
-/* ── Illumination & Manuscript System ────────────────────────────── */
+/* ── Illumination Transcript System ──────────────────────────────── */
+/* Applied ONLY to transcript text, never titles or navigation */
 
-/* Paragraph container */
+.transcript-dim {
+  color: var(--text-unconfirmed);
+  transition: color 0.2s ease, text-shadow 0.2s ease;
+}
+
+.transcript-lit {
+  color: var(--text-confirmed);
+  font-weight: 500;
+  text-shadow: 0 0 10px var(--accent-glow);
+}
+
+.transcript-key-moment {
+  background-color: var(--accent-wash);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 0.5rem 0.5rem 0;
+  padding: 1rem 1.25rem;
+  margin: 0.75rem 0;
+  transition: background-color 0.15s ease;
+}
+.transcript-key-moment:hover {
+  background-color: var(--accent-wash-hover);
+}
+
+/* ── Scripture Verification Badge ────────────────────────────────── */
+.scripture-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background-color: var(--accent-pill-bg);
+  color: var(--accent-pill-text);
+  border: 1px solid var(--accent-pill-border);
+  padding: 0.2rem 0.6rem;
+  border-radius: 9999px;
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+/* ── Manuscript Column Row Primitive ─────────────────────────────── */
 .manuscript-row {
   display: flex;
   align-items: flex-start;
@@ -98,48 +146,6 @@ html.dark {
 .manuscript-row.is-active {
   background-color: var(--bg-surface-hover);
   box-shadow: inset 3px 0 0 var(--accent);
-}
-
-/* Dim unreviewed text */
-.transcript-dim {
-  color: var(--text-unconfirmed);
-  transition: color 0.2s ease, text-shadow 0.2s ease;
-}
-
-/* Confirmed illuminated text */
-.transcript-lit {
-  color: var(--text-confirmed);
-  font-weight: 500;
-  text-shadow: 0 0 10px var(--accent-glow);
-}
-
-/* Key moment paragraph wash */
-.transcript-key-moment {
-  background-color: var(--accent-wash);
-  border-left: 3px solid var(--accent);
-  border-radius: 0 0.5rem 0.5rem 0;
-  padding: 1rem 1.25rem;
-  margin: 0.75rem 0;
-  transition: background-color 0.15s ease;
-}
-.transcript-key-moment:hover {
-  background-color: var(--accent-wash-hover);
-}
-
-/* Scripture reference verification badge */
-.scripture-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  background-color: var(--accent-pill-bg);
-  color: var(--accent-pill-text);
-  border: 1px solid var(--accent-pill-border);
-  padding: 0.2rem 0.6rem;
-  border-radius: 9999px;
-  font-family: var(--font-sans);
-  font-size: 0.75rem;
-  font-weight: 600;
-  transition: background-color 0.15s ease;
 }
 
 /* ── Native Quiet Scrollbar ──────────────────────────────────────── */

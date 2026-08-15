@@ -60,17 +60,17 @@ export default function Settings() {
           Preferences
         </h1>
         <p className="text-xs text-secondary mt-0.5">
-          Appearance, transcription engine, and church vocabulary.
+          Theme appearance, transcription speed, and church vocabulary.
         </p>
       </div>
 
       {/* ── Tabs ────────────────────────────────────────────────── */}
       <div className="flex border-b border-border gap-6 text-xs font-semibold">
         {[
-          { key: "general", label: "General & Appearance" },
-          { key: "transcription", label: "Transcription Mode" },
-          { key: "vocabulary", label: "Church Names" },
-          { key: "tools", label: "Video Tools" },
+          { key: "general", label: "Appearance & Storage" },
+          { key: "transcription", label: "Transcription Speed" },
+          { key: "vocabulary", label: "Church Vocabulary" },
+          { key: "tools", label: "System Diagnostics" },
         ].map((tab) => (
           <button
             key={tab.key}
@@ -91,7 +91,7 @@ export default function Settings() {
         <form onSubmit={handleSave} className="space-y-5">
           {/* Theme Selector */}
           <div className="space-y-2">
-            <span className="text-xs font-bold text-primary block">App Appearance</span>
+            <span className="text-xs font-bold text-primary block">Appearance Mode</span>
             <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
@@ -102,11 +102,11 @@ export default function Settings() {
                     : "border-border bg-base hover:bg-surface text-secondary"
                 }`}
               >
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2.5">
                   <i className="bx bx-sun text-accent text-lg" />
                   <div>
-                    <p className="text-xs font-bold text-primary">Warm Light</p>
-                    <p className="text-[10px] text-secondary">Paper parchment</p>
+                    <p className="text-xs font-bold text-primary">Light Mode</p>
+                    <p className="text-[10px] text-secondary">Warm paper parchment</p>
                   </div>
                 </div>
                 {theme === "light" && <i className="bx bxs-check-circle text-accent text-base" />}
@@ -121,11 +121,11 @@ export default function Settings() {
                     : "border-border bg-base hover:bg-surface text-secondary"
                 }`}
               >
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2.5">
                   <i className="bx bx-moon text-accent text-lg" />
                   <div>
-                    <p className="text-xs font-bold text-primary">Warm Dark</p>
-                    <p className="text-[10px] text-secondary">Charcoal walnut</p>
+                    <p className="text-xs font-bold text-primary">Dark Mode</p>
+                    <p className="text-[10px] text-secondary">Warm charcoal walnut</p>
                   </div>
                 </div>
                 {theme === "dark" && <i className="bx bxs-check-circle text-accent text-base" />}
@@ -144,10 +144,10 @@ export default function Settings() {
               className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-xs text-primary outline-none focus:border-accent font-mono"
             />
             <p className="text-[11px] text-secondary">
-              Required for fast 20-second cloud transcription. Free at{" "}
-              <a href="https://console.groq.com" target="_blank" rel="noreferrer" className="text-accent underline">
+              Free key at{" "}
+              <a href="https://console.groq.com" target="_blank" rel="noreferrer" className="text-accent underline font-medium">
                 console.groq.com
-              </a>.
+              </a>. Enables 20-second transcription.
             </p>
           </div>
 
@@ -166,17 +166,18 @@ export default function Settings() {
           {savedNotice && (
             <div className="rounded-lg border border-accent/40 bg-surface px-3 py-2 text-xs text-primary flex items-center gap-2">
               <i className="bx bxs-check-circle text-accent text-base" />
-              <span>Preferences saved.</span>
+              <span>Preferences saved successfully.</span>
             </div>
           )}
 
           <Btn type="submit" disabled={isSaving}>
-            {isSaving ? "Saving…" : "Save Preferences"}
+            <i className={`bx ${isSaving ? "bx-loader-alt bx-spin" : "bx-check"} text-base`} />
+            <span>{isSaving ? "Saving…" : "Save Preferences"}</span>
           </Btn>
         </form>
       )}
 
-      {/* ── Tab 2: Transcription Mode ───────────────────────────── */}
+      {/* ── Tab 2: Transcription Speed ──────────────────────────── */}
       {activeTab === "transcription" && (
         <form onSubmit={handleSave} className="space-y-4">
           <div
@@ -190,12 +191,12 @@ export default function Settings() {
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-primary flex items-center gap-1.5">
                 <i className="bx bx-cloud text-accent text-base" />
-                Cloud Speed (Recommended)
+                <span>Cloud Fast Track (Recommended)</span>
               </span>
               {!settings.offline_mode && <i className="bx bxs-check-circle text-accent text-base" />}
             </div>
             <p className="text-[11px] text-secondary">
-              Transcribes a full 45-minute sermon in 20 seconds. Highest accuracy on music and church acoustics.
+              Transcribes a full 45-minute sermon in 20 seconds. Highest accuracy on church worship and acoustics.
             </p>
           </div>
 
@@ -210,7 +211,7 @@ export default function Settings() {
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-primary flex items-center gap-1.5">
                 <i className="bx bx-laptop text-accent text-base" />
-                Offline on this Computer
+                <span>Offline on this Computer</span>
               </span>
               {settings.offline_mode && <i className="bx bxs-check-circle text-accent text-base" />}
             </div>
@@ -227,7 +228,8 @@ export default function Settings() {
           )}
 
           <Btn type="submit" disabled={isSaving}>
-            {isSaving ? "Saving…" : "Save Preferences"}
+            <i className={`bx ${isSaving ? "bx-loader-alt bx-spin" : "bx-check"} text-base`} />
+            <span>{isSaving ? "Saving…" : "Save Preferences"}</span>
           </Btn>
         </form>
       )}
@@ -247,7 +249,7 @@ export default function Settings() {
               className="w-full rounded-lg border border-border bg-surface p-3 text-xs text-primary outline-none focus:border-accent leading-relaxed"
             />
             <p className="text-[11px] text-secondary">
-              Comma-separated words frequently spoken in your church. Dabar will match and spell them correctly.
+              Comma-separated list of names and biblical words. Dabar will automatically match and spell them correctly.
             </p>
           </div>
 
@@ -259,7 +261,8 @@ export default function Settings() {
           )}
 
           <Btn type="submit" disabled={isSaving}>
-            {isSaving ? "Saving…" : "Save Vocabulary"}
+            <i className={`bx ${isSaving ? "bx-loader-alt bx-spin" : "bx-check"} text-base`} />
+            <span>{isSaving ? "Saving…" : "Save Vocabulary"}</span>
           </Btn>
         </form>
       )}
@@ -270,10 +273,10 @@ export default function Settings() {
           <div className="rounded-xl border border-border bg-surface p-4 space-y-1">
             <p className="text-xs font-bold text-primary flex items-center gap-1.5">
               <i className="bx bx-chip text-accent text-base" />
-              Computer Hardware Profile
+              <span>Hardware Profile</span>
             </p>
             <p className="text-[11px] text-secondary">
-              Memory: <strong className="text-primary">{hardware?.ram_gb || "8"} GB RAM</strong> · Video Preset: <strong className="text-primary">{hardware?.recommended_ffmpeg_preset || "fast"}</strong>
+              Installed Memory: <strong className="text-primary">{hardware?.ram_gb || "8"} GB RAM</strong> · Video Engine: <strong className="text-primary">{hardware?.recommended_ffmpeg_preset || "fast"}</strong>
             </p>
           </div>
 
@@ -287,13 +290,13 @@ export default function Settings() {
               </div>
               <span className="text-[11px] font-semibold text-accent flex items-center gap-1">
                 <i className={`bx ${deps?.ffmpeg?.found ? "bxs-check-circle" : "bx-circle"}`} />
-                {deps?.ffmpeg?.found ? "Ready" : "Waiting"}
+                <span>{deps?.ffmpeg?.found ? "Ready" : "Waiting"}</span>
               </span>
             </div>
 
             <div className="p-3.5 flex items-center justify-between">
               <div>
-                <p className="text-xs font-bold text-primary">YouTube Downloader</p>
+                <p className="text-xs font-bold text-primary">YouTube Video Downloader</p>
                 <p className="text-[10px] text-secondary">
                   {deps?.yt_dlp?.found ? "Ready to import video links" : "Click to install"}
                 </p>
@@ -306,12 +309,12 @@ export default function Settings() {
                     disabled={isDownloadingTool}
                     className="px-2.5 py-1 rounded bg-accent text-white text-xs font-semibold"
                   >
-                    {isDownloadingTool ? "Downloading…" : "Install"}
+                    <span>{isDownloadingTool ? "Downloading…" : "Install"}</span>
                   </button>
                 )}
                 <span className="text-[11px] font-semibold text-accent flex items-center gap-1">
                   <i className={`bx ${deps?.yt_dlp?.found ? "bxs-check-circle" : "bx-circle"}`} />
-                  {deps?.yt_dlp?.found ? "Ready" : "Not Installed"}
+                  <span>{deps?.yt_dlp?.found ? "Ready" : "Not Installed"}</span>
                 </span>
               </div>
             </div>

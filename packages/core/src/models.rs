@@ -48,6 +48,8 @@ pub struct Highlight {
     pub start_time: f32,
     pub end_time: f32,
     pub score: f32,
+    pub reason: String,
+    pub suggested_hook_text: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -55,4 +57,38 @@ pub struct TranscriptSegment {
     pub start: f32,
     pub end: f32,
     pub text: String,
+}
+
+/// A structured section of a sermon marked by natural speech transitions.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Section {
+    pub title: String,
+    pub start_time: f32,
+    pub end_time: f32,
+    pub paragraphs: Vec<Paragraph>,
+}
+
+/// A structured paragraph grouping adjacent transcript segments with natural pauses.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Paragraph {
+    pub start_time: f32,
+    pub end_time: f32,
+    pub text: String,
+    pub segments: Vec<TranscriptSegment>,
+    pub scripture_refs: Vec<ScriptureRef>,
+}
+
+/// A detected Scripture reference within a sermon paragraph.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScriptureRef {
+    pub book: String,
+    pub reference: String,
+    pub timestamp: f32,
+}
+
+/// Fully structured sermon transcript ready for the illumination reader & document export.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StructuredTranscript {
+    pub sections: Vec<Section>,
+    pub scripture_references: Vec<ScriptureRef>,
 }

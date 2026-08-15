@@ -121,7 +121,8 @@ async fn run_pipeline(
 
     // Stage 2: Transcribing
     state.update_status(sermon_id, dabar_core::SermonStatus::Transcribing).await?;
-    let segments = dabar_core::whisper::transcribe_audio(&api_key, &downloaded.path).await?;
+    let backend = dabar_core::whisper::TranscriptionBackend::Groq { api_key: api_key.clone() };
+    let segments = dabar_core::whisper::transcribe_audio(&backend, &downloaded.path, None).await?;
 
     // Clean up temporary audio file asynchronously
     let _ = tokio::fs::remove_dir_all(&temp_dir).await;
@@ -130,11 +131,11 @@ async fn run_pipeline(
         anyhow::bail!("Whisper transcription produced no text segments");
     }
 
-    // Stage 3: Highlight Detection
+    // Stage 3: Highlight Detection (LLM analysis with [HH:MM:SS] prompt formatting & 30-90s validation)
     state.update_status(sermon_id, dabar_core::SermonStatus::Detecting).await?;
-    let highlights = dabar_core::llm::detect_key_moments(&api_key, &segments).await?;
+    let highlights = dabar_core::llm::detect_sermon_highlights(&api_key, &segments).await?;
 
-    // Stage 4: Commit Ready State & Save Results
+    // Stage 4: Commit Ready State & Save Results to DB
     state
         .save_sermon_results(
             sermon_id,

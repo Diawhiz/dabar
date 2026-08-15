@@ -41,9 +41,6 @@ export default function Shell() {
         </div>
       </header>
 
-      {/* Waveform divider between header and content */}
-      <Waveform mode="divider" className="mx-auto max-w-6xl px-5 sm:px-8" />
-
       {/* Main content */}
       <main className="mx-auto w-full max-w-6xl flex-1 min-w-0 px-5 py-8 sm:px-8">
         <Outlet />

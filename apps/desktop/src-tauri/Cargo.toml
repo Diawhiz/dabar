@@ -1,13 +1,12 @@
 [package]
 name = "dabar-tauri"
 version = "0.1.0"
-description = "Dabar desktop shell"
+description = "Dabar desktop app"
 edition = "2021"
 license = "MIT"
 
 [lib]
 name = "dabar_tauri_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
 
 [[bin]]
 name = "dabar-tauri"
@@ -18,8 +17,20 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 anyhow = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
 dabar-core = { path = "../../../packages/core" }
+dirs = "5.0"
+dotenvy = "0.15"
+reqwest = { version = "0.12", features = ["json", "stream"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+sqlx = { version = "0.8", features = ["runtime-tokio-native-tls", "sqlite", "uuid", "chrono"] }
+sysinfo = "0.32"
 tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-shell = "2"
+tauri-plugin-fs = "2"
 tokio = { version = "1.39", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1.10", features = ["serde", "v4"] }

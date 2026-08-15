@@ -1,94 +1,202 @@
-const DEFAULT_API_URL =
-  typeof window !== "undefined" &&
-  window.location.hostname !== "localhost" &&
-  window.location.hostname !== "127.0.0.1"
-    ? "https://dabar-1.onrender.com"
-    : "http://127.0.0.1:8000";
+/**
+ * Dabar Tauri Desktop IPC API Client
+ *
+ * Calls native Rust commands via Tauri IPC (`invoke`) and listens for real-time
+ * pipeline progress events (`listen`).
+ */
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || DEFAULT_API_URL;
+// Check if running inside Tauri runtime
+export const isTauri = typeof window !== "undefined" && Boolean(window.__TAURI_INTERNALS__ || window.__TAURI__);
 
-
-async function request(path, options = {}) {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
-    ...options,
-  });
-
-  const data = await response.json().catch(() => null);
-
-  if (!response.ok) {
-    const message =
-      data?.youtube_url?.[0] ??
-      data?.detail ??
-      "Dabar could not complete that request.";
-    throw new Error(message);
+async function getTauriCore() {
+  if (!isTauri) return null;
+  try {
+    return await import("@tauri-apps/api/core");
+  } catch (e) {
+    console.warn("Tauri core import failed:", e);
+    return null;
   }
-
-  return data;
 }
 
-export function listSermons() {
-  return request("/api/sermons/");
+async function getTauriEvent() {
+  if (!isTauri) return null;
+  try {
+    return await import("@tauri-apps/api/event");
+  } catch (e) {
+    console.warn("Tauri event import failed:", e);
+    return null;
+  }
 }
 
-export function createSermon(youtubeUrl) {
-  return request("/api/sermons/", {
-    method: "POST",
-    body: JSON.stringify({ youtube_url: youtubeUrl }),
-  });
-}
-
-export function getSermon(id) {
-  return request(`/api/sermons/${id}/`);
-}
-
-export function getTranscript(sermonId) {
-  return request(`/api/sermons/${sermonId}/transcript/`);
-}
-
-export function triggerTranscription(sermonId, backend = "groq") {
-  return request(`/api/sermons/${sermonId}/transcribe/`, {
-    method: "POST",
-    body: JSON.stringify({ backend }),
-  });
+async function getTauriDialog() {
+  if (!isTauri) return null;
+  try {
+    return await import("@tauri-apps/plugin-dialog");
+  } catch (e) {
+    console.warn("Tauri dialog import failed:", e);
+    return null;
+  }
 }
 
 /**
- * Download a video clip segment as MP4 from the backend.
- * Returns true on success, throws on failure.
+ * List all sermons in local SQLite database.
  */
-export async function downloadClip(youtubeUrl, start, end) {
-  const params = new URLSearchParams({
-    url: youtubeUrl,
-    start: String(start),
-    end: String(end),
-  });
-
-  const response = await fetch(`${API_BASE_URL}/api/clips/download/?${params}`);
-
-  if (!response.ok) {
-    const data = await response.json().catch(() => null);
-    throw new Error(data?.detail ?? "Clip download failed.");
+export async function listSermons() {
+  const core = await getTauriCore();
+  if (core) {
+    return await core.invoke("list_sermons");
   }
+  // Browser fallback for UI preview
+  const local = localStorage.getItem("dabar_sermons");
+  return local ? JSON.parse(local) : [];
+}
 
-  // Extract filename from Content-Disposition header or use a default
-  const disposition = response.headers.get("Content-Disposition") || "";
-  const filenameMatch = disposition.match(/filename="?([^";\n]+)"?/);
-  const filename = filenameMatch ? filenameMatch[1] : `dabar-clip-${Math.floor(start)}s.mp4`;
+/**
+ * Get a single sermon by ID with its highlights and transcript segments.
+ */
+export async function getSermon(id) {
+  const core = await getTauriCore();
+  if (core) {
+    return await core.invoke("get_sermon", { id });
+  }
+  const local = localStorage.getItem("dabar_sermons");
+  const list = local ? JSON.parse(local) : [];
+  return list.find((s) => s.id === id) || null;
+}
 
-  // Stream response as blob and trigger browser download
-  const blob = await response.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+/**
+ * Start the pipeline for a YouTube URL or local audio/video file.
+ * Returns the created sermon ID immediately.
+ */
+export async function createSermon(source) {
+  const core = await getTauriCore();
+  if (core) {
+    const sermonId = await core.invoke("start_pipeline", { source });
+    return { id: sermonId };
+  }
+  // Browser mock
+  const mockId = "mock-" + Date.now();
+  return { id: mockId };
+}
 
-  return true;
+/**
+ * Render a vertical clip to disk and return the output file path.
+ */
+export async function renderClip(sermonId, highlightId) {
+  const core = await getTauriCore();
+  if (core) {
+    return await core.invoke("render_clip", { sermonId, highlightId });
+  }
+  return "C:\\Users\\Mock\\Videos\\Dabar\\mock_clip.mp4";
+}
+
+/**
+ * Open native OS file dialog to select audio or video file(s).
+ */
+export async function pickMediaFile() {
+  const dialog = await getTauriDialog();
+  if (dialog) {
+    return await dialog.open({
+      multiple: false,
+      filters: [
+        {
+          name: "Audio & Video",
+          extensions: ["mp4", "mov", "webm", "mkv", "mp3", "wav", "m4a", "ogg", "opus", "aac", "flac"],
+        },
+      ],
+    });
+  }
+  return null;
+}
+
+/**
+ * Open a folder or file in the OS file explorer.
+ */
+export async function openInExplorer(path) {
+  const core = await getTauriCore();
+  if (core) {
+    return await core.invoke("open_in_explorer", { path });
+  }
+  console.log("Mock openInExplorer:", path);
+}
+
+/**
+ * Get user settings.
+ */
+export async function getSettings() {
+  const core = await getTauriCore();
+  if (core) {
+    return await core.invoke("get_settings");
+  }
+  const local = localStorage.getItem("dabar_settings");
+  return local
+    ? JSON.parse(local)
+    : {
+        groq_api_key: "",
+        output_dir: "Videos/Dabar",
+        offline_mode: false,
+        offline_model: "base",
+        custom_vocabulary: "",
+      };
+}
+
+/**
+ * Save user settings.
+ */
+export async function saveSettings(settings) {
+  const core = await getTauriCore();
+  if (core) {
+    return await core.invoke("save_settings", { settings });
+  }
+  localStorage.setItem("dabar_settings", JSON.stringify(settings));
+}
+
+/**
+ * Check external tool statuses (ffmpeg, yt-dlp, whisper models).
+ */
+export async function checkDependencies() {
+  const core = await getTauriCore();
+  if (core) {
+    return await core.invoke("check_dependencies");
+  }
+  return {
+    ffmpeg: { found: true, path: "ffmpeg", version: "mock ffmpeg" },
+    yt_dlp: { found: true, path: "yt-dlp", version: "mock yt-dlp" },
+    whisper_model: { base_available: true, tiny_available: false, base_path: null, tiny_path: null },
+  };
+}
+
+/**
+ * Download yt-dlp binary on-demand.
+ */
+export async function downloadYtDlp() {
+  const core = await getTauriCore();
+  if (core) {
+    return await core.invoke("download_yt_dlp");
+  }
+}
+
+/**
+ * Get hardware info.
+ */
+export async function getHardwareInfo() {
+  const core = await getTauriCore();
+  if (core) {
+    return await core.invoke("get_hardware_info");
+  }
+  return { ram_gb: 16, is_low_end: false, recommended_ffmpeg_preset: "veryfast" };
+}
+
+/**
+ * Subscribe to real-time pipeline progress events.
+ * Returns an unlisten function.
+ */
+export async function onPipelineProgress(callback) {
+  const tauriEvent = await getTauriEvent();
+  if (tauriEvent) {
+    return await tauriEvent.listen("pipeline-progress", (event) => {
+      callback(event.payload);
+    });
+  }
+  return () => {};
 }

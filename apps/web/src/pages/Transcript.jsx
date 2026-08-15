@@ -47,12 +47,10 @@ export default function Transcript() {
 
         // Resolve audio asset URL for webview playback
         const audioSrc = data.audio_path || data.youtube_url || "";
-        if (audioSrc && !audioSrc.startsWith("http://") && !audioSrc.startsWith("https://")) {
+        if (audioSrc) {
           getAssetUrl(audioSrc).then((url) => {
-            if (mounted) setMediaAssetUrl(url);
+            if (mounted && url) setMediaAssetUrl(url);
           });
-        } else if (audioSrc.startsWith("http://") || audioSrc.startsWith("https://")) {
-          setMediaAssetUrl(audioSrc);
         }
 
         const rawSegs = Array.isArray(data.transcript_segments) ? data.transcript_segments : [];
@@ -109,21 +107,25 @@ export default function Transcript() {
   function handleSeek(time) {
     setPlaybackTime(time);
     if (audioRef.current) {
+      setAudioError(null);
       audioRef.current.currentTime = time;
-      audioRef.current.play().catch(() => {});
+      audioRef.current.play().catch((err) => {
+        console.warn("Audio play failed on seek:", err);
+        setAudioError("Couldn't play audio at this position.");
+      });
     }
   }
 
   function handleTogglePlay() {
     if (audioRef.current) {
-      if (isPlaying) {
-        audioRef.current.pause();
-      } else {
+      if (audioRef.current.paused) {
         setAudioError(null);
         audioRef.current.play().catch((err) => {
           console.warn("Audio play failed:", err);
-          setAudioError("Could not play audio. Source file may not be reachable.");
+          setAudioError("Couldn't load audio for this sermon.");
         });
+      } else {
+        audioRef.current.pause();
       }
     } else {
       setIsPlaying((prev) => !prev);
@@ -145,24 +147,23 @@ export default function Transcript() {
 
   return (
     <div className="flex flex-col min-h-screen pb-24">
-      {/* Real HTML5 Audio Element */}
-      {mediaAssetUrl && (
-        <audio
-          ref={audioRef}
-          src={mediaAssetUrl}
-          preload="auto"
-          onTimeUpdate={(e) => setPlaybackTime(e.target.currentTime)}
-          onPlay={() => setIsPlaying(true)}
-          onPause={() => setIsPlaying(false)}
-          onEnded={() => setIsPlaying(false)}
-          onError={() => {
-            setAudioError(
-              `Source audio file could not be loaded: ${sermon?.audio_path || sermon?.youtube_url || "path missing"}`
-            );
-            setIsPlaying(false);
-          }}
-        />
-      )}
+      {/* Real HTML5 Audio Element for Webview Playback */}
+      <audio
+        ref={audioRef}
+        src={mediaAssetUrl || ""}
+        preload="auto"
+        style={{ display: "none" }}
+        onTimeUpdate={(e) => setPlaybackTime(e.target.currentTime)}
+        onPlay={() => setIsPlaying(true)}
+        onPause={() => setIsPlaying(false)}
+        onEnded={() => setIsPlaying(false)}
+        onError={() => {
+          if (mediaAssetUrl) {
+            setAudioError("Couldn't load audio for this sermon.");
+          }
+          setIsPlaying(false);
+        }}
+      />
 
       {/* ── Page Header ───────────────────────────────────────────── */}
       <header className="page-header">
@@ -344,7 +345,7 @@ export default function Transcript() {
             className="w-28 sm:w-48 h-1 bg-base rounded-full overflow-hidden cursor-pointer"
             onClick={(e) => {
               const rect = e.currentTarget.getBoundingClientRect();
-              const ratio = (e.clientX - rect.left) / rect.width;
+              const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
               const total = durationSec > 0 ? durationSec : 2700;
               handleSeek(ratio * total);
             }}

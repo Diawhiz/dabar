@@ -206,6 +206,7 @@ async fn render_clip(
 /// Get all user settings as a serializable map.
 #[tauri::command]
 async fn get_settings(state: State<'_, AppState>) -> Result<AppSettings, String> {
+    let assemblyai_api_key = state.db.get_setting("assemblyai_api_key").await.ok().flatten().unwrap_or_default();
     let groq_api_key = state.db.get_setting("groq_api_key").await.ok().flatten().unwrap_or_default();
     let output_dir = state
         .db
@@ -225,6 +226,7 @@ async fn get_settings(state: State<'_, AppState>) -> Result<AppSettings, String>
     let custom_vocab = state.db.get_setting("custom_vocabulary").await.ok().flatten().unwrap_or_default();
 
     Ok(AppSettings {
+        assemblyai_api_key,
         groq_api_key,
         output_dir,
         offline_mode,
@@ -236,6 +238,7 @@ async fn get_settings(state: State<'_, AppState>) -> Result<AppSettings, String>
 /// Save user settings to the local database.
 #[tauri::command]
 async fn save_settings(settings: AppSettings, state: State<'_, AppState>) -> Result<(), String> {
+    state.db.set_setting("assemblyai_api_key", &settings.assemblyai_api_key).await.map_err(|e| e.to_string())?;
     state.db.set_setting("groq_api_key", &settings.groq_api_key).await.map_err(|e| e.to_string())?;
     state.db.set_setting("output_dir", &settings.output_dir).await.map_err(|e| e.to_string())?;
     state.db.set_setting("offline_mode", if settings.offline_mode { "true" } else { "false" }).await.map_err(|e| e.to_string())?;
@@ -380,6 +383,7 @@ async fn get_hardware_info() -> HardwareInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettings {
+    pub assemblyai_api_key: String,
     pub groq_api_key: String,
     pub output_dir: String,
     pub offline_mode: bool,

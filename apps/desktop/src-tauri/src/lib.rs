@@ -3,7 +3,7 @@ mod deps;
 mod pipeline;
 
 use crate::db::Db;
-use crate::pipeline::{PipelineSource, handle_pipeline_failure, render_clip_to_disk};
+use crate::pipeline::PipelineSource;
 use dabar_core::Sermon;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;

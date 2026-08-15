@@ -246,14 +246,7 @@ pub async fn download_ffmpeg(
     // On Windows, point to a single .exe release instead.
     #[cfg(windows)]
     {
-        // Use a single-file Windows release from gyan.dev
-        let _ = tokio::fs::remove_file(&archive_path).await;
-        let single_url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip";
-        // For now: download yt-dlp's bundled ffmpeg approach — or download from known single-exe source
-        // Use the essentials build single file direct download instead
-        let single_url = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip";
-        tracing::info!("Using gyan.dev essentials build for Windows ffmpeg");
-        let _ = single_url; // used above
+        tracing::info!("FFmpeg download completed for Windows");
     }
 
     tracing::info!("FFmpeg archive saved, extraction may be required.");

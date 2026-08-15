@@ -7,7 +7,7 @@ use crate::pipeline::{PipelineSource, handle_pipeline_failure, render_clip_to_di
 use dabar_core::Sermon;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use uuid::Uuid;
 
 // ── App state ─────────────────────────────────────────────────────────────────

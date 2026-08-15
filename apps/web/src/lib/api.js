@@ -92,21 +92,61 @@ export async function renderClip(sermonId, highlightId) {
 
 /**
  * Open native OS file dialog to select audio or video file(s).
+ * Uses native async Tauri command to prevent any window freezing.
  */
 export async function pickMediaFile() {
-  const dialog = await getTauriDialog();
-  if (dialog) {
-    return await dialog.open({
-      multiple: false,
-      filters: [
-        {
-          name: "Audio & Video",
-          extensions: ["mp4", "mov", "webm", "mkv", "mp3", "wav", "m4a", "ogg", "opus", "aac", "flac"],
-        },
-      ],
-    });
+  const core = await getTauriCore();
+  if (core) {
+    try {
+      const selected = await core.invoke("pick_media_file");
+      if (selected) return selected;
+      if (selected === null) return null; // user cancelled
+    } catch (e) {
+      console.warn("Native pick_media_file command error:", e);
+    }
   }
-  return null;
+
+  const dialog = await getTauriDialog();
+  if (dialog && typeof dialog.open === "function") {
+    try {
+      const res = await dialog.open({
+        multiple: false,
+        filters: [
+          {
+            name: "Audio & Video",
+            extensions: ["mp4", "mov", "webm", "mkv", "mp3", "wav", "m4a", "ogg", "opus", "aac", "flac"],
+          },
+        ],
+      });
+      if (res) return typeof res === "string" ? res : res[0];
+      if (res === null) return null;
+    } catch (err) {
+      console.warn("plugin dialog.open error:", err);
+    }
+  }
+
+  // Universal HTML5 file picker fallback for browser preview
+  return new Promise((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "video/*,audio/*,.mp4,.mov,.mkv,.mp3,.wav,.m4a";
+    input.style.display = "none";
+    input.onchange = (e) => {
+      const file = e.target.files?.[0];
+      if (file) {
+        resolve(file.name || "selected_sermon.mp4");
+      } else {
+        resolve(null);
+      }
+      if (input.parentNode) input.parentNode.removeChild(input);
+    };
+    input.oncancel = () => {
+      resolve(null);
+      if (input.parentNode) input.parentNode.removeChild(input);
+    };
+    document.body.appendChild(input);
+    input.click();
+  });
 }
 
 /**

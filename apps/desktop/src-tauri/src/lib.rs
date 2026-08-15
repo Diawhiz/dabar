@@ -224,6 +224,29 @@ async fn check_dependencies(state: State<'_, AppState>) -> Result<deps::DepsStat
     Ok(deps::check_all(&state.app_data_dir).await)
 }
 
+/// Open a native file picker to select a sermon audio or video file.
+/// Uses an async channel so the main window message loop never freezes.
+#[tauri::command]
+async fn pick_media_file(app: AppHandle) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+
+    app.dialog()
+        .file()
+        .add_filter(
+            "Audio & Video Files",
+            &[
+                "mp4", "mov", "webm", "mkv", "mp3", "wav", "m4a", "ogg", "opus", "aac", "flac",
+                "MP4", "MOV", "WEBM", "MKV", "MP3", "WAV", "M4A", "OGG", "OPUS", "AAC", "FLAC",
+            ],
+        )
+        .pick_file(move |file_path| {
+            let _ = tx.send(file_path.map(|p| p.to_string()));
+        });
+
+    rx.await.map_err(|e| e.to_string())
+}
+
 /// Download yt-dlp binary to the app data directory.
 #[tauri::command]
 async fn download_yt_dlp(state: State<'_, AppState>) -> Result<String, String> {
@@ -405,6 +428,7 @@ pub fn run() {
             get_settings,
             save_settings,
             check_dependencies,
+            pick_media_file,
             download_yt_dlp,
             download_ffmpeg,
             download_whisper_model,

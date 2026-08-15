@@ -120,6 +120,7 @@ async fn start_pipeline(
     // Spawn pipeline in background — never blocks the UI
     let db_clone = state.db.clone();
     let app_clone = app.clone();
+    let app_data_dir_clone = state.app_data_dir.clone();
     tokio::spawn(async move {
         let result = pipeline::run_pipeline(
             app_clone.clone(),
@@ -128,16 +129,38 @@ async fn start_pipeline(
             pipeline_source,
             api_key,
             transcription_backend,
-            output_dir,
+            app_data_dir_clone,
         )
         .await;
 
         if let Err(err) = result {
-            handle_pipeline_failure(&app_clone, &db_clone, sermon_id, err).await;
+            pipeline::handle_pipeline_failure(&app_clone, &db_clone, sermon_id, err).await;
         }
     });
 
     Ok(sermon_id.to_string())
+}
+
+/// Retry highlight detection for a sermon that has already been transcribed.
+#[tauri::command]
+async fn retry_highlights(
+    app: AppHandle,
+    sermon_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<dabar_core::Highlight>, String> {
+    let sermon_id = Uuid::parse_str(&sermon_id).map_err(|e| e.to_string())?;
+    let api_key = state
+        .db
+        .get_setting("groq_api_key")
+        .await
+        .ok()
+        .flatten()
+        .or_else(|| std::env::var("GROQ_API_KEY").ok())
+        .unwrap_or_default();
+
+    pipeline::retry_highlights_pipeline(app, state.db.clone(), sermon_id, api_key)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Render a specific highlight clip to disk and return the output file path.
@@ -439,6 +462,7 @@ pub fn run() {
             get_offline_status,
             open_in_explorer,
             get_hardware_info,
+            retry_highlights,
         ])
         .run(tauri::generate_context!())
         .expect("Error running Dabar desktop app");

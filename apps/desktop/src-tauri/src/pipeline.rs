@@ -69,7 +69,7 @@ fn emit_complete(app: &AppHandle, sermon_id: Uuid) {
             sermon_id: sermon_id.to_string(),
             stage: "ready".to_string(),
             progress: 100,
-            detail: "Your sermon has been processed. Clips are ready to review.".to_string(),
+            detail: "Your sermon has been processed. Clips and manuscript are ready.".to_string(),
             is_error: false,
             is_complete: true,
         },
@@ -102,10 +102,13 @@ pub async fn run_pipeline(
     source: PipelineSource,
     api_key: String,
     transcription_backend: dabar_core::whisper::TranscriptionBackend,
-    _output_dir: PathBuf,
+    app_data_dir: PathBuf,
 ) -> Result<()> {
     let temp_dir = std::env::temp_dir().join(format!("dabar_{sermon_id}"));
     tokio::fs::create_dir_all(&temp_dir).await?;
+
+    let audio_storage_dir = app_data_dir.join("audio");
+    let _ = tokio::fs::create_dir_all(&audio_storage_dir).await;
 
     // ── Stage 1: Download / Locate audio ─────────────────────────────────────
 
@@ -119,9 +122,17 @@ pub async fn run_pipeline(
             if let Some(title) = &downloaded.title {
                 let _ = db.update_title(sermon_id, title).await;
             }
-            db.save_checkpoint(sermon_id, "downloading", &downloaded.path.to_string_lossy()).await?;
-            emit(&app, sermon_id, "downloading", 100, "Audio downloaded successfully.");
-            downloaded.path
+            
+            // Persist audio in app storage for local playback and export
+            let persistent_path = audio_storage_dir.join(format!("{sermon_id}.mp3"));
+            if let Err(e) = tokio::fs::copy(&downloaded.path, &persistent_path).await {
+                tracing::warn!("Could not copy audio to persistent storage: {e}");
+                downloaded.path
+            } else {
+                db.save_checkpoint(sermon_id, "downloading", &persistent_path.to_string_lossy()).await?;
+                emit(&app, sermon_id, "downloading", 100, "Audio downloaded successfully.");
+                persistent_path
+            }
         }
         PipelineSource::GoogleDrive(url) => {
             emit(&app, sermon_id, "downloading", 10, "Downloading audio from Google Drive…");
@@ -129,9 +140,16 @@ pub async fn run_pipeline(
             if let Some(title) = &downloaded.title {
                 let _ = db.update_title(sermon_id, title).await;
             }
-            db.save_checkpoint(sermon_id, "downloading", &downloaded.path.to_string_lossy()).await?;
-            emit(&app, sermon_id, "downloading", 100, "Audio downloaded from Google Drive.");
-            downloaded.path
+
+            let persistent_path = audio_storage_dir.join(format!("{sermon_id}.mp3"));
+            if let Err(e) = tokio::fs::copy(&downloaded.path, &persistent_path).await {
+                tracing::warn!("Could not copy audio to persistent storage: {e}");
+                downloaded.path
+            } else {
+                db.save_checkpoint(sermon_id, "downloading", &persistent_path.to_string_lossy()).await?;
+                emit(&app, sermon_id, "downloading", 100, "Audio downloaded from Google Drive.");
+                persistent_path
+            }
         }
         PipelineSource::LocalFile(path) => {
             // Validate the file exists and is readable
@@ -168,10 +186,8 @@ pub async fn run_pipeline(
     )
     .await?;
 
-    // Clean up temp download after successful transcription
-    if matches!(source, PipelineSource::YouTube(_) | PipelineSource::GoogleDrive(_)) {
-        let _ = tokio::fs::remove_dir_all(&temp_dir).await;
-    }
+    // Clean up temporary work directory if applicable
+    let _ = tokio::fs::remove_dir_all(&temp_dir).await;
 
     if segments.is_empty() {
         anyhow::bail!("Transcription produced no text. The audio may be silent or unsupported.");
@@ -179,22 +195,59 @@ pub async fn run_pipeline(
 
     emit(&app, sermon_id, "transcribing", 100, "Transcription complete.");
 
-    // ── Stage 3: Highlight detection (only in online mode with API key) ───────
+    // ── Stage 3: Highlight detection (runs when Groq API key is present) ──────
 
-    let highlights = if !api_key.is_empty()
-        && matches!(transcription_backend, dabar_core::whisper::TranscriptionBackend::Groq { .. })
-    {
-        db.update_status(sermon_id, SermonStatus::Detecting).await?;
-        emit(&app, sermon_id, "detecting", 10, "Analysing sermon for key moments…");
+    let (highlights, highlight_status, highlight_error, total_candidates, passed_candidates) =
+        if !api_key.trim().is_empty() {
+            db.update_status(sermon_id, SermonStatus::Detecting).await?;
+            emit(&app, sermon_id, "detecting", 10, "Analysing sermon transcript for key moments…");
 
-        let hl = dabar_core::llm::detect_sermon_highlights(&api_key, &segments).await?;
-        emit(&app, sermon_id, "detecting", 100, "Key moments identified.");
-        hl
-    } else {
-        // Offline mode: skip highlight detection, transcript-only
-        tracing::info!("Offline mode or no API key — skipping highlight detection for {sermon_id}");
-        Vec::new()
-    };
+            match dabar_core::llm::detect_sermon_highlights_report(api_key.trim(), &segments).await {
+                Ok(report) => {
+                    emit(
+                        &app,
+                        sermon_id,
+                        "detecting",
+                        100,
+                        &format!("Identified {} key moments.", report.total_passed),
+                    );
+                    let status_str = match report.status {
+                        dabar_core::llm::HighlightDetectionStatus::Success => "success",
+                        dabar_core::llm::HighlightDetectionStatus::NoCandidatesProposed => "no_candidates",
+                        dabar_core::llm::HighlightDetectionStatus::AllCandidatesFiltered => "all_filtered",
+                        dabar_core::llm::HighlightDetectionStatus::Failed => "failed",
+                    };
+                    (
+                        report.highlights,
+                        Some(status_str.to_string()),
+                        report.error_message,
+                        Some(report.total_proposed as u32),
+                        Some(report.total_passed as u32),
+                    )
+                }
+                Err(err) => {
+                    let err_msg = err.to_string();
+                    tracing::error!("Highlight detection failed for sermon {sermon_id}: {err_msg}");
+                    emit(&app, sermon_id, "detecting", 100, "Highlight analysis finished with warnings.");
+                    (
+                        Vec::new(),
+                        Some("failed".to_string()),
+                        Some(err_msg),
+                        None,
+                        Some(0),
+                    )
+                }
+            }
+        } else {
+            tracing::info!("No Groq API key configured — skipping highlight detection for {sermon_id}");
+            (
+                Vec::new(),
+                Some("no_api_key".to_string()),
+                Some("Add a Groq API key in Settings to generate clips from this sermon.".to_string()),
+                None,
+                Some(0),
+            )
+        };
 
     // ── Stage 4: Save results ─────────────────────────────────────────────────
 
@@ -206,8 +259,13 @@ pub async fn run_pipeline(
     db.save_sermon_results(
         sermon_id,
         stored_title.as_deref(),
+        Some(&audio_path.to_string_lossy()),
         &highlights,
         &segments,
+        highlight_status.as_deref(),
+        highlight_error.as_deref(),
+        total_candidates,
+        passed_candidates,
     )
     .await?;
 
@@ -216,6 +274,51 @@ pub async fn run_pipeline(
     tracing::info!("Pipeline completed successfully for sermon {sermon_id}");
     emit_complete(&app, sermon_id);
     Ok(())
+}
+
+/// Re-runs highlight detection on an already transcribed sermon.
+pub async fn retry_highlights_pipeline(
+    app: AppHandle,
+    db: Db,
+    sermon_id: Uuid,
+    api_key: String,
+) -> Result<Vec<dabar_core::Highlight>> {
+    if api_key.trim().is_empty() {
+        anyhow::bail!("Groq API key is required. Please configure it in Settings.");
+    }
+
+    let sermon = db
+        .get_sermon(sermon_id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("Sermon not found: {sermon_id}"))?;
+
+    if sermon.transcript_segments.is_empty() {
+        anyhow::bail!("This sermon has no transcript segments to analyze.");
+    }
+
+    emit(&app, sermon_id, "detecting", 10, "Re-analyzing transcript for key moments…");
+
+    let report = dabar_core::llm::detect_sermon_highlights_report(api_key.trim(), &sermon.transcript_segments).await?;
+
+    let status_str = match report.status {
+        dabar_core::llm::HighlightDetectionStatus::Success => "success",
+        dabar_core::llm::HighlightDetectionStatus::NoCandidatesProposed => "no_candidates",
+        dabar_core::llm::HighlightDetectionStatus::AllCandidatesFiltered => "all_filtered",
+        dabar_core::llm::HighlightDetectionStatus::Failed => "failed",
+    };
+
+    db.update_highlights(
+        sermon_id,
+        &report.highlights,
+        status_str,
+        report.error_message.as_deref(),
+        Some(report.total_proposed as u32),
+        Some(report.total_passed as u32),
+    )
+    .await?;
+
+    emit(&app, sermon_id, "detecting", 100, &format!("Identified {} key moments.", report.total_passed));
+    Ok(report.highlights)
 }
 
 /// Handles a failed pipeline run: marks the sermon as failed in the DB,
@@ -257,11 +360,16 @@ pub async fn render_clip_to_disk(
         .collect();
     let output_path = output_dir.join(format!("dabar_{safe_title}.mp4"));
 
-    // For local files, use the source path directly; for YouTube, resolve stream URL.
-    let input_source: String = if sermon.youtube_url.starts_with('/') || {
-        let p = std::path::Path::new(&sermon.youtube_url);
-        p.exists()
-    } {
+    // Prefer local audio_path or youtube_url
+    let input_source: String = if let Some(audio_p) = &sermon.audio_path {
+        if Path::new(audio_p).exists() {
+            audio_p.clone()
+        } else if Path::new(&sermon.youtube_url).exists() {
+            sermon.youtube_url.clone()
+        } else {
+            dabar_core::downloader::resolve_stream_url(&sermon.youtube_url).await?
+        }
+    } else if Path::new(&sermon.youtube_url).exists() {
         sermon.youtube_url.clone()
     } else {
         dabar_core::downloader::resolve_stream_url(&sermon.youtube_url).await?

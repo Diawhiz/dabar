@@ -6,6 +6,7 @@ import {
   renderClip,
   openInExplorer,
   getAssetUrl,
+  retryHighlights,
 } from "../lib/api.js";
 import { cleanSermonTitle, formatSeconds } from "../lib/formatters.js";
 import ClipCard from "../components/ClipCard.jsx";
@@ -28,83 +29,80 @@ export default function Clips() {
   const [sermonUrl, setSermonUrl] = useState("");
   const [mediaAssetUrl, setMediaAssetUrl] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRetryingHighlights, setIsRetryingHighlights] = useState(false);
   const [previewClip, setPreviewClip] = useState(null);
   const [exportModalClip, setExportModalClip] = useState(null);
   const [renderingClipId, setRenderingClipId] = useState(null);
   const [exportedNotice, setExportedNotice] = useState(null);
-  const videoRef = useRef(null);
+  const previewMediaRef = useRef(null);
+
+  async function loadClips() {
+    try {
+      let targetId = sermonId;
+      if (!targetId) {
+        const list = await listSermons();
+        if (list && list.length > 0) targetId = list[0].id;
+      }
+      if (!targetId) {
+        setIsLoading(false);
+        return;
+      }
+
+      const data = await getSermon(targetId);
+      if (!data) {
+        setIsLoading(false);
+        return;
+      }
+
+      setSermon(data);
+      const sourceUrl = data.audio_path || data.youtube_url || "";
+      setSermonUrl(data.youtube_url || "");
+
+      // If local file path, resolve asset URL for video/audio playback
+      if (sourceUrl && !sourceUrl.startsWith("http://") && !sourceUrl.startsWith("https://")) {
+        getAssetUrl(sourceUrl).then((assetUrl) => {
+          setMediaAssetUrl(assetUrl);
+        });
+      } else if (sourceUrl.startsWith("http://") || sourceUrl.startsWith("https://")) {
+        setMediaAssetUrl(sourceUrl);
+      }
+
+      const hlList = Array.isArray(data.highlights) ? data.highlights : [];
+      if (hlList.length > 0) {
+        const structured = hlList.map((hl) => ({
+          id: hl.id,
+          start: hl.start_time,
+          end: hl.end_time,
+          score: hl.score,
+          title: hl.title,
+          highlight_title: hl.title,
+          why: hl.reason || hl.suggested_hook_text || "Key teaching moment",
+          duration: `${formatSeconds(hl.start_time)} – ${formatSeconds(
+            hl.end_time
+          )}`,
+          is_highlight: true,
+        }));
+        setHighlights(structured);
+      } else {
+        setHighlights([]);
+      }
+    } catch (err) {
+      console.warn("Could not load clips:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  }
 
   useEffect(() => {
-    let mounted = true;
     setIsLoading(true);
-
-    async function loadClips() {
-      try {
-        let targetId = sermonId;
-        if (!targetId) {
-          const list = await listSermons();
-          if (list && list.length > 0) targetId = list[0].id;
-        }
-        if (!targetId) {
-          if (mounted) setIsLoading(false);
-          return;
-        }
-
-        const data = await getSermon(targetId);
-        if (!mounted || !data) {
-          if (mounted) setIsLoading(false);
-          return;
-        }
-
-        setSermon(data);
-        const sourceUrl = data.youtube_url || "";
-        setSermonUrl(sourceUrl);
-
-        // If local file path, resolve asset URL for video/audio playback
-        if (sourceUrl && !sourceUrl.startsWith("http://") && !sourceUrl.startsWith("https://")) {
-          getAssetUrl(sourceUrl).then((assetUrl) => {
-            if (mounted) setMediaAssetUrl(assetUrl);
-          });
-        }
-
-        const hlList = Array.isArray(data.highlights) ? data.highlights : [];
-        if (hlList.length > 0) {
-          const structured = hlList.map((hl) => ({
-            id: hl.id,
-            start: hl.start_time,
-            end: hl.end_time,
-            score: hl.score,
-            title: hl.title,
-            highlight_title: hl.title,
-            why: hl.reason || hl.suggested_hook_text || "Key teaching moment",
-            duration: `${formatSeconds(hl.start_time)} – ${formatSeconds(
-              hl.end_time
-            )}`,
-            is_highlight: true,
-          }));
-          setHighlights(structured);
-        } else {
-          // Real empty state — zero fake mock data
-          setHighlights([]);
-        }
-      } catch (err) {
-        console.warn("Could not load clips:", err);
-      } finally {
-        if (mounted) setIsLoading(false);
-      }
-    }
-
     loadClips();
-    return () => {
-      mounted = false;
-    };
   }, [sermonId]);
 
   // When previewClip changes and local media element exists, seek to clip.start
   useEffect(() => {
-    if (previewClip && videoRef.current) {
-      videoRef.current.currentTime = previewClip.start || 0;
-      videoRef.current.play().catch(() => {});
+    if (previewClip && previewMediaRef.current) {
+      previewMediaRef.current.currentTime = previewClip.start || 0;
+      previewMediaRef.current.play().catch(() => {});
     }
   }, [previewClip]);
 
@@ -137,6 +135,24 @@ export default function Clips() {
     }
   }
 
+  async function handleRetryDetection() {
+    if (!sermon?.id) return;
+    setIsRetryingHighlights(true);
+    try {
+      const newHighlights = await retryHighlights(sermon.id);
+      if (Array.isArray(newHighlights) && newHighlights.length > 0) {
+        await loadClips();
+      } else {
+        await loadClips();
+      }
+    } catch (err) {
+      alert("Highlight detection retry failed: " + (err.message || err));
+      await loadClips();
+    } finally {
+      setIsRetryingHighlights(false);
+    }
+  }
+
   const statusStr = (sermon?.status || "").toLowerCase();
   const isProcessing =
     statusStr.includes("queued") ||
@@ -145,6 +161,9 @@ export default function Clips() {
     statusStr.includes("detect") ||
     statusStr.includes("process");
   const isFailed = statusStr.includes("fail") || statusStr.includes("error");
+
+  const hlStatus = (sermon?.highlight_status || "").toLowerCase();
+  const hlError = sermon?.highlight_error || sermon?.error_message;
 
   return (
     <div className="flex flex-col min-h-screen pb-16">
@@ -170,6 +189,21 @@ export default function Clips() {
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
+          {highlights.length === 0 && !isProcessing && (
+            <Btn
+              size="sm"
+              variant="secondary"
+              onClick={handleRetryDetection}
+              disabled={isRetryingHighlights}
+            >
+              <i
+                className={`bx ${
+                  isRetryingHighlights ? "bx-loader-alt bx-spin" : "bx-refresh"
+                } text-sm`}
+              />
+              <span>{isRetryingHighlights ? "Analyzing…" : "Retry Highlights"}</span>
+            </Btn>
+          )}
           <Btn
             variant="secondary"
             onClick={() => navigate(`/transcript/${sermonId || sermon?.id}`)}
@@ -214,10 +248,14 @@ export default function Clips() {
 
       {/* ── Main Content ─────────────────────────────────────────── */}
       <div className="page-content flex-1 space-y-6">
-        {isLoading ? (
+        {isLoading || isRetryingHighlights ? (
           <div className="py-20 text-center space-y-2">
             <i className="bx bx-loader-alt bx-spin text-xl text-accent" />
-            <p className="text-xs text-secondary">Gathering sermon moments…</p>
+            <p className="text-xs text-secondary">
+              {isRetryingHighlights
+                ? "Re-analyzing sermon transcript for highlights…"
+                : "Gathering sermon moments…"}
+            </p>
           </div>
         ) : highlights.length > 0 ? (
           <>
@@ -268,17 +306,20 @@ export default function Clips() {
               </section>
             )}
 
-            {/* ── Universal Clip Preview Player (YouTube + Local Video/Audio) ── */}
+            {/* ── Universal Clip Preview Player (Local Audio/Video + YouTube) ── */}
             {previewClip && (
               <div className="border border-border bg-surface rounded-md p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-xs">
                     <span className="font-semibold text-accent flex items-center gap-1">
                       <i className="bx bx-play-circle text-sm" />
-                      Previewing Clip Moment
+                      Previewing Moment
                     </span>
                     <span className="text-secondary font-mono">
                       {previewClip.highlight_title || previewClip.title}
+                    </span>
+                    <span className="text-muted font-mono text-[11px]">
+                      ({formatSeconds(previewClip.start)} – {formatSeconds(previewClip.end)})
                     </span>
                   </div>
                   <button
@@ -290,7 +331,37 @@ export default function Clips() {
                   </button>
                 </div>
 
-                {videoId ? (
+                {mediaAssetUrl ? (
+                  /* Local Audio/Video playback */
+                  <div className="rounded border border-border bg-base p-4 space-y-3">
+                    <audio
+                      ref={previewMediaRef}
+                      src={mediaAssetUrl}
+                      controls
+                      className="w-full"
+                      onLoadedMetadata={() => {
+                        if (previewMediaRef.current) {
+                          previewMediaRef.current.currentTime = previewClip.start || 0;
+                          previewMediaRef.current.play().catch(() => {});
+                        }
+                      }}
+                      onTimeUpdate={() => {
+                        if (
+                          previewMediaRef.current &&
+                          previewClip.end &&
+                          previewMediaRef.current.currentTime >= previewClip.end
+                        ) {
+                          previewMediaRef.current.pause();
+                        }
+                      }}
+                    />
+                    {previewClip.why && (
+                      <p className="text-xs text-secondary italic">
+                        "{previewClip.why}"
+                      </p>
+                    )}
+                  </div>
+                ) : videoId ? (
                   /* YouTube Embed Player */
                   <div className="aspect-video w-full rounded overflow-hidden border border-border bg-black">
                     <iframe
@@ -303,48 +374,12 @@ export default function Clips() {
                       allowFullScreen
                     />
                   </div>
-                ) : mediaAssetUrl ? (
-                  /* Local Video / Audio Player */
-                  <div className="rounded overflow-hidden border border-border bg-black flex flex-col items-center justify-center p-2">
-                    <video
-                      ref={videoRef}
-                      src={mediaAssetUrl}
-                      controls
-                      className="max-h-80 w-full rounded"
-                      onLoadedMetadata={() => {
-                        if (videoRef.current) {
-                          videoRef.current.currentTime = previewClip.start || 0;
-                          videoRef.current.play().catch(() => {});
-                        }
-                      }}
-                      onTimeUpdate={() => {
-                        if (
-                          videoRef.current &&
-                          previewClip.end &&
-                          videoRef.current.currentTime >= previewClip.end
-                        ) {
-                          videoRef.current.pause();
-                        }
-                      }}
-                    />
-                  </div>
                 ) : (
-                  /* Audio Range Fallback */
-                  <div className="border border-border bg-base p-4 rounded-md space-y-2">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-semibold text-primary">
-                        Moment Time Range
-                      </span>
-                      <span className="font-mono text-accent">
-                        {formatSeconds(previewClip.start)} –{" "}
-                        {formatSeconds(previewClip.end)}
-                      </span>
-                    </div>
-                    {previewClip.why && (
-                      <p className="text-xs text-secondary leading-relaxed italic">
-                        "{previewClip.why}"
-                      </p>
-                    )}
+                  <div className="border border-border bg-base p-4 rounded-md text-xs text-secondary">
+                    <p className="font-semibold text-primary mb-1">Preview Audio Unavailable</p>
+                    <p className="text-[11px] text-muted">
+                      Source audio file could not be found at {sermon?.audio_path || sermon?.youtube_url || "unknown path"}.
+                    </p>
                   </div>
                 )}
               </div>
@@ -372,24 +407,114 @@ export default function Clips() {
               <span>View Live Progress</span>
             </Btn>
           </div>
+        ) : hlStatus === "failed" || hlError ? (
+          /* Highlight detection failed specifically */
+          <div className="border border-danger/30 bg-danger-muted p-8 rounded-md text-center space-y-3 max-w-lg mx-auto my-8">
+            <i className="bx bx-error-circle text-2xl text-danger" />
+            <div>
+              <p className="text-sm font-semibold text-danger">
+                Highlight Detection Encountered an Issue
+              </p>
+              <p className="text-xs text-secondary mt-1 max-w-md mx-auto break-words font-mono">
+                {hlError || "The Groq LLM request failed to return highlight clips."}
+              </p>
+            </div>
+            <div className="flex items-center justify-center gap-2 pt-2">
+              <Btn
+                size="sm"
+                onClick={handleRetryDetection}
+                disabled={isRetryingHighlights}
+              >
+                <i className="bx bx-refresh text-sm" />
+                <span>Retry Highlight Detection</span>
+              </Btn>
+              <Btn
+                size="sm"
+                variant="secondary"
+                onClick={() => navigate("/settings")}
+              >
+                Check API Settings
+              </Btn>
+              <Btn
+                size="sm"
+                variant="ghost"
+                onClick={() => navigate(`/transcript/${sermonId || sermon?.id}`)}
+              >
+                Read Manuscript
+              </Btn>
+            </div>
+          </div>
+        ) : hlStatus === "all_filtered" ? (
+          /* Moments were proposed but all filtered out by validation */
+          <div className="border border-border rounded-md bg-surface p-10 text-center space-y-3 max-w-md mx-auto my-8">
+            <div className="w-10 h-10 rounded-full bg-surface-hover text-accent flex items-center justify-center mx-auto text-base border border-border">
+              <i className="bx bx-slider" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-primary">
+                No highlights met duration requirements
+              </p>
+              <p className="text-[11px] text-muted mt-0.5">
+                The model proposed {sermon?.total_candidates || "some"} moments, but they were outside the standard 30-90s duration window.
+              </p>
+            </div>
+            <div className="flex items-center justify-center gap-2 pt-2">
+              <Btn
+                size="sm"
+                onClick={handleRetryDetection}
+                disabled={isRetryingHighlights}
+              >
+                Retry Analysis
+              </Btn>
+              <Btn
+                size="sm"
+                variant="secondary"
+                onClick={() => navigate(`/transcript/${sermonId || sermon?.id}`)}
+              >
+                Read Full Manuscript
+              </Btn>
+            </div>
+          </div>
+        ) : hlStatus === "no_api_key" ? (
+          /* No API key configured */
+          <div className="border border-border rounded-md bg-surface p-10 text-center space-y-3 max-w-md mx-auto my-8">
+            <div className="w-10 h-10 rounded-full bg-surface-hover text-accent flex items-center justify-center mx-auto text-base border border-border">
+              <i className="bx bx-key" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-primary">
+                Groq API key required for highlight detection
+              </p>
+              <p className="text-[11px] text-muted mt-0.5">
+                To extract vertical video clips, configure your Groq API key in Settings.
+              </p>
+            </div>
+            <div className="flex items-center justify-center gap-2 pt-2">
+              <Btn size="sm" onClick={() => navigate("/settings")}>
+                Configure API Key
+              </Btn>
+              <Btn
+                size="sm"
+                variant="secondary"
+                onClick={() => navigate(`/transcript/${sermonId || sermon?.id}`)}
+              >
+                Read Full Manuscript
+              </Btn>
+            </div>
+          </div>
         ) : isFailed ? (
-          /* Failed state */
+          /* General sermon pipeline failure */
           <div className="border border-danger/30 bg-danger-muted p-8 rounded-md text-center space-y-3 max-w-md mx-auto my-8">
             <i className="bx bx-error-circle text-2xl text-danger" />
             <div>
               <p className="text-sm font-semibold text-danger">
-                Highlight Generation Failed
+                Sermon Processing Failed
               </p>
               <p className="text-xs text-secondary mt-1">
-                {sermon?.error_message ||
-                  "An error occurred while analyzing key moments for this sermon."}
+                {sermon?.error_message || "An error occurred while processing this sermon recording."}
               </p>
             </div>
-            <Btn
-              size="sm"
-              variant="secondary"
-              onClick={() => navigate("/dashboard")}
-            >
+            <Btn size="sm" variant="secondary" onClick={() => navigate("/dashboard")}>
               Return to Library
             </Btn>
           </div>
@@ -410,13 +535,17 @@ export default function Clips() {
             <div className="flex items-center justify-center gap-2 pt-2">
               <Btn
                 size="sm"
+                onClick={handleRetryDetection}
+                disabled={isRetryingHighlights}
+              >
+                Retry Analysis
+              </Btn>
+              <Btn
+                size="sm"
                 variant="secondary"
                 onClick={() => navigate(`/transcript/${sermonId || sermon?.id}`)}
               >
                 Read Full Manuscript
-              </Btn>
-              <Btn size="sm" onClick={() => navigate("/dashboard")}>
-                Return to Library
               </Btn>
             </div>
           </div>

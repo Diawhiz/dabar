@@ -32,6 +32,13 @@ impl Db {
             let _ = sqlx::query("DROP TABLE IF EXISTS _sqlx_migrations").execute(&pool).await;
         }
 
+        // Apply any non-breaking column additions for existing local sqlite databases
+        let _ = sqlx::query("ALTER TABLE sermons ADD COLUMN audio_path TEXT").execute(&pool).await;
+        let _ = sqlx::query("ALTER TABLE sermons ADD COLUMN highlight_status TEXT").execute(&pool).await;
+        let _ = sqlx::query("ALTER TABLE sermons ADD COLUMN highlight_error TEXT").execute(&pool).await;
+        let _ = sqlx::query("ALTER TABLE sermons ADD COLUMN total_candidates INTEGER").execute(&pool).await;
+        let _ = sqlx::query("ALTER TABLE sermons ADD COLUMN passed_candidates INTEGER").execute(&pool).await;
+
         tracing::info!("Database connected and migrations applied: {db_path}");
         Ok(Self { pool })
     }
@@ -40,8 +47,8 @@ impl Db {
 
     pub async fn insert_sermon(&self, sermon: &Sermon) -> Result<()> {
         sqlx::query(
-            "INSERT INTO sermons (id, title, source_url, source_type, status, created_at, error_message)
-             VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO sermons (id, title, source_url, source_type, status, created_at, error_message, audio_path, highlight_status, highlight_error, total_candidates, passed_candidates)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(sermon.id.to_string())
         .bind(&sermon.title)
@@ -50,6 +57,11 @@ impl Db {
         .bind(status_to_str(&sermon.status))
         .bind(sermon.created_at.to_rfc3339())
         .bind(&sermon.error_message)
+        .bind(&sermon.audio_path)
+        .bind(&sermon.highlight_status)
+        .bind(&sermon.highlight_error)
+        .bind(sermon.total_candidates.map(|v| v as i64))
+        .bind(sermon.passed_candidates.map(|v| v as i64))
         .execute(&self.pool)
         .await
         .context("inserting sermon")?;
@@ -58,7 +70,7 @@ impl Db {
 
     pub async fn list_sermons(&self) -> Result<Vec<Sermon>> {
         let rows = sqlx::query(
-            "SELECT id, title, source_url, status, created_at, error_message
+            "SELECT id, title, source_url, status, created_at, error_message, audio_path, highlight_status, highlight_error, total_candidates, passed_candidates
              FROM sermons ORDER BY created_at DESC",
         )
         .fetch_all(&self.pool)
@@ -70,7 +82,7 @@ impl Db {
 
     pub async fn get_sermon(&self, id: Uuid) -> Result<Option<Sermon>> {
         let row = sqlx::query(
-            "SELECT id, title, source_url, status, created_at, error_message
+            "SELECT id, title, source_url, status, created_at, error_message, audio_path, highlight_status, highlight_error, total_candidates, passed_candidates
              FROM sermons WHERE id = ?",
         )
         .bind(id.to_string())
@@ -148,8 +160,9 @@ impl Db {
 
     async fn list_transcript_segments(&self, sermon_id: Uuid) -> Result<Vec<TranscriptSegment>> {
         let rows = sqlx::query(
-            "SELECT start_time, end_time, text FROM transcript_segments
-             WHERE sermon_id = ? ORDER BY ordinal ASC",
+            "SELECT start_time, end_time, text
+             FROM transcript_segments WHERE sermon_id = ?
+             ORDER BY ordinal ASC",
         )
         .bind(sermon_id.to_string())
         .fetch_all(&self.pool)
@@ -201,8 +214,13 @@ impl Db {
         &self,
         id: Uuid,
         title: Option<&str>,
+        audio_path: Option<&str>,
         highlights: &[Highlight],
         segments: &[TranscriptSegment],
+        highlight_status: Option<&str>,
+        highlight_error: Option<&str>,
+        total_candidates: Option<u32>,
+        passed_candidates: Option<u32>,
     ) -> Result<()> {
         let mut tx = self.pool.begin().await.context("beginning transaction")?;
 
@@ -214,6 +232,27 @@ impl Db {
                 .await
                 .context("updating sermon title in transaction")?;
         }
+
+        if let Some(ap) = audio_path {
+            sqlx::query("UPDATE sermons SET audio_path = ? WHERE id = ?")
+                .bind(ap)
+                .bind(id.to_string())
+                .execute(&mut *tx)
+                .await
+                .context("updating sermon audio path in transaction")?;
+        }
+
+        sqlx::query(
+            "UPDATE sermons SET highlight_status = ?, highlight_error = ?, total_candidates = ?, passed_candidates = ? WHERE id = ?"
+        )
+        .bind(highlight_status)
+        .bind(highlight_error)
+        .bind(total_candidates.map(|v| v as i64))
+        .bind(passed_candidates.map(|v| v as i64))
+        .bind(id.to_string())
+        .execute(&mut *tx)
+        .await
+        .context("updating highlight status in transaction")?;
 
         for (ordinal, seg) in segments.iter().enumerate() {
             sqlx::query(
@@ -256,6 +295,57 @@ impl Db {
             .context("marking sermon as ready")?;
 
         tx.commit().await.context("committing sermon result transaction")?;
+        Ok(())
+    }
+
+    pub async fn update_highlights(
+        &self,
+        id: Uuid,
+        highlights: &[Highlight],
+        status: &str,
+        error: Option<&str>,
+        total_candidates: Option<u32>,
+        passed_candidates: Option<u32>,
+    ) -> Result<()> {
+        let mut tx = self.pool.begin().await.context("beginning transaction")?;
+
+        sqlx::query("DELETE FROM highlights WHERE sermon_id = ?")
+            .bind(id.to_string())
+            .execute(&mut *tx)
+            .await
+            .context("clearing existing highlights")?;
+
+        for hl in highlights {
+            sqlx::query(
+                "INSERT INTO highlights (id, sermon_id, title, start_time, end_time, score, reason, suggested_hook_text)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            )
+            .bind(hl.id.to_string())
+            .bind(id.to_string())
+            .bind(&hl.title)
+            .bind(hl.start_time as f64)
+            .bind(hl.end_time as f64)
+            .bind(hl.score as f64)
+            .bind(&hl.reason)
+            .bind(&hl.suggested_hook_text)
+            .execute(&mut *tx)
+            .await
+            .context("inserting highlight")?;
+        }
+
+        sqlx::query(
+            "UPDATE sermons SET highlight_status = ?, highlight_error = ?, total_candidates = ?, passed_candidates = ? WHERE id = ?"
+        )
+        .bind(status)
+        .bind(error)
+        .bind(total_candidates.map(|v| v as i64))
+        .bind(passed_candidates.map(|v| v as i64))
+        .bind(id.to_string())
+        .execute(&mut *tx)
+        .await
+        .context("updating sermon highlight status")?;
+
+        tx.commit().await.context("committing highlight update")?;
         Ok(())
     }
 
@@ -319,24 +409,22 @@ impl Db {
         )
         .fetch_all(&self.pool)
         .await
-        .context("listing incomplete pipelines")?;
+        .context("listing incomplete checkpoints")?;
 
         rows.into_iter()
-            .map(|row| {
-                let id_str: String = row.try_get("sermon_id")?;
-                let stage: String = row.try_get("last_stage")?;
-                let path: String = row.try_get("temp_path")?;
+            .map(|r| {
+                let id_str: String = r.try_get("sermon_id")?;
+                let stage: String = r.try_get("last_stage")?;
+                let path: String = r.try_get("temp_path")?;
                 Ok((Uuid::parse_str(&id_str)?, stage, path))
             })
             .collect()
     }
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-fn row_to_sermon(row: sqlx::sqlite::SqliteRow) -> Result<Sermon> {
-    let status_str: String = row.try_get("status")?;
+pub fn row_to_sermon(row: sqlx::sqlite::SqliteRow) -> Result<Sermon> {
     let created_at_str: String = row.try_get("created_at")?;
+    let status_str: String = row.try_get("status")?;
     let created_at = DateTime::parse_from_rfc3339(&created_at_str)?.with_timezone(&Utc);
 
     Ok(Sermon {
@@ -348,6 +436,11 @@ fn row_to_sermon(row: sqlx::sqlite::SqliteRow) -> Result<Sermon> {
         error_message: row.try_get("error_message")?,
         highlights: Vec::new(),
         transcript_segments: Vec::new(),
+        audio_path: row.try_get("audio_path").ok().flatten(),
+        highlight_status: row.try_get("highlight_status").ok().flatten(),
+        highlight_error: row.try_get("highlight_error").ok().flatten(),
+        total_candidates: row.try_get::<Option<i64>, _>("total_candidates").ok().flatten().map(|v| v as u32),
+        passed_candidates: row.try_get::<Option<i64>, _>("passed_candidates").ok().flatten().map(|v| v as u32),
     })
 }
 

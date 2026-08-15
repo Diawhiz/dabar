@@ -2,13 +2,18 @@
 -- Consolidated initial migration for the local desktop database.
 
 CREATE TABLE IF NOT EXISTS sermons (
-    id          TEXT PRIMARY KEY,
-    title       TEXT NOT NULL DEFAULT 'Untitled Sermon',
-    source_url  TEXT NOT NULL DEFAULT '',   -- YouTube URL or local file path
-    source_type TEXT NOT NULL DEFAULT 'youtube',  -- 'youtube' | 'local'
-    status      TEXT NOT NULL DEFAULT 'queued',
-    created_at  TEXT NOT NULL,
-    error_message TEXT
+    id                TEXT PRIMARY KEY,
+    title             TEXT NOT NULL DEFAULT 'Untitled Sermon',
+    source_url        TEXT NOT NULL DEFAULT '',   -- YouTube URL or local file path
+    source_type       TEXT NOT NULL DEFAULT 'youtube',  -- 'youtube' | 'local'
+    status            TEXT NOT NULL DEFAULT 'queued',
+    created_at        TEXT NOT NULL,
+    error_message     TEXT,
+    audio_path        TEXT,
+    highlight_status  TEXT,
+    highlight_error   TEXT,
+    total_candidates  INTEGER,
+    passed_candidates INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS highlights (

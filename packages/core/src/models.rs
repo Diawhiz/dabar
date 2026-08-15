@@ -24,6 +24,16 @@ pub struct Sermon {
     pub error_message: Option<String>,
     pub highlights: Vec<Highlight>,
     pub transcript_segments: Vec<TranscriptSegment>,
+    #[serde(default)]
+    pub audio_path: Option<String>,
+    #[serde(default)]
+    pub highlight_status: Option<String>,
+    #[serde(default)]
+    pub highlight_error: Option<String>,
+    #[serde(default)]
+    pub total_candidates: Option<u32>,
+    #[serde(default)]
+    pub passed_candidates: Option<u32>,
 }
 
 impl Sermon {
@@ -37,6 +47,11 @@ impl Sermon {
             error_message: None,
             highlights: Vec::new(),
             transcript_segments: Vec::new(),
+            audio_path: None,
+            highlight_status: None,
+            highlight_error: None,
+            total_candidates: None,
+            passed_candidates: None,
         }
     }
 }

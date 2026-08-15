@@ -1,80 +1,96 @@
 import { Outlet, NavLink } from "react-router-dom";
-import Waveform from "./Waveform.jsx";
-
-const navLinks = [
-  { to: "/dashboard", label: "Dashboard", icon: "bx-grid-alt" },
-  { to: "/upload", label: "Upload", icon: "bx-upload" },
-  { to: "/clips", label: "Clips", icon: "bx-film" },
-  { to: "/settings", label: "Settings", icon: "bx-cog" },
-];
+import { useTheme } from "../context/ThemeContext.jsx";
 
 export default function Shell() {
+  const { theme, toggleTheme } = useTheme();
+
   return (
-    <div className="flex min-h-screen flex-col bg-paper text-ink font-body overflow-x-hidden">
-      {/* Header */}
-      <header className="sticky top-0 z-30 bg-paper/95 backdrop-blur-sm border-b border-border">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4 sm:px-8">
-          {/* Wordmark */}
-          <NavLink to="/" className="font-display text-2xl font-bold tracking-tight text-ink hover:text-ember transition-colors">
-            DABAR
-          </NavLink>
-
-          {/* Desktop nav */}
-          <nav className="hidden items-center gap-1 sm:flex" aria-label="Main navigation">
-            {navLinks.map(({ to, label, icon }) => (
-              <NavLink
-                key={to}
-                to={to}
-                className={({ isActive }) =>
-                  `inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-card transition-colors duration-150 ${
-                    isActive
-                      ? "text-ember"
-                      : "text-muted hover:text-ink"
-                  }`
-                }
-              >
-                <i className={`bx ${icon} text-lg`} aria-hidden="true" />
-                {label}
-              </NavLink>
-            ))}
-          </nav>
+    <div className="app-shell bg-base text-primary">
+      {/* ── Left Sidebar Navigation ─────────────────────────────────── */}
+      <aside className="sidebar">
+        {/* Brand Header */}
+        <div className="sidebar-brand">
+          <div className="w-6 h-6 rounded bg-accent text-white flex items-center justify-center font-mono font-bold text-xs">
+            ד
+          </div>
+          <div className="flex flex-col">
+            <span className="font-sans text-xs font-bold tracking-tight text-primary leading-none">
+              DABAR
+            </span>
+            <span className="font-mono text-[9px] text-secondary leading-tight mt-0.5">
+              studio
+            </span>
+          </div>
         </div>
-      </header>
 
-      {/* Main content */}
-      <main className="mx-auto w-full max-w-6xl flex-1 min-w-0 px-5 py-8 sm:px-8">
-        <Outlet />
-      </main>
-
-      {/* Footer */}
-      <footer className="border-t border-border py-8">
-        <div className="mx-auto max-w-6xl px-5 sm:px-8 text-center">
-          <p className="font-display text-sm text-muted">
-            Dabar — The Word, taking new shape.
-          </p>
-        </div>
-      </footer>
-
-      {/* Mobile bottom nav */}
-      <nav
-        className="fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around border-t border-border bg-paper/95 backdrop-blur-sm py-2 sm:hidden"
-        aria-label="Mobile navigation"
-      >
-        {navLinks.map(({ to, label, icon }) => (
+        {/* Navigation Items — Every icon paired with a visible label */}
+        <nav className="sidebar-nav" aria-label="Main Navigation">
           <NavLink
-            key={to}
-            to={to}
+            to="/dashboard"
             className={({ isActive }) =>
-              `flex flex-col items-center gap-0.5 px-3 py-1 text-[10px] font-medium transition-colors ${
-                isActive ? "text-ember" : "text-muted"
-              }`
+              `sidebar-nav-item ${isActive ? "active" : ""}`
             }
           >
-            <i className={`bx ${icon} text-xl`} aria-hidden="true" />
-            {label}
+            {({ isActive }) => (
+              <>
+                <i className={`bx ${isActive ? "bxs-folder-open text-accent" : "bx-folder"} text-base`} />
+                <span>Sermons</span>
+              </>
+            )}
           </NavLink>
-        ))}
-      </nav>
+
+          <NavLink
+            to="/upload"
+            className={({ isActive }) =>
+              `sidebar-nav-item ${isActive ? "active" : ""}`
+            }
+          >
+            {({ isActive }) => (
+              <>
+                <i className={`bx ${isActive ? "bxs-plus-circle text-accent" : "bx-plus-circle"} text-base`} />
+                <span>Add Sermon</span>
+              </>
+            )}
+          </NavLink>
+
+          <NavLink
+            to="/settings"
+            className={({ isActive }) =>
+              `sidebar-nav-item ${isActive ? "active" : ""}`
+            }
+          >
+            {({ isActive }) => (
+              <>
+                <i className={`bx ${isActive ? "bxs-cog text-accent" : "bx-cog"} text-base`} />
+                <span>Settings</span>
+              </>
+            )}
+          </NavLink>
+        </nav>
+
+        {/* Sidebar Footer: Theme toggle + version */}
+        <div className="sidebar-footer">
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="sidebar-nav-item w-full text-left"
+            aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+          >
+            <i className={`bx ${theme === "dark" ? "bx-sun text-accent" : "bx-moon text-accent"} text-base`} />
+            <span>{theme === "dark" ? "Light Mode" : "Dark Mode"}</span>
+          </button>
+
+          <div className="px-2.5 py-1 text-[10px] text-muted font-mono flex items-center justify-between">
+            <span>Dabar Desktop</span>
+            <span>v0.2.0</span>
+          </div>
+        </div>
+      </aside>
+
+      {/* ── Main Workspace ─────────────────────────────────────────── */}
+      <main className="main-content">
+        <Outlet />
+      </main>
     </div>
   );
 }

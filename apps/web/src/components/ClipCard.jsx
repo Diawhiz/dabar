@@ -1,8 +1,5 @@
 import Btn from "./Btn.jsx";
 
-/**
- * Format raw seconds duration into plain language ("30 sec", "1 min 15 sec")
- */
 function friendlyDuration(durationStr) {
   if (!durationStr) return "Clip";
   if (durationStr.includes("–") || durationStr.includes("-")) {
@@ -12,63 +9,71 @@ function friendlyDuration(durationStr) {
       const [endM, endS] = parts[1].split(":").map(Number);
       if (!isNaN(startM) && !isNaN(startS) && !isNaN(endM) && !isNaN(endS)) {
         const totalSecs = (endM * 60 + endS) - (startM * 60 + startS);
-        if (totalSecs < 60) return `${totalSecs} sec`;
+        if (totalSecs < 60) return `${totalSecs}s`;
         const m = Math.floor(totalSecs / 60);
         const s = totalSecs % 60;
-        return s > 0 ? `${m}m ${s}s` : `${m} min`;
+        return s > 0 ? `${m}m ${s}s` : `${m}m`;
       }
     }
   }
   return durationStr;
 }
 
-/**
- * ClipCard — a single clip preview card with plain-language labels and illumination caption.
- */
-export default function ClipCard({ clip, onPreview, onExport, isExporting, featured = false }) {
+export default function ClipCard({
+  clip,
+  onPreview,
+  onExport,
+  isExporting,
+  featured = false,
+}) {
   const durationLabel = friendlyDuration(clip.duration);
 
   if (featured) {
     return (
-      <article
-        role="listitem"
-        className="rounded-card border-2 border-ember/60 bg-paper p-6 shadow-lifted relative overflow-hidden transition-all"
-      >
-        <div className="absolute top-0 right-0 bg-ember/15 text-ember text-[11px] font-semibold tracking-wider uppercase px-3 py-1 rounded-bl-lg flex items-center gap-1.5">
-          <i className="bx bxs-star" aria-hidden="true" />
-          Top Moment
-        </div>
-
-        <div className="flex items-center gap-2 text-xs text-muted font-body mb-2.5">
-          <span className="inline-flex items-center gap-1 font-medium text-ember">
-            <span className="inline-block w-2.5 h-4 border-2 border-ember rounded-sm" aria-hidden="true" />
-            Vertical
+      <article className="border border-border bg-surface rounded-md p-4 relative space-y-3">
+        {/* Top Tag */}
+        <div className="flex items-center justify-between">
+          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-accent">
+            <i className="bx bxs-star text-xs" />
+            Primary Highlight
           </span>
-          <span>·</span>
-          <span>{durationLabel} ({clip.duration})</span>
+          <div className="flex items-center gap-2 font-mono text-[11px] text-secondary">
+            <span>{durationLabel}</span>
+            <span>·</span>
+            <span>{clip.duration}</span>
+          </div>
         </div>
 
-        <h3 className="font-display text-lg font-bold text-ink leading-snug">
+        {/* Title */}
+        <h3 className="text-sm font-semibold text-primary leading-snug">
           {clip.title}
         </h3>
 
+        {/* Pastoral why */}
         {clip.why && (
-          <p className="mt-2 text-sm text-ink/90 italic bg-ember/10 border-l-2 border-ember px-3 py-2 rounded-r-md">
-            "{clip.why}"
-          </p>
+          <div className="border-l-2 border-accent/40 bg-surface-hover/60 px-3 py-1.5 rounded-r">
+            <p className="text-xs text-secondary leading-relaxed">
+              "{clip.why}"
+            </p>
+          </div>
         )}
 
-        <div className="mt-5 flex items-center gap-3">
+        {/* Action buttons */}
+        <div className="flex items-center gap-2 pt-1">
           {onPreview && (
-            <Btn size="sm" variant="ghost" onClick={() => onPreview(clip)}>
-              <i className="bx bx-play text-lg" aria-hidden="true" />
-              Preview moment
+            <Btn size="sm" variant="secondary" onClick={() => onPreview(clip)}>
+              <i className="bx bx-play text-xs text-accent" />
+              <span>Preview</span>
             </Btn>
           )}
           {onExport && (
-            <Btn size="sm" variant="primary" onClick={() => onExport(clip)} disabled={isExporting}>
-              <i className={`bx ${isExporting ? "bx-loader-alt bx-spin" : "bx-download"} text-base`} aria-hidden="true" />
-              {isExporting ? "Rendering…" : "Export clip"}
+            <Btn size="sm" onClick={() => onExport(clip)} disabled={isExporting}>
+              <i
+                className={`bx ${
+                  isExporting ? "bx-loader-alt bx-spin" : "bx-download"
+                } text-xs`}
+              />
+              <span>{isExporting ? "Exporting…" : "Export Clip"}</span>
             </Btn>
           )}
         </div>
@@ -77,45 +82,56 @@ export default function ClipCard({ clip, onPreview, onExport, isExporting, featu
   }
 
   return (
-    <article
-      role="listitem"
-      className="w-80 shrink-0 rounded-card border border-border bg-paper p-5 shadow-card transition-all duration-200 hover:border-ember hover:shadow-lifted flex flex-col justify-between"
-    >
-      <div>
-        {/* Top metadata strip: visual aspect ratio + friendly duration */}
-        <div className="flex items-center justify-between text-xs text-muted font-body mb-2.5">
-          <span className="inline-flex items-center gap-1 text-ember font-medium">
-            <span className="inline-block w-2 h-3 border border-ember rounded-sm" aria-hidden="true" />
+    <article className="border border-border bg-surface rounded-md p-3.5 flex flex-col justify-between space-y-3 hover:border-border-strong transition-colors">
+      <div className="space-y-1.5">
+        {/* Top metadata */}
+        <div className="flex items-center justify-between text-[11px]">
+          <span className="text-accent font-medium flex items-center gap-1">
+            <i className="bx bx-mobile text-xs" />
             Vertical
           </span>
-          <span className="text-muted">{durationLabel} ({clip.duration})</span>
+          <span className="font-mono text-muted">{durationLabel}</span>
         </div>
 
-        <h3 className="font-display text-sm font-semibold leading-snug text-ink line-clamp-2">
+        {/* Title */}
+        <h3 className="text-xs font-semibold text-primary leading-snug line-clamp-2">
           {clip.title}
         </h3>
 
-        {clip.why ? (
-          <p className="mt-2 text-xs text-muted bg-surface p-2 rounded-md line-clamp-2">
-            <span className="font-semibold text-ink">Why it matters:</span> {clip.why}
+        {/* Why note */}
+        {clip.why && (
+          <p className="text-[11px] text-secondary line-clamp-2 leading-relaxed">
+            {clip.why}
           </p>
-        ) : clip.captions ? (
-          <p className="mt-2 text-xs text-muted italic">"{clip.captions}"</p>
-        ) : null}
+        )}
       </div>
 
-      <div className="mt-4 flex items-center gap-2 pt-2 border-t border-border/50">
+      {/* Buttons */}
+      <div className="pt-2 border-t border-border flex items-center gap-1.5">
         {onPreview && (
-          <Btn size="sm" variant="ghost" className="flex-1" onClick={() => onPreview(clip)}>
-            <i className="bx bx-play" aria-hidden="true" />
-            Preview
-          </Btn>
+          <button
+            type="button"
+            onClick={() => onPreview(clip)}
+            className="flex-1 py-1 px-2 rounded bg-surface-hover hover:bg-surface-active text-xs text-primary border border-border transition-colors flex items-center justify-center gap-1"
+          >
+            <i className="bx bx-play text-xs text-accent" />
+            <span>Preview</span>
+          </button>
         )}
         {onExport && (
-          <Btn size="sm" variant="outline" className="flex-1" onClick={() => onExport(clip)} disabled={isExporting}>
-            <i className={`bx ${isExporting ? "bx-loader-alt bx-spin" : "bx-download"}`} aria-hidden="true" />
-            {isExporting ? "Rendering…" : "Export"}
-          </Btn>
+          <button
+            type="button"
+            onClick={() => onExport(clip)}
+            disabled={isExporting}
+            className="flex-1 py-1 px-2 rounded bg-accent text-white hover:bg-[var(--accent-hover)] text-xs font-medium transition-colors flex items-center justify-center gap-1"
+          >
+            <i
+              className={`bx ${
+                isExporting ? "bx-loader-alt bx-spin" : "bx-download"
+              } text-xs`}
+            />
+            <span>{isExporting ? "Saving…" : "Export"}</span>
+          </button>
         )}
       </div>
     </article>

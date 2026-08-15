@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { listSermons, getSermon, renderClip, openInExplorer } from "../lib/api.js";
 import { highlights as mockHighlights } from "../data/mockData.js";
@@ -6,7 +6,6 @@ import ClipCard from "../components/ClipCard.jsx";
 import ExportModal from "../components/ExportModal.jsx";
 import ManuscriptView from "../components/ManuscriptView.jsx";
 import Btn from "../components/Btn.jsx";
-import EmptyState from "../components/EmptyState.jsx";
 
 function formatSeconds(secs) {
   if (!secs && secs !== 0) return "0:00";
@@ -31,6 +30,7 @@ export default function ClipReview() {
   const [sermonUrl, setSermonUrl] = useState("");
   const [sermonTitle, setSermonTitle] = useState("");
   const [sermonDuration, setSermonDuration] = useState("");
+  const [scriptureRefs, setScriptureRefs] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [activeSegment, setActiveSegment] = useState(null);
   const [exportModalClip, setExportModalClip] = useState(null);
@@ -73,6 +73,7 @@ export default function ClipReview() {
         }
         setSermonTitle(displayTitle);
         setSermonUrl(sermon.youtube_url || "");
+        setScriptureRefs(sermon.scripture_references || []);
 
         const hlList = Array.isArray(sermon.highlights) ? sermon.highlights : [];
         const rawSegs = Array.isArray(sermon.transcript_segments) ? sermon.transcript_segments : [];
@@ -119,7 +120,7 @@ export default function ClipReview() {
             end: (i + 1) * 45,
             title: hl.title,
             highlight_title: hl.title,
-            why: hl.why || "Pastor addresses overcoming doubt with unwavering faith.",
+            why: hl.why || "Pastor shares a message on unwavering faith.",
             text: hl.transcript,
             duration: `${formatSeconds(i * 45)} – ${formatSeconds((i + 1) * 45)}`,
             is_highlight: true,
@@ -129,7 +130,7 @@ export default function ClipReview() {
           setSermonDuration("45:12");
         }
       } catch (err) {
-        console.warn("Failed to load sermon data:", err);
+        console.warn("Failed to load sermon studio data:", err);
       } finally {
         if (mounted) setIsLoading(false);
       }
@@ -194,45 +195,56 @@ export default function ClipReview() {
   }
 
   return (
-    <div className="space-y-6 pb-24">
-      {/* ── 1. Status Strip Header ───────────────────────────────── */}
-      <div className="rounded-card border border-border bg-paper p-5 shadow-card flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-ember mb-1">
-            <span>Sermon Studio</span>
+    <div className="space-y-6 pb-28 animate-fade-in">
+      {/* ── 1. Sermon Header Banner ─────────────────────────────── */}
+      <div className="rounded-2xl border border-border bg-paper p-6 shadow-xs flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div className="space-y-1.5">
+          <div className="flex flex-wrap items-center gap-2 text-xs font-sans text-muted">
+            <span className="font-semibold text-amber uppercase tracking-wider">
+              Sermon Studio
+            </span>
             <span>·</span>
             <span>{sermonDuration ? `${sermonDuration} total runtime` : "Ready"}</span>
+            {scriptureRefs.length > 0 && (
+              <>
+                <span>·</span>
+                <span className="text-ink font-medium">
+                  {scriptureRefs.join(", ")}
+                </span>
+              </>
+            )}
           </div>
-          <h1 className="font-display text-2xl md:text-3xl font-bold text-ink leading-tight">
-            {sermonTitle || "Sermon Highlights & Transcript"}
+
+          <h1 className="font-display text-2xl sm:text-3xl font-bold text-ink leading-snug">
+            {sermonTitle || "Sermon Manuscript & Moments"}
           </h1>
-          <p className="mt-1 text-xs text-muted">
-            {highlights.length} {highlights.length === 1 ? "moment" : "moments"} worth sharing identified from this message.
+          <p className="text-xs text-muted font-sans">
+            {highlights.length} {highlights.length === 1 ? "moment" : "moments"} ready for social video export · Full manuscript available below.
           </p>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 font-sans">
           <Btn size="sm" variant="ghost" onClick={() => navigate("/dashboard")}>
-            <i className="bx bx-left-arrow-alt text-base" aria-hidden="true" />
-            Library
+            <i className="bx bx-left-arrow-alt text-base" />
+            Sermon Desk
           </Btn>
           <Btn size="sm" variant="outline" onClick={() => navigate("/upload")}>
-            <i className="bx bx-upload text-base" aria-hidden="true" />
-            New Sermon
+            <i className="bx bx-plus text-base" />
+            Add Another
           </Btn>
         </div>
       </div>
 
       {/* ── 2. Export Success Toast ──────────────────────────────── */}
       {exportedNotice && (
-        <div className="rounded-card border border-ember/40 bg-ember/10 p-4 flex items-center justify-between gap-4 shadow-sm animate-fade-in">
+        <div className="rounded-2xl border border-amber/30 bg-amber-light/90 p-4 flex items-center justify-between gap-4 shadow-sm font-sans animate-fade-in">
           <div className="flex items-center gap-3">
-            <i className="bx bx-check-circle text-2xl text-ember shrink-0" aria-hidden="true" />
+            <i className="bx bx-check-circle text-2xl text-amber shrink-0" />
             <div>
-              <p className="text-sm font-semibold text-ink">
-                "{exportedNotice.title}" rendered successfully!
+              <p className="text-xs font-bold text-ink">
+                "{exportedNotice.title}" is saved!
               </p>
-              <p className="text-xs text-muted truncate max-w-md">{exportedNotice.path}</p>
+              <p className="text-[11px] text-muted truncate max-w-md">{exportedNotice.path}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -241,67 +253,66 @@ export default function ClipReview() {
               variant="outline"
               onClick={() => openInExplorer(exportedNotice.path)}
             >
-              <i className="bx bx-folder-open text-base" aria-hidden="true" />
+              <i className="bx bx-folder-open text-base" />
               Show in Folder
             </Btn>
             <button
               onClick={() => setExportedNotice(null)}
               className="text-muted hover:text-ink p-1"
-              aria-label="Dismiss notice"
             >
-              <i className="bx bx-x text-lg" aria-hidden="true" />
+              <i className="bx bx-x text-lg" />
             </button>
           </div>
         </div>
       )}
 
-      {/* ── 3. Mode Tabs: Clips vs Transcript ─────────────────────── */}
-      <div className="flex border-b border-border gap-8 text-sm font-medium">
+      {/* ── 3. Tabs Switcher ─────────────────────────────────────── */}
+      <div className="flex p-1 rounded-xl bg-surface border border-border/80 font-sans max-w-sm">
         <button
           type="button"
           onClick={() => setActiveTab("clips")}
-          className={`pb-3.5 transition-colors relative flex items-center gap-2 ${
+          className={`flex-1 py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
             activeTab === "clips"
-              ? "text-ember font-bold border-b-2 border-ember"
+              ? "bg-paper text-ink shadow-xs border border-border/60"
               : "text-muted hover:text-ink"
           }`}
         >
-          <i className="bx bx-film text-lg" aria-hidden="true" />
-          Clips & Key Moments ({highlights.length})
+          <i className="bx bx-film text-base" />
+          Clips ({highlights.length})
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab("transcript")}
-          className={`pb-3.5 transition-colors relative flex items-center gap-2 ${
+          className={`flex-1 py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
             activeTab === "transcript"
-              ? "text-ember font-bold border-b-2 border-ember"
+              ? "bg-paper text-ink shadow-xs border border-border/60"
               : "text-muted hover:text-ink"
           }`}
         >
-          <i className="bx bx-book-open text-lg" aria-hidden="true" />
-          Structured Transcript ({segments.length} segments)
+          <i className="bx bx-book-open text-base" />
+          Manuscript ({segments.length})
         </button>
       </div>
 
-      {/* ── 4. Main Tab Content ──────────────────────────────────── */}
+      {/* ── 4. Main Content Area ─────────────────────────────────── */}
       {isLoading ? (
-        <div className="py-16 text-center">
-          <i className="bx bx-loader-alt bx-spin text-3xl text-ember mb-3" aria-hidden="true" />
-          <p className="text-sm text-muted">Illuminating sermon moments…</p>
+        <div className="py-20 text-center space-y-3 font-sans">
+          <i className="bx bx-loader-alt bx-spin text-3xl text-amber" />
+          <p className="text-xs text-muted">Illuminating sermon manuscript…</p>
         </div>
       ) : activeTab === "clips" ? (
-        /* ── CLIPS TAB ────────────────────────────────────────── */
+        /* ── CLIPS STUDIO ────────────────────────────────────────── */
         <div className="space-y-8">
-          {/* Top Featured Moment (Hero Card) */}
+          {/* Featured Top Moment */}
           {topMoment && (
             <section className="space-y-2">
-              <div className="flex items-center justify-between">
-                <h2 className="font-display text-base font-semibold text-ink flex items-center gap-1.5">
-                  <i className="bx bxs-star text-ember" aria-hidden="true" />
-                  Primary Key Moment
+              <div className="flex items-center justify-between font-sans">
+                <h2 className="text-xs font-bold uppercase tracking-wider text-amber flex items-center gap-1.5">
+                  <i className="bx bxs-star text-sm" />
+                  Most Impactful Moment
                 </h2>
-                <span className="text-xs text-muted">Ranked #1 for spiritual impact</span>
+                <span className="text-xs text-muted">Ready for phone video export</span>
               </div>
               <ClipCard
                 clip={topMoment}
@@ -313,14 +324,14 @@ export default function ClipReview() {
             </section>
           )}
 
-          {/* Other Moments Worth Sharing */}
+          {/* More Moments Worth Sharing */}
           {otherMoments.length > 0 && (
             <section className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h2 className="font-display text-lg font-semibold text-ink">
-                  More moments worth sharing ({otherMoments.length})
+              <div className="flex items-center justify-between font-sans">
+                <h2 className="font-display text-lg font-bold text-ink">
+                  More Moments Worth Sharing ({otherMoments.length})
                 </h2>
-                <p className="text-xs text-muted">Ready for vertical video export</p>
+                <p className="text-xs text-muted">Choose any clip to preview or save</p>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -337,28 +348,28 @@ export default function ClipReview() {
             </section>
           )}
 
-          {/* Inline Video / Audio Preview Player */}
+          {/* Inline Video Player Preview */}
           {activeSegment && videoId && (
-            <div className="rounded-card border border-border bg-base p-4 shadow-lifted animate-fade-in">
+            <div className="rounded-2xl border border-border bg-base-dark p-4 shadow-xl animate-fade-in font-sans">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-ember uppercase tracking-wider">Now Previewing</span>
-                  <span className="text-xs text-paper font-medium truncate max-w-sm">
-                    {activeSegment.highlight_title || activeSegment.title || "Selected Moment"}
+                  <span className="text-xs font-bold text-amber uppercase tracking-wider">Previewing Moment</span>
+                  <span className="text-xs text-[#FAF6EF] font-medium truncate max-w-sm">
+                    {activeSegment.highlight_title || activeSegment.title || "Selected Clip"}
                   </span>
                 </div>
                 <button
                   onClick={() => setActiveSegment(null)}
-                  className="text-muted hover:text-paper p-1 text-sm flex items-center gap-1"
+                  className="text-muted hover:text-white text-xs flex items-center gap-1"
                 >
-                  <i className="bx bx-x text-lg" aria-hidden="true" />
+                  <i className="bx bx-x text-lg" />
                   Close
                 </button>
               </div>
-              <div className="aspect-video w-full rounded-lg overflow-hidden border border-border-dark">
+              <div className="aspect-video w-full rounded-xl overflow-hidden border border-border-dark">
                 <iframe
                   src={`https://www.youtube.com/embed/${videoId}?start=${Math.floor(activeSegment.start)}&end=${Math.ceil(activeSegment.end)}&autoplay=1&rel=0`}
-                  title="Clip preview player"
+                  title="Clip player"
                   className="h-full w-full"
                   allow="autoplay; encrypted-media"
                   allowFullScreen
@@ -368,29 +379,32 @@ export default function ClipReview() {
           )}
         </div>
       ) : (
-        /* ── TRANSCRIPT TAB (MANUSCRIPT READING & CORRECTION VIEW) ── */
-        <div className="space-y-6">
-          {/* Transcript Search & Filter Bar */}
-          <div className="flex items-center gap-3">
+        /* ── MANUSCRIPT VIEW ──────────────────────────────────────── */
+        <div className="space-y-5">
+          {/* Search bar inside manuscript */}
+          <div className="flex items-center gap-3 font-sans">
             <div className="relative flex-1">
-              <i className="bx bx-search absolute left-3.5 top-1/2 -translate-y-1/2 text-base text-muted" aria-hidden="true" />
+              <i className="bx bx-search absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-muted" />
               <input
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search words, verses, or themes in sermon transcript…"
-                className="w-full rounded-card border border-border bg-paper pl-10 pr-4 py-2.5 text-xs text-ink outline-none focus:border-ember"
+                placeholder="Search words, verses, or topics in transcript…"
+                className="w-full rounded-xl border border-border bg-paper pl-9 pr-4 py-2 text-xs text-ink outline-none focus:border-amber transition-colors"
               />
             </div>
             {searchTerm && (
-              <Btn size="sm" variant="ghost" onClick={() => setSearchTerm("")}>
-                Clear
-              </Btn>
+              <button
+                onClick={() => setSearchTerm("")}
+                className="text-xs text-muted hover:text-ink px-2.5 py-1.5 rounded-lg bg-surface"
+              >
+                Clear search
+              </button>
             )}
           </div>
 
-          {/* Manuscript Container */}
-          <div className="rounded-card border border-border bg-paper p-6 sm:p-8 shadow-card">
+          {/* Reading Parchment Box */}
+          <div className="rounded-2xl border border-border bg-paper p-6 sm:p-10 shadow-xs">
             <ManuscriptView
               segments={filteredSegments}
               currentTime={playbackTime}
@@ -403,7 +417,46 @@ export default function ClipReview() {
         </div>
       )}
 
-      {/* ── 5. Export Modal ──────────────────────────────────────── */}
+      {/* ── 5. Floating Bottom Audio Dock ─────────────────────────── */}
+      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-paper/95 backdrop-blur-md border border-border shadow-xl rounded-full px-5 py-2.5 flex items-center gap-4 text-xs font-sans animate-fade-in">
+        <button
+          type="button"
+          onClick={handleTogglePlay}
+          className="w-8 h-8 rounded-full bg-amber text-white flex items-center justify-center shadow-xs hover:opacity-90 transition-opacity"
+          aria-label={isPlaying ? "Pause audio" : "Play audio"}
+        >
+          <i className={`bx ${isPlaying ? "bx-pause" : "bx-play"} text-xl`} />
+        </button>
+
+        <div className="flex items-center gap-2">
+          <span className="font-mono font-bold text-ink">
+            {formatSeconds(playbackTime)}
+          </span>
+          <span className="text-muted">/</span>
+          <span className="font-mono text-muted">
+            {sermonDuration || "45:00"}
+          </span>
+        </div>
+
+        <div className="w-28 sm:w-48 h-1.5 bg-surface rounded-full overflow-hidden cursor-pointer" onClick={(e) => {
+          const rect = e.currentTarget.getBoundingClientRect();
+          const clickX = e.clientX - rect.left;
+          const ratio = clickX / rect.width;
+          const totalSecs = 2700; // ~45 mins
+          handleSeek(ratio * totalSecs);
+        }}>
+          <div
+            className="h-full bg-amber rounded-full"
+            style={{ width: `${Math.min(100, (playbackTime / 2700) * 100)}%` }}
+          />
+        </div>
+
+        <span className="text-[11px] text-muted hidden sm:inline">
+          <kbd className="px-1 py-0.5 rounded bg-surface border border-border text-[9px] font-mono text-ink">Space</kbd> Play/Pause
+        </span>
+      </div>
+
+      {/* ── 6. Export Modal ──────────────────────────────────────── */}
       {exportModalClip && (
         <ExportModal
           clip={exportModalClip}

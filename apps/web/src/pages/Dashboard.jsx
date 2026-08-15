@@ -1,16 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { listSermons } from "../lib/api.js";
 import { recentSermons } from "../data/mockData.js";
-import ReelStrip from "../components/ReelStrip.jsx";
-import SermonCard from "../components/SermonCard.jsx";
-import EmptyState from "../components/EmptyState.jsx";
+import { cleanSermonTitle } from "../lib/formatters.js";
 import Btn from "../components/Btn.jsx";
 
 export default function Dashboard() {
   const [sermons, setSermons] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [usedMock, setUsedMock] = useState(false);
+  const [filterQuery, setFilterQuery] = useState("");
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -22,108 +20,221 @@ export default function Dashboard() {
         if (mounted && Array.isArray(data) && data.length > 0) {
           setSermons(data);
         } else if (mounted) {
-          // Fallback to mock data for demo
           setSermons(recentSermons);
-          setUsedMock(true);
         }
       })
       .catch(() => {
-        if (mounted) {
-          setSermons(recentSermons);
-          setUsedMock(true);
-        }
+        if (mounted) setSermons(recentSermons);
       })
       .finally(() => {
         if (mounted) setIsLoading(false);
       });
 
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, []);
 
+  const filtered = useMemo(() => {
+    if (!filterQuery.trim()) return sermons;
+    const q = filterQuery.toLowerCase();
+    return sermons.filter((s) => {
+      const title = (s.title || "").toLowerCase();
+      const speaker = (s.speaker || "").toLowerCase();
+      return title.includes(q) || speaker.includes(q);
+    });
+  }, [sermons, filterQuery]);
+
   return (
-    <div className="space-y-10 pb-20">
-      {/* Page header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className="flex flex-col min-h-screen">
+      {/* ── Page Header ───────────────────────────────────────────── */}
+      <header className="page-header">
         <div>
-          <h1 className="font-display text-3xl font-bold tracking-tight">Your sermons</h1>
-          <p className="mt-1 text-sm text-muted">
-            {sermons.length > 0
-              ? `${sermons.length} sermon${sermons.length !== 1 ? "s" : ""} in your library.`
-              : "Your sermon library is empty."}
+          <h1 className="text-base font-semibold text-primary">Sermon Library</h1>
+          <p className="text-xs text-secondary mt-0.5">
+            {sermons.length} {sermons.length === 1 ? "recording" : "recordings"} in local storage
           </p>
         </div>
-        <Btn onClick={() => navigate("/upload")}>
-          <i className="bx bx-upload text-lg" aria-hidden="true" />
-          Upload new sermon
-        </Btn>
+
+        <div className="flex items-center gap-2">
+          <Btn onClick={() => navigate("/upload")}>
+            <i className="bx bx-plus text-sm" />
+            <span>Add Sermon</span>
+          </Btn>
+        </div>
+      </header>
+
+      {/* ── Search & Filter Toolbar ───────────────────────────────── */}
+      <div className="px-6 py-3 border-b border-border bg-surface/50 flex items-center justify-between gap-4">
+        <div className="relative flex-1 max-w-xs">
+          <i className="bx bx-search absolute left-2.5 top-1/2 -translate-y-1/2 text-muted text-sm" />
+          <input
+            type="text"
+            value={filterQuery}
+            onChange={(e) => setFilterQuery(e.target.value)}
+            placeholder="Filter by title or speaker…"
+            className="w-full bg-surface border border-border rounded pl-8 pr-3 py-1 text-xs text-primary placeholder:text-muted outline-none focus:border-accent"
+          />
+        </div>
+        {filterQuery && (
+          <button
+            onClick={() => setFilterQuery("")}
+            className="text-xs text-secondary hover:text-primary"
+          >
+            Clear filter
+          </button>
+        )}
       </div>
 
-      {/* Loading */}
-      {isLoading ? (
-        <div className="py-16 text-center">
-          <i className="bx bx-loader-alt bx-spin text-3xl text-ember mb-3" aria-hidden="true" />
-          <p className="text-sm text-muted">Loading your sermon library…</p>
-        </div>
-      ) : sermons.length > 0 ? (
-        <>
-          {/* Reel strip */}
-          <ReelStrip label="Recent sermon recordings">
-            {sermons.map((sermon) => (
-              <SermonCard key={sermon.id} sermon={sermon} />
-            ))}
-          </ReelStrip>
+      {/* ── Table Content ─────────────────────────────────────────── */}
+      <div className="page-content flex-1">
+        {isLoading ? (
+          <div className="py-20 text-center space-y-2">
+            <i className="bx bx-loader-alt bx-spin text-xl text-accent" />
+            <p className="text-xs text-secondary">Loading sermons…</p>
+          </div>
+        ) : filtered.length > 0 ? (
+          <div className="border border-border rounded-md bg-surface overflow-hidden">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th style={{ width: "40%" }}>Sermon Title</th>
+                  <th style={{ width: "20%" }}>Speaker</th>
+                  <th style={{ width: "15%" }}>Duration</th>
+                  <th style={{ width: "10%" }}>Status</th>
+                  <th style={{ width: "15%", textAlign: "right" }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((sermon) => {
+                  const cleanTitle = cleanSermonTitle(sermon.title);
+                  const statusStr = (sermon.status || "").toLowerCase();
+                  const isReady =
+                    statusStr.includes("clip") ||
+                    statusStr.includes("ready") ||
+                    statusStr.includes("complete");
+                  const isFailed = statusStr.includes("fail") || statusStr.includes("error");
+                  const clipsCount = sermon.highlights?.length || (sermon.clips_count || 0);
 
-          {/* Accessible list view below the reel */}
-          <section className="pt-4">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-display text-xl font-semibold text-ink">All sermons in library</h2>
-              <span className="text-xs text-muted">Click any sermon to review clips or manuscript</span>
-            </div>
+                  return (
+                    <tr key={sermon.id}>
+                      {/* Title */}
+                      <td>
+                        <div className="flex flex-col">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              navigate(isReady ? `/clips/${sermon.id}` : `/processing/${sermon.id}`)
+                            }
+                            className="text-left font-medium text-primary hover:text-accent transition-colors leading-snug"
+                          >
+                            {cleanTitle}
+                          </button>
+                          {sermon.date && (
+                            <span className="text-[11px] text-muted font-mono mt-0.5">
+                              {sermon.date}
+                            </span>
+                          )}
+                        </div>
+                      </td>
 
-            <div className="divide-y divide-border rounded-card border border-border bg-paper overflow-hidden shadow-card">
-              {sermons.map((sermon) => {
-                const isReady = (sermon.status || "").toLowerCase().includes("clip") || (sermon.status || "").toLowerCase().includes("ready") || (sermon.status || "").toLowerCase().includes("complete");
-                return (
-                  <button
-                    key={sermon.id}
-                    onClick={() => navigate(isReady ? `/clips/${sermon.id}` : `/processing/${sermon.id}`)}
-                    className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition-colors hover:bg-surface focus-visible:bg-surface group"
-                  >
-                    <div className="min-w-0">
-                      <p className="font-display text-sm font-semibold text-ink truncate group-hover:text-ember transition-colors">
-                        {sermon.title}
-                      </p>
-                      <p className="text-xs text-muted mt-0.5">
-                        {sermon.speaker && `${sermon.speaker} · `}{sermon.date || "Recent"}{sermon.duration ? ` · ${sermon.duration}` : ""}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      {isReady ? (
-                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-ember bg-ember/10 px-2.5 py-1 rounded-full">
-                          <i className="bx bx-check-circle text-sm" aria-hidden="true" />
-                          Clips Ready
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-xs font-medium text-muted bg-surface px-2.5 py-1 rounded-full">
-                          <i className="bx bx-loader-alt bx-spin text-sm" aria-hidden="true" />
-                          {sermon.status || "Transcribing"}
-                        </span>
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
+                      {/* Speaker */}
+                      <td className="text-secondary">
+                        {sermon.speaker || <span className="text-muted">—</span>}
+                      </td>
+
+                      {/* Duration */}
+                      <td>
+                        {sermon.duration ? (
+                          <span className="font-mono text-xs text-secondary">
+                            {sermon.duration}
+                          </span>
+                        ) : (
+                          <span className="text-muted">—</span>
+                        )}
+                      </td>
+
+                      {/* Status */}
+                      <td>
+                        {isReady ? (
+                          <span className="status-pill ready">
+                            <i className="bx bxs-check-circle text-xs" />
+                            <span>Ready</span>
+                          </span>
+                        ) : isFailed ? (
+                          <span className="status-pill failed">
+                            <i className="bx bx-error-circle text-xs" />
+                            <span>Failed</span>
+                          </span>
+                        ) : (
+                          <span className="status-pill processing">
+                            <i className="bx bx-loader-alt bx-spin text-xs" />
+                            <span>Processing</span>
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Actions */}
+                      <td style={{ textAlign: "right" }}>
+                        <div className="flex items-center justify-end gap-1.5">
+                          {isReady ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => navigate(`/transcript/${sermon.id}`)}
+                                className="px-2 py-1 rounded bg-surface-hover hover:bg-surface-active text-xs text-primary border border-border transition-colors"
+                                title="Open Manuscript"
+                              >
+                                Manuscript
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => navigate(`/clips/${sermon.id}`)}
+                                className="px-2 py-1 rounded bg-accent text-white hover:bg-[var(--accent-hover)] text-xs font-medium transition-colors"
+                                title="Open Clips Studio"
+                              >
+                                Clips {clipsCount > 0 ? `(${clipsCount})` : ""}
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => navigate(`/processing/${sermon.id}`)}
+                              className="px-2 py-1 rounded bg-surface-hover text-xs text-secondary border border-border"
+                            >
+                              View Progress
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="border border-border rounded-md bg-surface p-12 text-center space-y-3">
+            <div className="w-8 h-8 rounded bg-surface-hover text-accent flex items-center justify-center mx-auto text-base border border-border">
+              <i className="bx bx-folder" />
             </div>
-          </section>
-        </>
-      ) : (
-        <EmptyState
-          heading="No sermons yet"
-          message="Upload your first sermon to get started. Paste a YouTube link or upload an audio file."
-          actionLabel="Upload sermon"
-          onAction={() => navigate("/upload")}
-        />
-      )}
+            <div>
+              <p className="text-xs font-semibold text-primary">No sermons found</p>
+              <p className="text-[11px] text-muted mt-0.5">
+                {filterQuery
+                  ? "Try a different search term or clear the filter."
+                  : "Add your first audio or video recording to get started."}
+              </p>
+            </div>
+            {!filterQuery && (
+              <Btn size="sm" onClick={() => navigate("/upload")}>
+                <i className="bx bx-plus text-xs" />
+                <span>Add Sermon</span>
+              </Btn>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -2,112 +2,346 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Illumination Design Tokens ──────────────────────────────────── */
-:root {
-  --base: #1C1815;
-  --unconfirmed: #8A7F73;
-  --confirmed: #28231E;
-  --accent: #D4913A; /* Warm Amber */
-  --ember: #D4913A;
-  --paper: #FAF6EF;
-  --surface: #F0E9DF;
-  --surface-dark: #28231E;
-  --border: #E2D9CC;
-  --border-dark: #3D352E;
-  --ink: #1C1815;
-  --muted: #7A6F62;
+/* ── Dark Mode (default for a desktop tool) ──────────────────────── */
+:root,
+html.dark {
+  --bg-base: #141414;
+  --bg-surface: #1E1E1E;
+  --bg-surface-hover: #252525;
+  --bg-surface-active: #2A2A2A;
+  --border-base: #2E2E2E;
+  --border-strong: #444444;
+
+  --text-primary: #E8E8E8;
+  --text-secondary: #888888;
+  --text-muted: #555555;
+
+  /* Blue accent — utility tool, not editorial */
+  --accent: #6C8EEF;
+  --accent-hover: #7B9CF5;
+  --accent-muted: rgba(108, 142, 239, 0.15);
+  --accent-border: rgba(108, 142, 239, 0.35);
+
+  /* Semantic status colors — used sparingly */
+  --success: #4ADE80;
+  --success-muted: rgba(74, 222, 128, 0.12);
+  --warning: #FBBF24;
+  --warning-muted: rgba(251, 191, 36, 0.12);
+  --danger: #F87171;
+  --danger-muted: rgba(248, 113, 113, 0.12);
+
+  /* Transcript illumination */
+  --transcript-dim: #444444;
+  --transcript-confirmed: #C8C8C8;
+  --transcript-key-bg: rgba(108, 142, 239, 0.07);
+  --transcript-key-border: rgba(108, 142, 239, 0.4);
 }
 
-/* ── Base Layer ──────────────────────────────────────── */
+/* ── Light Mode ──────────────────────────────────────────────────── */
+html.light {
+  --bg-base: #FAFAFA;
+  --bg-surface: #F0F0F0;
+  --bg-surface-hover: #E8E8E8;
+  --bg-surface-active: #E0E0E0;
+  --border-base: #DCDCDC;
+  --border-strong: #C0C0C0;
+
+  --text-primary: #1A1A1A;
+  --text-secondary: #6B6B6B;
+  --text-muted: #9E9E9E;
+
+  --accent: #4B6FD9;
+  --accent-hover: #3D5EC4;
+  --accent-muted: rgba(75, 111, 217, 0.1);
+  --accent-border: rgba(75, 111, 217, 0.3);
+
+  --success: #16A34A;
+  --success-muted: rgba(22, 163, 74, 0.1);
+  --warning: #D97706;
+  --warning-muted: rgba(217, 119, 6, 0.1);
+  --danger: #DC2626;
+  --danger-muted: rgba(220, 38, 38, 0.1);
+
+  --transcript-dim: #BBBBBB;
+  --transcript-confirmed: #1A1A1A;
+  --transcript-key-bg: rgba(75, 111, 217, 0.06);
+  --transcript-key-border: rgba(75, 111, 217, 0.35);
+}
+
+/* ── Base Reset ──────────────────────────────────────────────────── */
 @layer base {
+  * {
+    box-sizing: border-box;
+  }
+
   body {
-    background-color: var(--paper);
-    color: var(--ink);
-    font-family: "Source Serif 4", Georgia, serif;
-    font-feature-settings: "cv02", "cv03", "cv11";
+    background-color: var(--bg-base);
+    color: var(--text-primary);
+    font-family: "Inter", system-ui, -apple-system, sans-serif;
+    font-size: 13px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
+  /* All text at full legibility — never dim primary content */
   h1, h2, h3, h4, h5, h6 {
-    font-family: "Fraunces", Georgia, serif;
-    letter-spacing: -0.02em;
+    color: var(--text-primary);
+    font-weight: 600;
+    letter-spacing: -0.01em;
   }
 
-  /* Focus ring — warm amber, visible on keyboard nav */
   *:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
+    border-radius: 3px;
   }
 
-  /* Selection */
   ::selection {
-    background-color: var(--accent);
-    color: #fff;
+    background-color: var(--accent-muted);
+    color: var(--text-primary);
   }
 }
 
-/* ── Illumination Transcript Reading View ────────────── */
-.transcript-word-dim {
-  color: var(--unconfirmed);
-  transition: color 0.25s ease, text-shadow 0.25s ease;
+/* ── Sidebar Layout ──────────────────────────────────────────────── */
+.app-shell {
+  display: flex;
+  min-height: 100vh;
 }
 
-.transcript-word-lit {
-  color: var(--ink);
+.sidebar {
+  width: 200px;
+  flex-shrink: 0;
+  background-color: var(--bg-surface);
+  border-right: 1px solid var(--border-base);
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 30;
+}
+
+.sidebar-brand {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-base);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sidebar-nav {
+  flex: 1;
+  padding: 8px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sidebar-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 5px;
+  font-size: 12.5px;
   font-weight: 500;
-  text-shadow: 0 0 10px rgba(212, 145, 58, 0.2);
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-decoration: none;
+  transition: background-color 0.1s, color 0.1s;
+}
+
+.sidebar-nav-item:hover {
+  background-color: var(--bg-surface-hover);
+  color: var(--text-primary);
+}
+
+.sidebar-nav-item.active {
+  background-color: var(--accent-muted);
+  color: var(--accent);
+}
+
+.sidebar-nav-item.active i {
+  color: var(--accent);
+}
+
+.sidebar-footer {
+  padding: 10px 6px;
+  border-top: 1px solid var(--border-base);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.main-content {
+  margin-left: 200px;
+  flex: 1;
+  min-height: 100vh;
+  background-color: var(--bg-base);
+}
+
+.page-header {
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--border-base);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.page-content {
+  padding: 20px 24px;
+}
+
+/* ── Transcript Illumination System ──────────────────────────────── */
+/* ONLY applied to transcript body text — NEVER to titles or nav */
+
+.transcript-dim {
+  color: var(--transcript-dim);
+  transition: color 0.15s ease;
+}
+
+.transcript-lit {
+  color: var(--transcript-confirmed);
+  transition: color 0.15s ease;
 }
 
 .transcript-key-moment {
-  background-color: rgba(212, 145, 58, 0.08);
-  border-left: 3px solid var(--accent);
-  border-radius: 0 8px 8px 0;
-  padding: 0.75rem 1rem;
-  margin: 0.5rem 0;
-  transition: background-color 0.2s ease;
+  background-color: var(--transcript-key-bg);
+  border-left: 2px solid var(--transcript-key-border);
+  border-radius: 0 4px 4px 0;
+  padding: 8px 12px 8px 10px;
+  margin: 4px 0;
 }
 
-.transcript-key-moment:hover {
-  background-color: rgba(212, 145, 58, 0.13);
+/* ── Data Table ──────────────────────────────────────────────────── */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
 }
 
-/* ── Custom Scrollbar ────────────────────────────────── */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+.data-table th {
+  padding: 8px 12px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-base);
 }
-::-webkit-scrollbar-track {
-  background: var(--paper);
+
+.data-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-base);
+  color: var(--text-primary);
+  vertical-align: middle;
 }
-::-webkit-scrollbar-thumb {
-  background: var(--border);
+
+.data-table tr:last-child td {
+  border-bottom: none;
+}
+
+.data-table tbody tr:hover td {
+  background-color: var(--bg-surface-hover);
+}
+
+/* ── Status Pills ────────────────────────────────────────────────── */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
   border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+  font-family: "Inter", sans-serif;
 }
 
-/* ── Reel Strip scroll container ─────────────────────── */
-.reel-strip {
+.status-pill.ready {
+  background-color: var(--success-muted);
+  color: var(--success);
+}
+
+.status-pill.processing {
+  background-color: var(--accent-muted);
+  color: var(--accent);
+}
+
+.status-pill.failed {
+  background-color: var(--danger-muted);
+  color: var(--danger);
+}
+
+/* ── Manuscript Row ──────────────────────────────────────────────── */
+.manuscript-row {
   display: flex;
-  gap: 1.25rem;
-  overflow-x: auto;
-  scroll-snap-type: x mandatory;
-  scroll-padding-left: 1rem;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
-  padding-bottom: 0.5rem;
-}
-.reel-strip > * {
-  scroll-snap-align: start;
-  flex-shrink: 0;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 6px 10px;
+  border-radius: 4px;
+  transition: background-color 0.1s;
 }
 
-/* ── Reduced motion ──────────────────────────────────── */
+.manuscript-row:hover {
+  background-color: var(--bg-surface);
+}
+
+.manuscript-row.is-active {
+  background-color: var(--bg-surface-active);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+/* ── Input Fields ────────────────────────────────────────────────── */
+.field-input {
+  width: 100%;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-base);
+  border-radius: 5px;
+  padding: 7px 10px;
+  font-size: 12.5px;
+  color: var(--text-primary);
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.1s;
+}
+
+.field-input::placeholder {
+  color: var(--text-muted);
+}
+
+.field-input:focus {
+  border-color: var(--accent);
+}
+
+/* ── Download Progress ───────────────────────────────────────────── */
+.download-bar-track {
+  height: 3px;
+  background-color: var(--border-base);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.download-bar-fill {
+  height: 100%;
+  background-color: var(--accent);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+/* ── Scrollbar ───────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* ── Reduced Motion ──────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
 }

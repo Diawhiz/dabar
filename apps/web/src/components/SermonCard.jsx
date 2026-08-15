@@ -1,9 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import Waveform from "./Waveform.jsx";
 
-/**
- * SermonCard — a single sermon "frame" in the reel strip.
- */
 export default function SermonCard({ sermon }) {
   const navigate = useNavigate();
   const status = sermon.status || "Processing";
@@ -21,34 +17,29 @@ export default function SermonCard({ sermon }) {
       tabIndex={0}
       onClick={handleClick}
       onKeyDown={(e) => e.key === "Enter" && handleClick()}
-      className="group w-64 shrink-0 cursor-pointer rounded-card border border-border bg-paper p-5 shadow-card transition-all duration-200 hover:border-ember hover:shadow-lifted focus-visible:outline focus-visible:outline-2 focus-visible:outline-ember"
+      className="group w-72 shrink-0 cursor-pointer rounded-2xl border border-border bg-paper p-5 shadow-xs transition-all duration-200 hover:border-amber/70 hover:shadow-md space-y-3"
     >
-      <div className="flex items-center justify-between text-xs text-muted font-body mb-3">
-        <span className="font-medium text-ember">{sermon.date || "Recent"}</span>
-        <span>{sermon.duration || ""}</span>
+      <div className="flex items-center justify-between text-xs text-muted font-sans">
+        <span className="font-semibold text-amber">{sermon.date || "Recent"}</span>
+        <span className="font-mono">{sermon.duration || ""}</span>
       </div>
 
-      <h3 className="font-display text-base font-semibold leading-snug text-ink line-clamp-2 group-hover:text-ember transition-colors">
+      <h3 className="font-display text-base font-bold leading-snug text-ink line-clamp-2 group-hover:text-amber transition-colors">
         {sermon.title}
       </h3>
 
       {sermon.speaker && (
-        <p className="mt-1.5 text-xs text-muted font-body">{sermon.speaker}</p>
+        <p className="text-xs text-ink-secondary font-sans">{sermon.speaker}</p>
       )}
 
-      <div className="mt-3 flex items-center justify-between text-xs text-muted font-body">
-        <span>{sermon.date || ""}</span>
-        <span>{sermon.duration || ""}</span>
-      </div>
+      <div className="pt-2 border-t border-border/60 flex items-center justify-between text-xs font-sans">
+        <span className={`inline-flex items-center gap-1 font-semibold ${isReady ? "text-amber" : "text-muted"}`}>
+          <i className={`bx ${isReady ? "bx-check-circle" : "bx-loader-alt bx-spin"}`} />
+          {isReady ? "Clips Ready" : "Transcribing…"}
+        </span>
 
-      <div className="mt-3 flex items-center gap-1.5">
-        {isReady ? (
-          <i className="bx bx-check-circle text-ember text-sm" aria-hidden="true" />
-        ) : (
-          <i className="bx bx-loader-alt bx-spin text-muted text-sm" aria-hidden="true" />
-        )}
-        <span className={`text-xs font-medium ${isReady ? "text-ember" : "text-muted"}`}>
-          {status}
+        <span className="text-[11px] text-muted group-hover:text-ink font-medium transition-colors">
+          Open Studio →
         </span>
       </div>
     </article>

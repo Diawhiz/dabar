@@ -7,7 +7,7 @@ use crate::pipeline::{PipelineSource, handle_pipeline_failure, render_clip_to_di
 use dabar_core::Sermon;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use uuid::Uuid;
 
 // ── App state ─────────────────────────────────────────────────────────────────
@@ -52,6 +52,7 @@ async fn start_pipeline(
     // Determine a preliminary title
     let title = match &pipeline_source {
         PipelineSource::YouTube(_) => "Processing…".to_string(),
+        PipelineSource::GoogleDrive(_) => "Processing…".to_string(),
         PipelineSource::LocalFile(p) => p
             .file_stem()
             .and_then(|s| s.to_str())
@@ -223,6 +224,33 @@ async fn check_dependencies(state: State<'_, AppState>) -> Result<deps::DepsStat
     Ok(deps::check_all(&state.app_data_dir).await)
 }
 
+/// Open a native file picker to select a sermon audio or video file.
+/// Spawns a dedicated OS thread outside of Tokio's worker pool so Windows Common Item Dialog
+/// has clean Single-Threaded Apartment (STA) COM state, preventing "Not Responding" shell hangs.
+#[tauri::command]
+async fn pick_media_file() -> Result<Option<String>, String> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+
+    std::thread::Builder::new()
+        .name("dabar-file-picker".into())
+        .spawn(move || {
+            let file = rfd::FileDialog::new()
+                .set_title("Select Sermon Recording")
+                .add_filter(
+                    "Audio & Video Files",
+                    &[
+                        "mp4", "mov", "webm", "mkv", "mp3", "wav", "m4a", "ogg", "opus", "aac", "flac",
+                    ],
+                )
+                .pick_file();
+
+            let _ = tx.send(file.map(|p| p.to_string_lossy().to_string()));
+        })
+        .map_err(|e| e.to_string())?;
+
+    rx.await.map_err(|e| e.to_string())
+}
+
 /// Download yt-dlp binary to the app data directory.
 #[tauri::command]
 async fn download_yt_dlp(state: State<'_, AppState>) -> Result<String, String> {
@@ -230,6 +258,59 @@ async fn download_yt_dlp(state: State<'_, AppState>) -> Result<String, String> {
         .await
         .map_err(|e| e.to_string())?;
     Ok(path.to_string_lossy().to_string())
+}
+
+/// Download static FFmpeg binary to the app data directory.
+/// Emits download-progress events: { component: "ffmpeg", downloaded: u64, total: u64 }
+#[tauri::command]
+async fn download_ffmpeg(app: AppHandle, state: State<'_, AppState>) -> Result<String, String> {
+    let app_data_dir = state.app_data_dir.clone();
+    let app_clone = app.clone();
+    let path = deps::download_ffmpeg(&app_data_dir, move |downloaded, total| {
+        let _ = app_clone.emit(
+            "download-progress",
+            serde_json::json!({
+                "component": "ffmpeg",
+                "downloaded": downloaded,
+                "total": total,
+            }),
+        );
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+/// Download the Whisper GGML model (base or tiny) to the app data directory.
+/// Emits download-progress events: { component: "whisper_<model>", downloaded: u64, total: u64 }
+#[tauri::command]
+async fn download_whisper_model(
+    model: String,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let app_data_dir = state.app_data_dir.clone();
+    let app_clone = app.clone();
+    let model_label = model.clone();
+    let path = deps::download_whisper_model(&app_data_dir, &model, move |downloaded, total| {
+        let _ = app_clone.emit(
+            "download-progress",
+            serde_json::json!({
+                "component": format!("whisper_{model_label}"),
+                "downloaded": downloaded,
+                "total": total,
+            }),
+        );
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+/// Return offline readiness status for the Settings screen.
+#[tauri::command]
+async fn get_offline_status(state: State<'_, AppState>) -> Result<deps::OfflineStatus, String> {
+    Ok(deps::get_offline_status(&state.app_data_dir).await)
 }
 
 /// Open a file or folder in the OS file explorer.
@@ -351,7 +432,11 @@ pub fn run() {
             get_settings,
             save_settings,
             check_dependencies,
+            pick_media_file,
             download_yt_dlp,
+            download_ffmpeg,
+            download_whisper_model,
+            get_offline_status,
             open_in_explorer,
             get_hardware_info,
         ])

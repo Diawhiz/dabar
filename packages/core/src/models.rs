@@ -23,6 +23,8 @@ pub struct Sermon {
     pub created_at: DateTime<Utc>,
     pub error_message: Option<String>,
     pub highlights: Vec<Highlight>,
+    #[serde(default)]
+    pub chapters: Vec<Chapter>,
     pub transcript_segments: Vec<TranscriptSegment>,
     #[serde(default)]
     pub audio_path: Option<String>,
@@ -46,6 +48,7 @@ impl Sermon {
             created_at: Utc::now(),
             error_message: None,
             highlights: Vec::new(),
+            chapters: Vec::new(),
             transcript_segments: Vec::new(),
             audio_path: None,
             highlight_status: None,
@@ -54,6 +57,16 @@ impl Sermon {
             passed_candidates: None,
         }
     }
+}
+
+/// A topic-based sermon chapter with headline, summary, and timestamp span.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Chapter {
+    pub id: Uuid,
+    pub title: String,
+    pub summary: String,
+    pub start_time: f32,
+    pub end_time: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

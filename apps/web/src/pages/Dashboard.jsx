@@ -114,7 +114,7 @@ export default function Dashboard() {
                     statusStr.includes("ready") ||
                     statusStr.includes("complete");
                   const isFailed = statusStr.includes("fail") || statusStr.includes("error");
-                  const clipsCount = sermon.highlights?.length || (sermon.clips_count || 0);
+                  const chaptersCount = sermon.chapters?.length || sermon.highlights?.length || (sermon.clips_count || 0);
 
                   return (
                     <tr key={sermon.id}>
@@ -190,10 +190,10 @@ export default function Dashboard() {
                               <button
                                 type="button"
                                 onClick={() => navigate(`/clips/${sermon.id}`)}
-                                className="px-2 py-1 rounded bg-accent text-white hover:bg-[var(--accent-hover)] text-xs font-medium transition-colors"
-                                title="Open Clips Studio"
+                                className="px-2 py-1 rounded bg-accent text-accent-fg hover:opacity-90 text-xs font-medium transition-opacity"
+                                title="Open Chapters Studio"
                               >
-                                Clips {clipsCount > 0 ? `(${clipsCount})` : ""}
+                                Chapters {chaptersCount > 0 ? `(${chaptersCount})` : ""}
                               </button>
                             </>
                           ) : (

@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use dabar_core::{Highlight, Sermon, SermonStatus, TranscriptSegment};
+use dabar_core::{Chapter, Highlight, Sermon, SermonStatus, TranscriptSegment};
 use sqlx::{Row, SqlitePool};
 use uuid::Uuid;
 
@@ -32,7 +32,18 @@ impl Db {
             let _ = sqlx::query("DROP TABLE IF EXISTS _sqlx_migrations").execute(&pool).await;
         }
 
-        // Apply any non-breaking column additions for existing local sqlite databases
+        // Apply non-breaking table and column additions for existing local sqlite databases
+        let _ = sqlx::query(
+            "CREATE TABLE IF NOT EXISTS chapters (
+                id          TEXT PRIMARY KEY,
+                sermon_id   TEXT NOT NULL REFERENCES sermons(id) ON DELETE CASCADE,
+                title       TEXT NOT NULL,
+                summary     TEXT NOT NULL DEFAULT '',
+                start_time  REAL NOT NULL,
+                end_time    REAL NOT NULL
+            )"
+        ).execute(&pool).await;
+        let _ = sqlx::query("CREATE INDEX IF NOT EXISTS idx_chapters_sermon_id ON chapters(sermon_id, start_time)").execute(&pool).await;
         let _ = sqlx::query("ALTER TABLE sermons ADD COLUMN audio_path TEXT").execute(&pool).await;
         let _ = sqlx::query("ALTER TABLE sermons ADD COLUMN highlight_status TEXT").execute(&pool).await;
         let _ = sqlx::query("ALTER TABLE sermons ADD COLUMN highlight_error TEXT").execute(&pool).await;
@@ -92,9 +103,34 @@ impl Db {
 
         let Some(row) = row else { return Ok(None) };
         let mut sermon = row_to_sermon(row)?;
-        sermon.highlights = self.list_highlights(id).await?;
-        sermon.transcript_segments = self.list_transcript_segments(id).await?;
+        sermon.highlights = self.list_highlights(id).await.unwrap_or_default();
+        sermon.chapters = self.list_chapters(id).await.unwrap_or_default();
+        sermon.transcript_segments = self.list_transcript_segments(id).await.unwrap_or_default();
         Ok(Some(sermon))
+    }
+
+    pub async fn list_chapters(&self, sermon_id: Uuid) -> Result<Vec<Chapter>> {
+        let rows = sqlx::query(
+            "SELECT id, title, summary, start_time, end_time
+             FROM chapters WHERE sermon_id = ?
+             ORDER BY start_time ASC",
+        )
+        .bind(sermon_id.to_string())
+        .fetch_all(&self.pool)
+        .await
+        .context("listing chapters")?;
+
+        rows.into_iter()
+            .map(|row| {
+                Ok(Chapter {
+                    id: Uuid::parse_str(row.try_get::<String, _>("id")?.as_str())?,
+                    title: row.try_get("title")?,
+                    summary: row.try_get("summary")?,
+                    start_time: row.try_get::<f64, _>("start_time")? as f32,
+                    end_time: row.try_get::<f64, _>("end_time")? as f32,
+                })
+            })
+            .collect()
     }
 
     pub async fn get_highlight_with_sermon(
@@ -216,6 +252,7 @@ impl Db {
         title: Option<&str>,
         audio_path: Option<&str>,
         highlights: &[Highlight],
+        chapters: &[Chapter],
         segments: &[TranscriptSegment],
         highlight_status: Option<&str>,
         highlight_error: Option<&str>,
@@ -286,6 +323,28 @@ impl Db {
             .execute(&mut *tx)
             .await
             .context("inserting highlight")?;
+        }
+
+        sqlx::query("DELETE FROM chapters WHERE sermon_id = ?")
+            .bind(id.to_string())
+            .execute(&mut *tx)
+            .await
+            .context("clearing existing chapters")?;
+
+        for chapter in chapters {
+            sqlx::query(
+                "INSERT INTO chapters (id, sermon_id, title, summary, start_time, end_time)
+                 VALUES (?, ?, ?, ?, ?, ?)",
+            )
+            .bind(chapter.id.to_string())
+            .bind(id.to_string())
+            .bind(&chapter.title)
+            .bind(&chapter.summary)
+            .bind(chapter.start_time as f64)
+            .bind(chapter.end_time as f64)
+            .execute(&mut *tx)
+            .await
+            .context("inserting chapter")?;
         }
 
         sqlx::query("UPDATE sermons SET status = 'ready' WHERE id = ?")
@@ -435,6 +494,7 @@ pub fn row_to_sermon(row: sqlx::sqlite::SqliteRow) -> Result<Sermon> {
         created_at,
         error_message: row.try_get("error_message")?,
         highlights: Vec::new(),
+        chapters: Vec::new(),
         transcript_segments: Vec::new(),
         audio_path: row.try_get("audio_path").ok().flatten(),
         highlight_status: row.try_get("highlight_status").ok().flatten(),

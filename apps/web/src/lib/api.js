@@ -60,6 +60,11 @@ export async function getSermon(id) {
     return await core.invoke("get_sermon", { id });
   }
   const local = localStorage.getItem("dabar_sermons");
+  if (local) {
+    const list = JSON.parse(local);
+    return list.find((s) => s.id === id) || null;
+  }
+  return null;
 }
 
 /**

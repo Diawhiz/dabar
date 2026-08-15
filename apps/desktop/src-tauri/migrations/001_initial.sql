@@ -29,6 +29,17 @@ CREATE TABLE IF NOT EXISTS highlights (
 
 CREATE INDEX IF NOT EXISTS idx_highlights_sermon_id ON highlights(sermon_id);
 
+CREATE TABLE IF NOT EXISTS chapters (
+    id          TEXT PRIMARY KEY,
+    sermon_id   TEXT NOT NULL REFERENCES sermons(id) ON DELETE CASCADE,
+    title       TEXT NOT NULL,
+    summary     TEXT NOT NULL DEFAULT '',
+    start_time  REAL NOT NULL,
+    end_time    REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_chapters_sermon_id ON chapters(sermon_id, start_time);
+
 CREATE TABLE IF NOT EXISTS transcript_segments (
     id          TEXT PRIMARY KEY,
     sermon_id   TEXT NOT NULL REFERENCES sermons(id) ON DELETE CASCADE,

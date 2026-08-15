@@ -305,6 +305,7 @@ fn row_to_sermon_summary(row: sqlx::any::AnyRow) -> anyhow::Result<Sermon> {
         created_at,
         error_message: row.try_get("error_message")?,
         highlights: Vec::new(),
+        chapters: Vec::new(),
         transcript_segments: Vec::new(),
         audio_path: None,
         highlight_status: None,

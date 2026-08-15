@@ -69,13 +69,23 @@ async fn start_pipeline(
 
     state.db.insert_sermon(&sermon).await.map_err(|e| e.to_string())?;
 
-    // Read settings for API key and transcription backend choice
-    let api_key = state
+    // Read settings for API keys and transcription backend choice
+    let assemblyai_api_key = state
+        .db
+        .get_setting("assemblyai_api_key")
+        .await
+        .ok()
+        .flatten()
+        .or_else(|| std::env::var("ASSEMBLYAI_API_KEY").ok())
+        .unwrap_or_default();
+
+    let groq_api_key = state
         .db
         .get_setting("groq_api_key")
         .await
         .ok()
         .flatten()
+        .or_else(|| std::env::var("GROQ_API_KEY").ok())
         .unwrap_or_default();
 
     let offline_mode = state
@@ -100,8 +110,14 @@ async fn start_pipeline(
             state.app_data_dir.join("whisper-models").join(filename)
         };
         dabar_core::whisper::TranscriptionBackend::Local { model_path }
+    } else if !assemblyai_api_key.trim().is_empty() {
+        dabar_core::whisper::TranscriptionBackend::AssemblyAI {
+            api_key: assemblyai_api_key.clone(),
+        }
     } else {
-        dabar_core::whisper::TranscriptionBackend::Groq { api_key: api_key.clone() }
+        dabar_core::whisper::TranscriptionBackend::Groq {
+            api_key: groq_api_key.clone(),
+        }
     };
 
     // Spawn pipeline in background — never blocks the UI
@@ -114,7 +130,7 @@ async fn start_pipeline(
             db_clone.clone(),
             sermon_id,
             pipeline_source,
-            api_key,
+            groq_api_key,
             transcription_backend,
             app_data_dir_clone,
         )

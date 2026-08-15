@@ -1,4 +1,4 @@
-use crate::models::{Highlight, TranscriptSegment};
+use crate::models::{Chapter, Highlight, TranscriptSegment};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -530,4 +530,54 @@ mod tests {
         assert_eq!(highlights[0].reason, "Clear illustration with strong message");
         assert_eq!(highlights[0].suggested_hook_text, "Don't give up in your storm!");
     }
+
+    #[test]
+    fn test_validate_chapters() {
+        let chapters = vec![
+            Chapter {
+                id: Uuid::new_v4(),
+                title: "Chapter 2".into(),
+                summary: "Summary 2".into(),
+                start_time: 120.0,
+                end_time: 240.0,
+            },
+            Chapter {
+                id: Uuid::new_v4(),
+                title: "Chapter 1".into(),
+                summary: "Summary 1".into(),
+                start_time: 0.0,
+                end_time: 120.0,
+            },
+            Chapter {
+                id: Uuid::new_v4(),
+                title: "Invalid Chapter".into(),
+                summary: "Bad timestamps".into(),
+                start_time: 300.0,
+                end_time: 250.0,
+            },
+        ];
+
+        let validated = validate_chapters(chapters);
+        assert_eq!(validated.len(), 2);
+        assert_eq!(validated[0].title, "Chapter 1");
+        assert_eq!(validated[1].title, "Chapter 2");
+    }
 }
+
+/// Validates and normalizes chapter boundaries (ensuring start < end and chronological ordering).
+pub fn validate_chapters(chapters: Vec<Chapter>) -> Vec<Chapter> {
+    let mut valid: Vec<Chapter> = chapters
+        .into_iter()
+        .filter(|c| c.end_time > c.start_time)
+        .map(|mut c| {
+            if c.title.trim().is_empty() {
+                c.title = "Chapter".to_string();
+            }
+            c
+        })
+        .collect();
+
+    valid.sort_by(|a, b| a.start_time.partial_cmp(&b.start_time).unwrap_or(std::cmp::Ordering::Equal));
+    valid
+}
+

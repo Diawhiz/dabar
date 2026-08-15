@@ -168,19 +168,19 @@ pub async fn run_pipeline(
         }
     };
 
-    // ── Stage 2: Transcription ────────────────────────────────────────────────
+    // ── Stage 2: Transcription & Chapter Segmentation ───────────────────────
 
     db.update_status(sermon_id, SermonStatus::Transcribing).await?;
-    emit(&app, sermon_id, "transcribing", 5, "Preparing audio for transcription…");
+    emit(&app, sermon_id, "transcribing", 5, "Preparing audio for transcription & chaptering…");
 
-    let segments = dabar_core::whisper::transcribe_audio(
+    let transcription_res = dabar_core::whisper::transcribe_audio(
         &transcription_backend,
         &audio_path,
         Some(Box::new({
             let app_clone = app.clone();
             move |progress_pct: f32| {
                 let pct = (progress_pct * 100.0) as u8;
-                emit(&app_clone, sermon_id, "transcribing", pct.min(95), "Transcribing sermon…");
+                emit(&app_clone, sermon_id, "transcribing", pct.min(95), "Transcribing & segmenting chapters…");
             }
         })),
     )
@@ -189,16 +189,34 @@ pub async fn run_pipeline(
     // Clean up temporary work directory if applicable
     let _ = tokio::fs::remove_dir_all(&temp_dir).await;
 
+    let segments = transcription_res.segments;
+    let chapters = dabar_core::llm::validate_chapters(transcription_res.chapters);
+
     if segments.is_empty() {
         anyhow::bail!("Transcription produced no text. The audio may be silent or unsupported.");
     }
 
-    emit(&app, sermon_id, "transcribing", 100, "Transcription complete.");
+    emit(&app, sermon_id, "transcribing", 100, "Transcription & chaptering complete.");
 
-    // ── Stage 3: Highlight detection (runs when Groq API key is present) ──────
+    // ── Stage 3: Highlight / Chapter Summary Status ──────────────────────────
 
     let (highlights, highlight_status, highlight_error, total_candidates, passed_candidates) =
-        if !api_key.trim().is_empty() {
+        if !chapters.is_empty() {
+            emit(
+                &app,
+                sermon_id,
+                "detecting",
+                100,
+                &format!("Structured into {} sermon chapters.", chapters.len()),
+            );
+            (
+                Vec::new(),
+                Some("success".to_string()),
+                None,
+                Some(chapters.len() as u32),
+                Some(chapters.len() as u32),
+            )
+        } else if !api_key.trim().is_empty() {
             db.update_status(sermon_id, SermonStatus::Detecting).await?;
             emit(&app, sermon_id, "detecting", 10, "Analysing sermon transcript for key moments…");
 
@@ -239,11 +257,11 @@ pub async fn run_pipeline(
                 }
             }
         } else {
-            tracing::info!("No Groq API key configured — skipping highlight detection for {sermon_id}");
+            tracing::info!("No API key configured for highlight detection on {sermon_id}");
             (
                 Vec::new(),
                 Some("no_api_key".to_string()),
-                Some("Add a Groq API key in Settings to generate clips from this sermon.".to_string()),
+                Some("Configure an AssemblyAI or Groq key in Settings.".to_string()),
                 None,
                 Some(0),
             )
@@ -261,6 +279,7 @@ pub async fn run_pipeline(
         stored_title.as_deref(),
         Some(&audio_path.to_string_lossy()),
         &highlights,
+        &chapters,
         &segments,
         highlight_status.as_deref(),
         highlight_error.as_deref(),

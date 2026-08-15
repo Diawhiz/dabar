@@ -1,130 +1,125 @@
 # Dabar (דָּבָר) 🎙️✨
 
-Dabar is a high-performance, enterprise-grade AI sermon transcription, highlight extraction, and vertical video clip generator built with a **Rust (Axum + Tokio)** backend engine, a **React + Vite + TailwindCSS** web dashboard, and a **Tauri v2** desktop launcher.
+> **"Gospel. Tech. Precious."** — Faith and technology together, intentional and warm, never sterile or generic.
+
+**Dabar** is a local-first, low-end-PC-friendly desktop application (Tauri v2 + React + Rust) that turns sermon audio and video into vertical short-form clips, structured transcripts, and written archives. Built specifically for church media volunteers, not marketers.
 
 ---
 
-## 🏗️ Monorepo Architecture (`apps/` & `packages/`)
+## 🕯️ Signature Interaction: *Illumination, not scanning*
 
-Dabar is structured as an enterprise monorepo:
+The interface expresses a single core metaphor: **a sermon coming to light as it is confirmed.**
+
+- **Unconfirmed / Low-Confidence Text**: Renders in a quiet, dim warm grey (`#8A7F73`).
+- **Confirmed / Reviewed Text**: Brightens to warm cream (`#1C1815` in paper mode / `#F5EFE6` in dark mode) with a soft amber ambient glow.
+- **Key Teaching Moments**: AI-flagged pastoral moments receive a warm amber wash (`#D4913A` at ~8-12% opacity) pooling behind the paragraph where it matters most.
+- **Volunteer-Friendly Copy**: Technical notation is translated to human terms (e.g. visual phone icons with `"Vertical · For Reels, TikTok & Shorts"`, and `"32 moments worth sharing"`).
+
+---
+
+## 🏗️ Architecture & Stack
 
 ```text
 dabar/
 ├── apps/
-│   ├── web/                    # React Web App (Vite + Tailwind -> Deploys to Vercel)
-│   │   ├── src/                # Components, pages, assets, API client
-│   │   └── package.json
+│   ├── desktop/src-tauri/      # Tauri v2 Native Shell & Background Pipeline (Rust + SQLite)
+│   │   ├── src/
+│   │   │   ├── db.rs           # Embedded SQLite persistence & migrations
+│   │   │   ├── deps.rs         # Hardware profiling (sysinfo) & dependency resolver
+│   │   │   ├── pipeline.rs     # Async background pipeline with live event broadcast
+│   │   │   └── lib.rs          # Tauri IPC commands
+│   │   └── tauri.conf.json
 │   │
-│   ├── server/                 # Axum REST API Server (Rust -> Deploys to Render)
-│   │   ├── src/                # HTTP handlers, router & database state
-│   │   └── Cargo.toml          # Imports `packages/core`
-│   │
-│   └── desktop/                # Desktop App Shell (Tauri v2 for Mac / Windows)
-│       ├── src-tauri/          # Tauri IPC native Rust commands
-│       └── tauri.conf.json     # Bundles `apps/web/dist` automatically
+│   └── web/                    # React 19 Frontend (Vite + TailwindCSS)
+│       └── src/
+│           ├── components/     # ManuscriptView, ExportModal, ClipCard, SermonCard
+│           ├── pages/          # ClipReview, Dashboard, Upload, Processing, Settings
+│           └── lib/api.js      # Tauri IPC client (`invoke` & `listen`)
 │
 └── packages/
-    └── core/                   # Shared Rust Engine
-        └── src/                # downloader.rs, whisper.rs, llm.rs, ffmpeg.rs, models.rs
+    └── core/                   # Core Processing Engine
+        └── src/
+            ├── structuring.rs  # Rule-based paragraphs, sections & scripture reference parser
+            ├── whisper.rs      # Hybrid Whisper engine (Cloud Groq + Local Offline)
+            ├── llm.rs          # Pastoral sermon highlight scoring & reason extraction
+            ├── ffmpeg.rs       # 1080x1920 blur-pad vertical slice & bitrate caps (<75MB)
+            └── downloader.rs   # Resilient audio/video stream downloader
 ```
 
 ---
 
-## How Dabar Works 🔄
+## ✨ Key Features
 
-```mermaid
-flowchart TD
-    A[User Pastes YouTube Sermon URL] --> B[Axum Web Server /api/sermons/]
-    B --> C[tokio::spawn Async Background Pipeline]
-    
-    C -->|Stage 1: Downloading| D[yt-dlp Audio Extraction android_vr client]
-    D -->|Stage 2: Transcribing| E[Groq Whisper Large V3 Turbo Speech Recognition]
-    E -->|Stage 3: Highlight Detection| F[Groq Llama 3.3 70B Key Moment Analysis]
-    F -->|Stage 4: Ready| G[SQLx Postgres / SQLite Transaction Commit]
-    
-    G --> H[Full Sermon Dashboard & Interactive Studio]
-    H -->|User Clicks Download Clip| I[Axum Stream Endpoint /api/clips/:id/download/]
-    I --> J[FFmpeg 1080x1920 Blur-Pad Vertical 9:16 Video Slice]
-    J --> K[Browser Direct MP4 Download]
-```
-
----
-
-## Key Features 🚀
-
-- **Zero-Timeout Async Background Processing**: Non-blocking `tokio::spawn` background worker manages stage transitions (`queued` $\rightarrow$ `downloading` $\rightarrow$ `transcribing` $\rightarrow$ `detecting` $\rightarrow$ `ready`).
-- **YouTube Cloud IP Bypass**: Configured with `yt-dlp` `player_client: ["android_vr", "tv"]` to bypass YouTube PO Token and SABR streaming restrictions.
-- **Groq Whisper Large V3 Turbo**: High-precision speech-to-text with segment timestamps and sentence boundary alignment.
-- **AI Sermon Highlight Detection (`detect_sermon_highlights`)**: 
-  - Converts timestamped Whisper segments into `[HH:MM:SS]` inline prompt format.
-  - Queries Groq LLM (`llama-3.3-70b-versatile`) with structured JSON mode (`response_format: { type: "json_object" }`).
-  - Enforces strict clip validation (clips must satisfy `start_timestamp < end_timestamp` and duration between **30 and 90 seconds**).
-  - Implements auto-retry (1 retry) and non-crashing graceful fallback (logs error and returns empty list if LLM fails after 2 attempts).
-  - Stores clip metadata (`reason`, `suggested_hook_text`, `title`, `start_time`, `end_time`, `score`) in database.
-- **FFmpeg 1080x1920 Blur-Pad Canvas**: Generates vertical 9:16 short-form video clips (Shorts/Reels/TikTok) with blurred background padding.
-- **Dual Database Engine**: SQLx connects to managed **PostgreSQL** on Render in production and **SQLite** locally.
-- **Tauri v2 Desktop App**: Packages the React UI into a native 15MB desktop app for local offline GPU video processing.
+1. **Dual-Mode Intake**:
+   - **Local Media File Picker**: MP4, MOV, MKV, MP3, WAV, M4A, OGG, Opus.
+   - **YouTube Sermon Links**: Automated stream extraction with Android VR/TV client bypass.
+2. **Manuscript Reading & Correction Experience**:
+   - Single-column manuscript layout with quiet left-margin timestamps (`12:45`).
+   - **Keyboard Navigation**: `Space` (play/pause), `↑ / ↓` (jump sentence/paragraph), `Enter` (edit/confirm).
+   - **Scripture Reference Verification**: Detected Bible verses (e.g. `📖 John 3:16`) are shown with canonical text alongside for volunteer verification.
+   - **Custom Church Vocabulary**: Case-insensitive autocorrection for church leaders, Hebrew/Greek terms, and ministry names.
+3. **Pastoral Highlight Detection**:
+   - Groq Llama 3.3 70B evaluates theological depth, testimonies, scripture exposition, and calls to faith rather than generic social media hooks.
+   - Generates sermon-specific *"Why it matters"* explanations for every clip.
+4. **4-Step Export Studio**:
+   - **Live Reflow Preview**: Live video playback with caption preview.
+   - **Visual Format Cards**: Vertical (9:16), Square (1:1), Widescreen (16:9).
+   - **Caption Presets**: *Warm Ember*, *Clean Serif*, and *Classic Subtitle*.
+   - **Direct Disk Render**: Encoded to local `Videos/Dabar/` directory with one-click *"Show in Folder"*.
+5. **Low-End PC Optimization**:
+   - Hardware RAM detection dynamically tunes FFmpeg presets (`ultrafast` on $\le$4GB RAM machines vs `veryfast` on standard PCs).
+   - Strict bitrate limits (`-crf 22 -maxrate 6000k`) guarantee clips remain under 75 MB.
 
 ---
 
-## Tech Stack 🛠️
+## 🎨 Type System & Color Discipline
 
-### Backend & Core Engine
-- **Framework**: Rust (Axum 0.8, Tokio 1.39)
-- **Database**: SQLx 0.8 (PostgreSQL / SQLite)
-- **AI Models**: Groq Whisper (`whisper-large-v3-turbo`) & Groq LLM (`llama-3.3-70b-versatile`)
-- **Media Engine**: `yt-dlp`, `ffmpeg`
-
-### Frontend & Desktop
-- **Web**: React 19, Vite 6, TailwindCSS 3.4, Lucide Icons
-- **Desktop Shell**: Tauri v2
+- **Display & Headlines**: `Fraunces` — warm editorial serif.
+- **Body & Manuscript**: `Source Serif 4` — designed for 30+ minutes of comfortable reading.
+- **Single Accent Color**: Warm Amber (`#D4913A`) is the **only** accent color across the interface.
 
 ---
 
-## Getting Started ⚙️
+## 🚀 Getting Started
 
 ### Prerequisites
 - **Rust**: 1.75+ (`rustc`, `cargo`)
 - **Node.js**: 18+ (`npm`)
-- **FFmpeg** & **yt-dlp** installed on PATH
+- **FFmpeg** on system PATH
 - A **Groq API Key** ([console.groq.com](https://console.groq.com))
 
 ---
 
-### Local Development Setup
+### Running the Desktop App
 
-1. **Configure Environment Variables**:
-   Copy `.env.example` to `.env` in the root:
-   ```env
-   GROQ_API_KEY=your_groq_api_key_here
-   DATABASE_URL=sqlite://dabar.sqlite3?mode=rwc
-   PORT=8000
-   CORS_ALLOWED_ORIGINS=http://localhost:5173
-   ```
+```powershell
+# 1. Install frontend dependencies
+cd apps/web
+npm install
 
-2. **Start the Rust Axum API Server**:
-   ```bash
-   cargo run --bin dabar-server
-   ```
-   The backend API runs at `http://localhost:8000`.
+# 2. Run the desktop app with live reload (launches React dev server + Tauri window):
+npm run tauri dev
+```
 
-3. **Start the React Frontend Dev Server**:
-   ```bash
-   cd apps/web
-   npm run dev
-   ```
-   The frontend runs at `http://localhost:5173`.
+Alternatively, run in two separate terminals:
+```powershell
+# Terminal 1 (Frontend):
+cd apps/web
+npm run dev
+
+# Terminal 2 (Backend):
+cd apps/desktop/src-tauri
+cargo run
+```
 
 ---
 
-## Cloud Deployment 🚀
+## 🧪 Testing
 
-- **Backend (Render)**: Render uses native Rust deployment via `render.yaml` (`cargo build --release -p dabar-server`).
-- **Frontend (Vercel)**: Point Vercel root directory to `apps/web` (`apps/web/vercel.json`).
+```powershell
+# Run all Rust core engine unit tests:
+cargo test -p dabar-core
 
----
-
-## Branch Strategy 🌿
-
-- **`main`**: Active Rust (Axum) + React + Tauri v2 monorepo.
-- **`backend/django-legacy`**: Preserved legacy Django REST Framework implementation.
+# Verify frontend production bundle:
+cd apps/web && npm run build
+```

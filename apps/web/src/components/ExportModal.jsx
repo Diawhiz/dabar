@@ -35,6 +35,7 @@ export default function ExportModal({
   clip,
   sermonTitle,
   videoId,
+  mediaAssetUrl,
   onClose,
   onConfirmExport,
   isRendering,
@@ -92,10 +93,18 @@ export default function ExportModal({
                   title="Clip Reflow Preview"
                   className="w-full h-full object-cover scale-150 pointer-events-none opacity-80"
                 />
+              ) : mediaAssetUrl ? (
+                <video
+                  src={mediaAssetUrl}
+                  className="w-full h-full object-cover pointer-events-none opacity-80"
+                  onLoadedMetadata={(e) => {
+                    e.target.currentTime = clip.start || 0;
+                  }}
+                />
               ) : (
                 <div className="text-center p-2">
                   <i className="bx bx-film text-xl text-accent mb-1" />
-                  <p className="text-[9px] text-secondary">Local Media</p>
+                  <p className="text-[9px] text-secondary">Sermon Video</p>
                 </div>
               )}
 

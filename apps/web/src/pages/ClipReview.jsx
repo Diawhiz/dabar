@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { listSermons, getSermon, renderClip, openInExplorer } from "../lib/api.js";
-import { highlights as mockHighlights } from "../data/mockData.js";
 import ClipCard from "../components/ClipCard.jsx";
 import ExportModal from "../components/ExportModal.jsx";
 import ManuscriptView from "../components/ManuscriptView.jsx";
@@ -106,28 +105,11 @@ export default function ClipReview() {
           };
         });
 
-        if (structuredHls.length > 0 || transcriptItems.length > 0) {
-          setHighlights(structuredHls);
-          setSegments(transcriptItems.length > 0 ? transcriptItems : structuredHls);
-          if (transcriptItems.length > 0) {
-            const lastSeg = transcriptItems[transcriptItems.length - 1];
-            setSermonDuration(formatSeconds(lastSeg.end));
-          }
-        } else {
-          const fallbackHls = mockHighlights.map((hl, i) => ({
-            id: hl.id,
-            start: i * 45,
-            end: (i + 1) * 45,
-            title: hl.title,
-            highlight_title: hl.title,
-            why: hl.why || "Pastor shares a message on unwavering faith.",
-            text: hl.transcript,
-            duration: `${formatSeconds(i * 45)} – ${formatSeconds((i + 1) * 45)}`,
-            is_highlight: true,
-          }));
-          setHighlights(fallbackHls);
-          setSegments(fallbackHls);
-          setSermonDuration("45:12");
+        setHighlights(structuredHls);
+        setSegments(transcriptItems);
+        if (transcriptItems.length > 0) {
+          const lastSeg = transcriptItems[transcriptItems.length - 1];
+          setSermonDuration(formatSeconds(lastSeg.end));
         }
       } catch (err) {
         console.warn("Failed to load sermon studio data:", err);

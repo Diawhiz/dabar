@@ -60,8 +60,18 @@ export async function getSermon(id) {
     return await core.invoke("get_sermon", { id });
   }
   const local = localStorage.getItem("dabar_sermons");
-  const list = local ? JSON.parse(local) : [];
-  return list.find((s) => s.id === id) || null;
+}
+
+/**
+ * Convert a local file path into a webview asset URL for HTML5 video/audio playback.
+ */
+export async function getAssetUrl(filePath) {
+  if (!filePath) return null;
+  const core = await getTauriCore();
+  if (core && typeof core.convertFileSrc === "function") {
+    return core.convertFileSrc(filePath);
+  }
+  return filePath;
 }
 
 /**

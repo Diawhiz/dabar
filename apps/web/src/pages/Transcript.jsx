@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { listSermons, getSermon } from "../lib/api.js";
-import { highlights as mockHighlights } from "../data/mockData.js";
 import { cleanSermonTitle, formatSeconds } from "../lib/formatters.js";
 import ManuscriptView from "../components/ManuscriptView.jsx";
 import Btn from "../components/Btn.jsx";
@@ -61,17 +60,8 @@ export default function Transcript() {
           });
           setSegments(items);
         } else {
-          // Fallback mock segments with clean text
-          const fallback = mockHighlights.map((hl, i) => ({
-            id: hl.id,
-            start: i * 45,
-            end: (i + 1) * 45,
-            text: hl.transcript,
-            is_highlight: true,
-            highlight_title: hl.title,
-            highlight_reason: hl.why,
-          }));
-          setSegments(fallback);
+          // Real empty state — zero fake mock data
+          setSegments([]);
         }
       } catch (err) {
         console.warn("Could not load transcript:", err);
@@ -116,6 +106,15 @@ export default function Transcript() {
   const durationStr =
     segments.length > 0 ? formatSeconds(segments[segments.length - 1].end) : null;
 
+  const statusStr = (sermon?.status || "").toLowerCase();
+  const isProcessing =
+    statusStr.includes("queued") ||
+    statusStr.includes("download") ||
+    statusStr.includes("transcrib") ||
+    statusStr.includes("detect") ||
+    statusStr.includes("process");
+  const isFailed = statusStr.includes("fail") || statusStr.includes("error");
+
   return (
     <div className="flex flex-col min-h-screen pb-24">
       {/* ── Page Header ───────────────────────────────────────────── */}
@@ -152,27 +151,29 @@ export default function Transcript() {
         </div>
       </header>
 
-      {/* ── Search Toolbar ────────────────────────────────────────── */}
-      <div className="px-6 py-2.5 border-b border-border bg-surface/40 flex items-center justify-between gap-4">
-        <div className="relative flex-1 max-w-sm">
-          <i className="bx bx-search absolute left-2.5 top-1/2 -translate-y-1/2 text-muted text-sm" />
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search words or Scripture in transcript…"
-            className="w-full bg-surface border border-border rounded pl-8 pr-3 py-1 text-xs text-primary placeholder:text-muted outline-none focus:border-accent"
-          />
+      {/* ── Search Toolbar (only if segments exist) ────────────────── */}
+      {segments.length > 0 && (
+        <div className="px-6 py-2.5 border-b border-border bg-surface/40 flex items-center justify-between gap-4">
+          <div className="relative flex-1 max-w-sm">
+            <i className="bx bx-search absolute left-2.5 top-1/2 -translate-y-1/2 text-muted text-sm" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search words or Scripture in transcript…"
+              className="w-full bg-surface border border-border rounded pl-8 pr-3 py-1 text-xs text-primary placeholder:text-muted outline-none focus:border-accent"
+            />
+          </div>
+          {searchTerm && (
+            <button
+              onClick={() => setSearchTerm("")}
+              className="text-xs text-secondary hover:text-primary"
+            >
+              Clear ({filteredSegments.length} matches)
+            </button>
+          )}
         </div>
-        {searchTerm && (
-          <button
-            onClick={() => setSearchTerm("")}
-            className="text-xs text-secondary hover:text-primary"
-          >
-            Clear ({filteredSegments.length} matches)
-          </button>
-        )}
-      </div>
+      )}
 
       {/* ── Manuscript Column ─────────────────────────────────────── */}
       <div className="page-content flex-1">
@@ -181,7 +182,7 @@ export default function Transcript() {
             <i className="bx bx-loader-alt bx-spin text-xl text-accent" />
             <p className="text-xs text-secondary">Loading manuscript…</p>
           </div>
-        ) : (
+        ) : segments.length > 0 ? (
           <ManuscriptView
             segments={filteredSegments}
             currentTime={playbackTime}
@@ -190,59 +191,122 @@ export default function Transcript() {
             onTogglePlay={handleTogglePlay}
             onUpdateSegmentText={handleUpdateSegmentText}
           />
+        ) : isProcessing ? (
+          /* Processing state */
+          <div className="border border-border rounded-md bg-surface p-10 text-center space-y-4 max-w-md mx-auto my-8">
+            <div className="w-10 h-10 rounded-full bg-surface-hover text-accent flex items-center justify-center mx-auto text-xl border border-border">
+              <i className="bx bx-loader-alt bx-spin" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-primary">
+                Transcript is being transcribed…
+              </p>
+              <p className="text-xs text-secondary mt-1">
+                The sermon is currently processing speech-to-text.
+              </p>
+            </div>
+            <Btn
+              size="sm"
+              onClick={() => navigate(`/processing/${sermonId || sermon?.id}`)}
+            >
+              <i className="bx bx-time text-sm" />
+              <span>View Live Progress</span>
+            </Btn>
+          </div>
+        ) : isFailed ? (
+          /* Failed state */
+          <div className="border border-danger/30 bg-danger-muted p-8 rounded-md text-center space-y-3 max-w-md mx-auto my-8">
+            <i className="bx bx-error-circle text-2xl text-danger" />
+            <div>
+              <p className="text-sm font-semibold text-danger">
+                Transcription Failed
+              </p>
+              <p className="text-xs text-secondary mt-1">
+                {sermon?.error_message ||
+                  "An error occurred while transcribing this sermon."}
+              </p>
+            </div>
+            <Btn
+              size="sm"
+              variant="secondary"
+              onClick={() => navigate("/dashboard")}
+            >
+              Return to Library
+            </Btn>
+          </div>
+        ) : (
+          /* Empty ready state */
+          <div className="border border-border rounded-md bg-surface p-10 text-center space-y-3 max-w-md mx-auto my-8">
+            <div className="w-8 h-8 rounded bg-surface-hover text-accent flex items-center justify-center mx-auto text-base border border-border">
+              <i className="bx bx-file" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-primary">
+                No transcript text available
+              </p>
+              <p className="text-[11px] text-muted mt-0.5">
+                No spoken words were recognized for this sermon.
+              </p>
+            </div>
+            <Btn size="sm" onClick={() => navigate("/dashboard")}>
+              Return to Library
+            </Btn>
+          </div>
         )}
       </div>
 
-      {/* ── Fixed Bottom Audio Bar ────────────────────────────────── */}
-      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 bg-surface border border-border rounded-full px-4 py-1.5 shadow-lg flex items-center gap-3 text-xs">
-        <button
-          type="button"
-          onClick={handleTogglePlay}
-          className="w-6 h-6 rounded-full bg-accent text-white flex items-center justify-center hover:bg-[var(--accent-hover)] transition-colors"
-          aria-label={isPlaying ? "Pause audio" : "Play audio"}
-        >
-          <i className={`bx ${isPlaying ? "bx-pause" : "bx-play"} text-base`} />
-        </button>
+      {/* ── Fixed Bottom Audio Bar (only if segments exist) ───────── */}
+      {segments.length > 0 && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 bg-surface border border-border rounded-full px-4 py-1.5 shadow-lg flex items-center gap-3 text-xs">
+          <button
+            type="button"
+            onClick={handleTogglePlay}
+            className="w-6 h-6 rounded-full bg-accent text-white flex items-center justify-center hover:bg-[var(--accent-hover)] transition-colors"
+            aria-label={isPlaying ? "Pause audio" : "Play audio"}
+          >
+            <i className={`bx ${isPlaying ? "bx-pause" : "bx-play"} text-base`} />
+          </button>
 
-        <div className="flex items-center gap-1 font-mono text-[11px]">
-          <span className="font-bold text-primary">{formatSeconds(playbackTime)}</span>
-          {durationStr && (
-            <>
-              <span className="text-muted">/</span>
-              <span className="text-secondary">{durationStr}</span>
-            </>
-          )}
-        </div>
+          <div className="flex items-center gap-1 font-mono text-[11px]">
+            <span className="font-bold text-primary">{formatSeconds(playbackTime)}</span>
+            {durationStr && (
+              <>
+                <span className="text-muted">/</span>
+                <span className="text-secondary">{durationStr}</span>
+              </>
+            )}
+          </div>
 
-        <div
-          className="w-28 sm:w-48 h-1 bg-base rounded-full overflow-hidden cursor-pointer"
-          onClick={(e) => {
-            const rect = e.currentTarget.getBoundingClientRect();
-            const ratio = (e.clientX - rect.left) / rect.width;
-            const total =
-              segments.length > 0 ? segments[segments.length - 1].end : 2700;
-            handleSeek(ratio * total);
-          }}
-        >
           <div
-            className="h-full bg-accent rounded-full"
-            style={{
-              width: `${Math.min(
-                100,
-                (playbackTime /
-                  (segments.length > 0
-                    ? segments[segments.length - 1].end
-                    : 2700)) *
-                  100
-              )}%`,
+            className="w-28 sm:w-48 h-1 bg-base rounded-full overflow-hidden cursor-pointer"
+            onClick={(e) => {
+              const rect = e.currentTarget.getBoundingClientRect();
+              const ratio = (e.clientX - rect.left) / rect.width;
+              const total =
+                segments.length > 0 ? segments[segments.length - 1].end : 2700;
+              handleSeek(ratio * total);
             }}
-          />
-        </div>
+          >
+            <div
+              className="h-full bg-accent rounded-full"
+              style={{
+                width: `${Math.min(
+                  100,
+                  (playbackTime /
+                    (segments.length > 0
+                      ? segments[segments.length - 1].end
+                      : 2700)) *
+                    100
+                )}%`,
+              }}
+            />
+          </div>
 
-        <span className="text-[10px] text-muted hidden sm:inline font-mono">
-          [Space] Play/Pause
-        </span>
-      </div>
+          <span className="text-[10px] text-muted hidden sm:inline font-mono">
+            [Space] Play/Pause
+          </span>
+        </div>
+      )}
     </div>
   );
 }

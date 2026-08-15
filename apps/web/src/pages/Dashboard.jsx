@@ -1,7 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { listSermons } from "../lib/api.js";
-import { recentSermons } from "../data/mockData.js";
 import { cleanSermonTitle } from "../lib/formatters.js";
 import Btn from "../components/Btn.jsx";
 
@@ -17,14 +16,15 @@ export default function Dashboard() {
 
     listSermons()
       .then((data) => {
-        if (mounted && Array.isArray(data) && data.length > 0) {
+        if (mounted && Array.isArray(data)) {
           setSermons(data);
         } else if (mounted) {
-          setSermons(recentSermons);
+          setSermons([]);
         }
       })
-      .catch(() => {
-        if (mounted) setSermons(recentSermons);
+      .catch((err) => {
+        console.warn("Could not list sermons:", err);
+        if (mounted) setSermons([]);
       })
       .finally(() => {
         if (mounted) setIsLoading(false);

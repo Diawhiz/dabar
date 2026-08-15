@@ -104,19 +104,6 @@ async fn start_pipeline(
         dabar_core::whisper::TranscriptionBackend::Groq { api_key: api_key.clone() }
     };
 
-    let output_dir = state
-        .db
-        .get_setting("output_dir")
-        .await
-        .ok()
-        .flatten()
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            dirs::video_dir()
-                .unwrap_or_else(|| dirs::home_dir().unwrap_or_default())
-                .join("Dabar")
-        });
-
     // Spawn pipeline in background — never blocks the UI
     let db_clone = state.db.clone();
     let app_clone = app.clone();
@@ -193,7 +180,7 @@ async fn render_clip(
                 .join("Dabar")
         });
 
-    let output_path = render_clip_to_disk(&sermon, highlight_id, &output_dir)
+    let output_path = pipeline::render_clip_to_disk(&sermon, highlight_id, &output_dir)
         .await
         .map_err(|e| e.to_string())?;
 

@@ -101,6 +101,17 @@ export async function renderClip(sermonId, highlightId) {
 }
 
 /**
+ * Re-run highlight detection on an already transcribed sermon.
+ */
+export async function retryHighlights(sermonId) {
+  const core = await getTauriCore();
+  if (core) {
+    return await core.invoke("retry_highlights", { sermonId });
+  }
+  return [];
+}
+
+/**
  * Open native OS file dialog to select audio or video file(s).
  * Uses native async Tauri command to prevent any window freezing.
  */

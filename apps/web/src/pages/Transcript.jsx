@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { listSermons, getSermon } from "../lib/api.js";
+import { listSermons, getSermon, getAssetUrl } from "../lib/api.js";
 import { cleanSermonTitle, formatSeconds } from "../lib/formatters.js";
 import ManuscriptView from "../components/ManuscriptView.jsx";
 import Btn from "../components/Btn.jsx";
@@ -11,10 +11,13 @@ export default function Transcript() {
   const [sermon, setSermon] = useState(null);
   const [segments, setSegments] = useState([]);
   const [highlightsCount, setHighlightsCount] = useState(0);
+  const [mediaAssetUrl, setMediaAssetUrl] = useState(null);
+  const [audioError, setAudioError] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [playbackTime, setPlaybackTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const audioRef = useRef(null);
 
   useEffect(() => {
     let mounted = true;
@@ -42,6 +45,16 @@ export default function Transcript() {
         const hlList = Array.isArray(data.highlights) ? data.highlights : [];
         setHighlightsCount(hlList.length);
 
+        // Resolve audio asset URL for webview playback
+        const audioSrc = data.audio_path || data.youtube_url || "";
+        if (audioSrc && !audioSrc.startsWith("http://") && !audioSrc.startsWith("https://")) {
+          getAssetUrl(audioSrc).then((url) => {
+            if (mounted) setMediaAssetUrl(url);
+          });
+        } else if (audioSrc.startsWith("http://") || audioSrc.startsWith("https://")) {
+          setMediaAssetUrl(audioSrc);
+        }
+
         const rawSegs = Array.isArray(data.transcript_segments) ? data.transcript_segments : [];
         if (rawSegs.length > 0) {
           const items = rawSegs.map((seg, idx) => {
@@ -60,7 +73,6 @@ export default function Transcript() {
           });
           setSegments(items);
         } else {
-          // Real empty state — zero fake mock data
           setSegments([]);
         }
       } catch (err) {
@@ -96,15 +108,31 @@ export default function Transcript() {
 
   function handleSeek(time) {
     setPlaybackTime(time);
-    setIsPlaying(true);
+    if (audioRef.current) {
+      audioRef.current.currentTime = time;
+      audioRef.current.play().catch(() => {});
+    }
   }
 
   function handleTogglePlay() {
-    setIsPlaying((prev) => !prev);
+    if (audioRef.current) {
+      if (isPlaying) {
+        audioRef.current.pause();
+      } else {
+        setAudioError(null);
+        audioRef.current.play().catch((err) => {
+          console.warn("Audio play failed:", err);
+          setAudioError("Could not play audio. Source file may not be reachable.");
+        });
+      }
+    } else {
+      setIsPlaying((prev) => !prev);
+    }
   }
 
-  const durationStr =
-    segments.length > 0 ? formatSeconds(segments[segments.length - 1].end) : null;
+  const durationSec =
+    segments.length > 0 ? segments[segments.length - 1].end : 0;
+  const durationStr = durationSec > 0 ? formatSeconds(durationSec) : null;
 
   const statusStr = (sermon?.status || "").toLowerCase();
   const isProcessing =
@@ -117,6 +145,25 @@ export default function Transcript() {
 
   return (
     <div className="flex flex-col min-h-screen pb-24">
+      {/* Real HTML5 Audio Element */}
+      {mediaAssetUrl && (
+        <audio
+          ref={audioRef}
+          src={mediaAssetUrl}
+          preload="auto"
+          onTimeUpdate={(e) => setPlaybackTime(e.target.currentTime)}
+          onPlay={() => setIsPlaying(true)}
+          onPause={() => setIsPlaying(false)}
+          onEnded={() => setIsPlaying(false)}
+          onError={() => {
+            setAudioError(
+              `Source audio file could not be loaded: ${sermon?.audio_path || sermon?.youtube_url || "path missing"}`
+            );
+            setIsPlaying(false);
+          }}
+        />
+      )}
+
       {/* ── Page Header ───────────────────────────────────────────── */}
       <header className="page-header">
         <div className="space-y-0.5 min-w-0">
@@ -150,6 +197,22 @@ export default function Transcript() {
           </Btn>
         </div>
       </header>
+
+      {/* ── Audio Load Error Notice ────────────────────────────────── */}
+      {audioError && (
+        <div className="mx-6 mt-2 p-2.5 rounded border border-warning/30 bg-warning/10 text-xs text-warning flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <i className="bx bx-volume-mute text-base shrink-0" />
+            <span>{audioError}</span>
+          </div>
+          <button
+            onClick={() => setAudioError(null)}
+            className="text-muted hover:text-primary text-xs"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* ── Search Toolbar (only if segments exist) ────────────────── */}
       {segments.length > 0 && (
@@ -282,8 +345,7 @@ export default function Transcript() {
             onClick={(e) => {
               const rect = e.currentTarget.getBoundingClientRect();
               const ratio = (e.clientX - rect.left) / rect.width;
-              const total =
-                segments.length > 0 ? segments[segments.length - 1].end : 2700;
+              const total = durationSec > 0 ? durationSec : 2700;
               handleSeek(ratio * total);
             }}
           >
@@ -292,11 +354,7 @@ export default function Transcript() {
               style={{
                 width: `${Math.min(
                   100,
-                  (playbackTime /
-                    (segments.length > 0
-                      ? segments[segments.length - 1].end
-                      : 2700)) *
-                    100
+                  (playbackTime / (durationSec > 0 ? durationSec : 2700)) * 100
                 )}%`,
               }}
             />

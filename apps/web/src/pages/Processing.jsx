@@ -4,10 +4,10 @@ import { getSermon, onPipelineProgress } from "../lib/api.js";
 import Btn from "../components/Btn.jsx";
 
 const STAGES = [
-  { key: "downloading", label: "Locating and preparing audio stream" },
-  { key: "transcribing", label: "Speech-to-text transcription" },
-  { key: "detecting", label: "Structuring paragraphs & key moment detection" },
-  { key: "ready", label: "Pipeline complete — clips generated" },
+  { key: "downloading", label: "Preparing sermon recording" },
+  { key: "transcribing", label: "Transcribing speech to text" },
+  { key: "detecting", label: "Finding key teaching moments & Scripture" },
+  { key: "ready", label: "Clips & full manuscript ready" },
 ];
 
 export default function Processing() {

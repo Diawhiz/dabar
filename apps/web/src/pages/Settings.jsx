@@ -101,7 +101,7 @@ export default function Settings() {
       const updatedStatus = await getOfflineStatus();
       setOfflineStatus(updatedStatus);
     } catch (err) {
-      alert(`Download failed for ${comp}: ` + (err.message || err));
+      alert(`Download failed: ` + (err.message || err));
     } finally {
       setDownloadingComponent(null);
     }
@@ -114,7 +114,7 @@ export default function Settings() {
         <div>
           <h1 className="text-base font-semibold text-primary">Settings</h1>
           <p className="text-xs text-secondary mt-0.5">
-            Configure appearance, offline AI models, and custom church vocabulary.
+            Manage appearance, offline tools, storage locations, and church vocabulary.
           </p>
         </div>
       </header>
@@ -123,9 +123,9 @@ export default function Settings() {
       <div className="px-6 py-2 border-b border-border bg-surface/30 flex gap-2 text-xs font-medium">
         {[
           { key: "general", label: "General & Storage", icon: "bx-slider" },
-          { key: "offline", label: "Offline & AI Models", icon: "bx-chip" },
+          { key: "offline", label: "Processing & Offline Tools", icon: "bx-chip" },
           { key: "vocabulary", label: "Church Vocabulary", icon: "bx-book" },
-          { key: "diagnostics", label: "System Diagnostics", icon: "bx-pulse" },
+          { key: "diagnostics", label: "System Status", icon: "bx-pulse" },
         ].map((tab) => (
           <button
             key={tab.key}
@@ -198,10 +198,10 @@ export default function Settings() {
                 </div>
               </div>
 
-              {/* Groq Cloud API Key */}
+              {/* Cloud Speech API Key */}
               <div className="space-y-1.5">
                 <label className="font-semibold text-primary block">
-                  Groq Cloud API Key
+                  Cloud Speech API Key (Optional)
                 </label>
                 <input
                   type="password"
@@ -213,7 +213,7 @@ export default function Settings() {
                   className="field-input font-mono"
                 />
                 <p className="text-[11px] text-muted">
-                  Used for 20-second cloud transcription and moment detection. Free keys at{" "}
+                  Enables 20-second high-speed cloud transcription. You can get a free key from{" "}
                   <a
                     href="https://console.groq.com"
                     target="_blank"
@@ -228,7 +228,7 @@ export default function Settings() {
               {/* Output Directory */}
               <div className="space-y-1.5">
                 <label className="font-semibold text-primary block">
-                  Default Clips Export Folder
+                  Clips Output Folder
                 </label>
                 <input
                   type="text"
@@ -240,7 +240,7 @@ export default function Settings() {
                   className="field-input font-mono"
                 />
                 <p className="text-[11px] text-muted">
-                  Folder on your local drive where rendered MP4 vertical clips are stored.
+                  The folder on your computer where finished video clips are saved.
                 </p>
               </div>
 
@@ -257,18 +257,18 @@ export default function Settings() {
                     isSaving ? "bx-loader-alt bx-spin" : "bx-check"
                   } text-sm`}
                 />
-                <span>{isSaving ? "Saving…" : "Save Preferences"}</span>
+                <span>{isSaving ? "Saving…" : "Save Settings"}</span>
               </Btn>
             </form>
           )}
 
-          {/* Tab 2: Offline & AI Models */}
+          {/* Tab 2: Processing & Offline Tools */}
           {activeTab === "offline" && (
             <div className="space-y-6 text-xs">
               {/* Engine Choice */}
               <div className="space-y-2">
                 <label className="font-semibold text-primary block">
-                  Transcription Engine
+                  Transcription Method
                 </label>
                 <div className="space-y-2">
                   <div
@@ -284,14 +284,14 @@ export default function Settings() {
                     <div className="flex items-center justify-between">
                       <span className="font-semibold text-primary flex items-center gap-1.5">
                         <i className="bx bx-cloud text-accent text-sm" />
-                        <span>Cloud Fast Track (Groq Whisper Turbo)</span>
+                        <span>High-Speed Cloud Mode (Recommended)</span>
                       </span>
                       {!settings.offline_mode && (
                         <i className="bx bxs-check-circle text-accent text-sm" />
                       )}
                     </div>
                     <p className="text-[11px] text-muted mt-1">
-                      Transcribes 45-minute sermons in ~20 seconds using Groq's high-speed LPU infrastructure. Requires internet and API key.
+                      Transcribes a 45-minute sermon in ~20 seconds with highest accuracy on church worship acoustics. Requires internet connection.
                     </p>
                   </div>
 
@@ -308,28 +308,28 @@ export default function Settings() {
                     <div className="flex items-center justify-between">
                       <span className="font-semibold text-primary flex items-center gap-1.5">
                         <i className="bx bx-laptop text-accent text-sm" />
-                        <span>Offline Local First (whisper.cpp)</span>
+                        <span>Private Offline Mode</span>
                       </span>
                       {settings.offline_mode && (
                         <i className="bx bxs-check-circle text-accent text-sm" />
                       )}
                     </div>
                     <p className="text-[11px] text-muted mt-1">
-                      100% offline local inference on your CPU. Zero data leaves your machine.
+                      Processes everything locally on your computer with zero internet required. All data stays on your machine.
                     </p>
                   </div>
                 </div>
               </div>
 
-              {/* Offline Component Manager */}
+              {/* Offline Tools Manager */}
               <div className="space-y-3 pt-2">
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="font-semibold text-primary">
-                      Offline Dependencies
+                      Offline Processing Tools
                     </h3>
                     <p className="text-[11px] text-muted">
-                      Download binaries to enable complete zero-internet sermon processing.
+                      Install components to process and export video clips without internet.
                     </p>
                   </div>
 
@@ -339,17 +339,17 @@ export default function Settings() {
                     disabled={Boolean(downloadingComponent)}
                     className="px-2.5 py-1 rounded bg-accent text-white hover:bg-[var(--accent-hover)] text-xs font-medium transition-colors"
                   >
-                    {downloadingComponent === "all" ? "Downloading All…" : "Download All Tools"}
+                    {downloadingComponent === "all" ? "Downloading…" : "Install All Tools"}
                   </button>
                 </div>
 
                 <div className="border border-border rounded-md bg-surface divide-y divide-border overflow-hidden">
-                  {/* FFmpeg */}
+                  {/* Video Processor */}
                   <div className="p-3 flex items-center justify-between">
                     <div>
-                      <p className="font-medium text-primary">FFmpeg Video Engine</p>
+                      <p className="font-medium text-primary">Video Clip Processor</p>
                       <p className="text-[10px] text-muted">
-                        Required for audio downsampling and vertical clip rendering
+                        Trims, frames, and exports vertical video clips
                       </p>
                       {downloadProgress.ffmpeg !== undefined &&
                         downloadingComponent === "ffmpeg" && (
@@ -386,12 +386,12 @@ export default function Settings() {
                     </div>
                   </div>
 
-                  {/* yt-dlp */}
+                  {/* Link Downloader */}
                   <div className="p-3 flex items-center justify-between">
                     <div>
-                      <p className="font-medium text-primary">yt-dlp Video Downloader</p>
+                      <p className="font-medium text-primary">Web Link Downloader</p>
                       <p className="text-[10px] text-muted">
-                        Required for YouTube and Google Drive shared links
+                        Retrieves audio directly from YouTube and Google Drive links
                       </p>
                       {downloadProgress.yt_dlp !== undefined &&
                         downloadingComponent === "yt_dlp" && (
@@ -428,14 +428,14 @@ export default function Settings() {
                     </div>
                   </div>
 
-                  {/* Whisper GGML Base Model */}
+                  {/* Speech Model */}
                   <div className="p-3 flex items-center justify-between">
                     <div>
                       <p className="font-medium text-primary">
-                        Whisper GGML Base Model (~140MB)
+                        Offline Speech Recognition Engine (~140MB)
                       </p>
                       <p className="text-[10px] text-muted">
-                        Balanced accuracy model for offline sermon transcription
+                        Local language package for offline speech transcription
                       </p>
                       {downloadProgress.whisper_base !== undefined &&
                         downloadingComponent === "whisper_base" && (
@@ -490,7 +490,7 @@ export default function Settings() {
                     isSaving ? "bx-loader-alt bx-spin" : "bx-check"
                   } text-sm`}
                 />
-                <span>Save Preferences</span>
+                <span>Save Settings</span>
               </Btn>
             </div>
           )}
@@ -500,7 +500,7 @@ export default function Settings() {
             <form onSubmit={handleSave} className="space-y-4 text-xs">
               <div className="space-y-1.5">
                 <label className="font-semibold text-primary block">
-                  Pastoral Names, Ministry Terms & Scripture Words
+                  Preacher Names, Ministry Terms & Scripture Words
                 </label>
                 <textarea
                   rows={6}
@@ -512,7 +512,7 @@ export default function Settings() {
                   className="field-input leading-relaxed font-mono"
                 />
                 <p className="text-[11px] text-muted">
-                  Comma-separated list of church-specific names and biblical vocabulary. Whisper will bias transcript output to match these exact spellings.
+                  Comma-separated list of church names and biblical terms. Dabar will automatically spell and format these words correctly in all manuscripts and clips.
                 </p>
               </div>
 
@@ -534,47 +534,60 @@ export default function Settings() {
             </form>
           )}
 
-          {/* Tab 4: System Diagnostics */}
+          {/* Tab 4: System Status */}
           {activeTab === "diagnostics" && (
             <div className="space-y-4 text-xs">
-              {/* Hardware Profile */}
+              {/* System Profile */}
               <div className="border border-border bg-surface p-4 rounded-md space-y-2">
                 <h3 className="font-semibold text-primary flex items-center gap-1.5">
                   <i className="bx bx-chip text-accent text-sm" />
-                  <span>Hardware Detection</span>
+                  <span>System Hardware</span>
                 </h3>
                 <div className="grid grid-cols-2 gap-2 text-[11px] font-mono">
                   <div>
-                    <span className="text-muted block">System RAM</span>
+                    <span className="text-muted block">System Memory</span>
                     <span className="text-primary font-bold">
                       {hardware?.ram_gb || "16"} GB
                     </span>
                   </div>
                   <div>
-                    <span className="text-muted block">FFmpeg Preset</span>
+                    <span className="text-muted block">Rendering Speed</span>
                     <span className="text-primary font-bold">
-                      {hardware?.recommended_ffmpeg_preset || "veryfast"}
+                      {hardware?.is_low_end ? "Balanced" : "High Performance"}
                     </span>
                   </div>
                 </div>
               </div>
 
-              {/* Tool Paths */}
+              {/* Status List */}
               <div className="border border-border rounded-md bg-surface divide-y divide-border overflow-hidden">
-                <div className="p-3">
-                  <span className="font-semibold text-primary block">
-                    FFmpeg Binary
-                  </span>
-                  <span className="font-mono text-[11px] text-muted truncate block">
-                    {deps?.ffmpeg?.path || "Not found on PATH"}
+                <div className="p-3 flex items-center justify-between">
+                  <div>
+                    <span className="font-medium text-primary block">
+                      Video Processing Engine
+                    </span>
+                    <span className="text-[10px] text-muted">
+                      {deps?.ffmpeg?.found ? "Ready for video export" : "Not yet installed"}
+                    </span>
+                  </div>
+                  <span className={`status-pill ${deps?.ffmpeg?.found ? "ready" : "failed"}`}>
+                    <i className={`bx ${deps?.ffmpeg?.found ? "bxs-check-circle" : "bx-x-circle"} text-xs`} />
+                    <span>{deps?.ffmpeg?.found ? "Ready" : "Missing"}</span>
                   </span>
                 </div>
-                <div className="p-3">
-                  <span className="font-semibold text-primary block">
-                    yt-dlp Binary
-                  </span>
-                  <span className="font-mono text-[11px] text-muted truncate block">
-                    {deps?.yt_dlp?.path || "Not found on PATH"}
+
+                <div className="p-3 flex items-center justify-between">
+                  <div>
+                    <span className="font-medium text-primary block">
+                      Web Link Downloader
+                    </span>
+                    <span className="text-[10px] text-muted">
+                      {deps?.yt_dlp?.found ? "Ready to import URLs" : "Not yet installed"}
+                    </span>
+                  </div>
+                  <span className={`status-pill ${deps?.yt_dlp?.found ? "ready" : "failed"}`}>
+                    <i className={`bx ${deps?.yt_dlp?.found ? "bxs-check-circle" : "bx-x-circle"} text-xs`} />
+                    <span>{deps?.yt_dlp?.found ? "Ready" : "Missing"}</span>
                   </span>
                 </div>
               </div>

@@ -5,16 +5,18 @@ const ThemeContext = createContext();
 export function ThemeProvider({ children }) {
   const [theme, setTheme] = useState(() => {
     const saved = localStorage.getItem("dabar-theme");
-    if (saved) return saved;
-    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    if (saved === "light" || saved === "dark") return saved;
+    return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
   });
 
   useEffect(() => {
     const root = document.documentElement;
-    if (theme === "dark") {
-      root.classList.add("dark");
-    } else {
+    if (theme === "light") {
+      root.classList.add("light");
       root.classList.remove("dark");
+    } else {
+      root.classList.add("dark");
+      root.classList.remove("light");
     }
     localStorage.setItem("dabar-theme", theme);
   }, [theme]);

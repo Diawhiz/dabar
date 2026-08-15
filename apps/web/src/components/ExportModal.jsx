@@ -218,7 +218,7 @@ export default function ExportModal({
                 className="w-full rounded border border-border bg-base px-2.5 py-1 text-xs text-primary outline-none focus:border-accent font-mono"
               />
               <p className="text-[10px] text-muted">
-                Rendered directly to local output directory via FFmpeg.
+                Saves directly to your chosen video clips folder.
               </p>
             </div>
 

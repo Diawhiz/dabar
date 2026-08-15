@@ -19,7 +19,7 @@ export default function Upload() {
         setSelectedFilePath(path);
       }
     } catch {
-      setErrorMessage("Could not open system file picker. Please try again.");
+      setErrorMessage("Could not open file picker. Please try again.");
     }
   }
 
@@ -37,22 +37,22 @@ export default function Upload() {
     } else if (sourceType === "youtube") {
       const trimmed = urlInput.trim();
       if (!trimmed) {
-        setErrorMessage("Please enter a YouTube video URL.");
+        setErrorMessage("Please enter a YouTube link.");
         return;
       }
       if (!trimmed.includes("youtube.com/") && !trimmed.includes("youtu.be/")) {
-        setErrorMessage("Please provide a valid youtube.com or youtu.be link.");
+        setErrorMessage("Please enter a valid YouTube video link.");
         return;
       }
       source = trimmed;
     } else if (sourceType === "gdrive") {
       const trimmed = urlInput.trim();
       if (!trimmed) {
-        setErrorMessage("Please enter a Google Drive share link.");
+        setErrorMessage("Please enter a Google Drive link.");
         return;
       }
       if (!trimmed.includes("drive.google.com/")) {
-        setErrorMessage("Please provide a valid drive.google.com link.");
+        setErrorMessage("Please enter a valid Google Drive share link.");
         return;
       }
       source = trimmed;
@@ -64,7 +64,7 @@ export default function Upload() {
       navigate(`/processing/${result.id}`);
     } catch (err) {
       setErrorMessage(
-        err.message || "Failed to start pipeline. Verify the file or URL and try again."
+        err.message || "Could not start processing. Please check the file or link and try again."
       );
     } finally {
       setIsProcessing(false);
@@ -79,14 +79,14 @@ export default function Upload() {
         <div>
           <h1 className="text-base font-semibold text-primary">Add Sermon Recording</h1>
           <p className="text-xs text-secondary mt-0.5">
-            Import an audio/video file or stream URL to transcribe and generate vertical clips.
+            Add an audio or video recording from your computer, YouTube, or Google Drive.
           </p>
         </div>
       </header>
 
       <div className="page-content flex justify-center py-10">
         <div className="w-full max-w-lg space-y-6">
-          {/* ── Source Type Segmented Control ─────────────────────────── */}
+          {/* ── Source Type Control ─────────────────────────────────── */}
           <div className="flex p-1 bg-surface border border-border rounded-md text-xs font-medium">
             <button
               type="button"
@@ -101,7 +101,7 @@ export default function Upload() {
               }`}
             >
               <i className="bx bx-file text-sm" />
-              <span>Local File</span>
+              <span>File on Computer</span>
             </button>
 
             <button
@@ -117,7 +117,7 @@ export default function Upload() {
               }`}
             >
               <i className="bx bxl-youtube text-sm text-red-500" />
-              <span>YouTube</span>
+              <span>YouTube Link</span>
             </button>
 
             <button
@@ -133,7 +133,7 @@ export default function Upload() {
               }`}
             >
               <i className="bx bxs-cloud text-sm text-accent" />
-              <span>Google Drive</span>
+              <span>Google Drive Link</span>
             </button>
           </div>
 
@@ -149,10 +149,10 @@ export default function Upload() {
                 </div>
                 <div>
                   <p className="text-xs font-semibold text-primary">
-                    {fileName || "Click to browse local audio or video file"}
+                    {fileName || "Click to choose sermon file"}
                   </p>
-                  <p className="text-[11px] text-muted mt-0.5 font-mono">
-                    MP4, MOV, MKV, MP3, WAV, M4A, AAC, FLAC
+                  <p className="text-[11px] text-muted mt-0.5">
+                    Supports MP4, MOV, MP3, M4A, WAV audio and video
                   </p>
                 </div>
                 {selectedFilePath && (
@@ -179,7 +179,7 @@ export default function Upload() {
                   />
                 </div>
                 <p className="text-[11px] text-muted">
-                  yt-dlp will extract the highest-efficiency audio stream for rapid transcription.
+                  Audio will be automatically retrieved and prepared for transcription.
                 </p>
               </div>
             )}
@@ -187,7 +187,7 @@ export default function Upload() {
             {sourceType === "gdrive" && (
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-primary block">
-                  Google Drive Public Share Link
+                  Google Drive Link
                 </label>
                 <div className="relative">
                   <i className="bx bx-link absolute left-2.5 top-1/2 -translate-y-1/2 text-muted text-sm" />
@@ -200,7 +200,7 @@ export default function Upload() {
                   />
                 </div>
                 <p className="text-[11px] text-muted">
-                  Ensure the file permission is set to <strong>"Anyone with the link can view"</strong> in Google Drive.
+                  Make sure the link sharing is set to <strong>"Anyone with the link can view"</strong>.
                 </p>
               </div>
             )}
@@ -221,12 +221,12 @@ export default function Upload() {
                 {isProcessing ? (
                   <>
                     <i className="bx bx-loader-alt bx-spin text-sm" />
-                    <span>Initializing Pipeline…</span>
+                    <span>Preparing Sermon…</span>
                   </>
                 ) : (
                   <>
                     <i className="bx bx-play text-sm" />
-                    <span>Start Transcription Pipeline</span>
+                    <span>Transcribe Sermon</span>
                   </>
                 )}
               </Btn>

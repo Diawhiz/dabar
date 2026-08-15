@@ -7,7 +7,7 @@ import Btn from "../components/Btn.jsx";
 export default function Dashboard() {
   const [sermons, setSermons] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [filter, setFilter] = useState("all"); // "all" | "ready" | "processing"
+  const [filter, setFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const navigate = useNavigate();
 
@@ -33,7 +33,6 @@ export default function Dashboard() {
     return () => { mounted = false; };
   }, []);
 
-  // Filtered sermons
   const filteredSermons = sermons.filter((s) => {
     const isReady = (s.status || "").toLowerCase().includes("clip") || (s.status || "").toLowerCase().includes("ready") || (s.status || "").toLowerCase().includes("complete");
     if (filter === "ready" && !isReady) return false;
@@ -49,65 +48,51 @@ export default function Dashboard() {
     return true;
   });
 
-  const totalClipsCount = sermons.reduce((acc, s) => acc + (s.highlights?.length || (s.clips_count || 0)), 0);
-
   return (
-    <div className="space-y-8 pb-16">
-      {/* Top Banner & Quick Stats */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className="space-y-6 pb-16">
+      {/* ── Screen Header ────────────────────────────────────────── */}
+      <div className="border-b border-border pb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="font-display text-3xl font-bold tracking-tight text-ink">
-            Sermon Desk
+          <h1 className="font-display text-2xl sm:text-3xl font-bold text-primary">
+            Sermon Library
           </h1>
-          <p className="mt-1 text-sm text-muted">
-            {sermons.length > 0
-              ? `${sermons.length} sermons in your archive · ${totalClipsCount} moments ready to share`
-              : "Your sermon library is empty."}
+          <p className="mt-0.5 text-xs text-secondary font-sans">
+            {sermons.length} sermons in your archive
           </p>
         </div>
 
-        <Btn onClick={() => navigate("/upload")} className="shrink-0 shadow-sm">
-          <i className="bx bx-plus text-lg" aria-hidden="true" />
+        <Btn onClick={() => navigate("/upload")}>
+          <i className="bx bx-upload text-base" />
           Add a Sermon
         </Btn>
       </div>
 
-      {/* Filter & Search Bar */}
+      {/* ── Search & Filter ──────────────────────────────────────── */}
       <div className="flex flex-col sm:flex-row gap-3 items-center justify-between font-sans">
-        {/* Search */}
-        <div className="relative w-full sm:w-72">
-          <i className="bx bx-search absolute left-3.5 top-1/2 -translate-y-1/2 text-muted text-base" />
+        <div className="relative w-full sm:w-80">
+          <i className="bx bx-search absolute left-3 top-1/2 -translate-y-1/2 text-secondary text-sm" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search title, speaker, Bible verse…"
-            className="w-full rounded-xl border border-border bg-paper pl-9 pr-3.5 py-2 text-xs text-ink placeholder:text-muted/60 outline-none transition-colors focus:border-amber"
+            placeholder="Search titles, pastors, or scriptures…"
+            className="w-full rounded-lg border border-border bg-surface pl-8 pr-3 py-1.5 text-xs text-primary placeholder:text-secondary outline-none focus:border-accent transition-colors"
           />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-ink text-xs"
-            >
-              <i className="bx bx-x" />
-            </button>
-          )}
         </div>
 
-        {/* Status Filters */}
-        <div className="flex items-center gap-1.5 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
+        <div className="flex items-center gap-1.5 w-full sm:w-auto">
           {[
-            { key: "all", label: "All Sermons" },
+            { key: "all", label: "All" },
             { key: "ready", label: "Ready to Share" },
             { key: "processing", label: "In Progress" },
           ].map(({ key, label }) => (
             <button
               key={key}
               onClick={() => setFilter(key)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors ${
+              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${
                 filter === key
-                  ? "bg-surface text-ink border border-border shadow-xs"
-                  : "text-muted hover:text-ink hover:bg-surface/50"
+                  ? "bg-surface text-primary border border-border"
+                  : "text-secondary hover:text-primary hover:bg-surface/50"
               }`}
             >
               {label}
@@ -116,109 +101,104 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Sermon Grid */}
+      {/* ── Sermon Manuscript List ────────────────────────────────── */}
       {isLoading ? (
-        <div className="py-24 text-center space-y-3">
-          <i className="bx bx-loader-alt bx-spin text-3xl text-amber" aria-hidden="true" />
-          <p className="text-sm text-muted font-sans">Opening your sermon archive…</p>
+        <div className="py-24 text-center space-y-2 font-sans">
+          <i className="bx bx-loader-alt bx-spin text-2xl text-accent" />
+          <p className="text-xs text-secondary">Loading sermons…</p>
         </div>
       ) : filteredSermons.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <div className="rounded-xl border border-border bg-surface divide-y divide-border overflow-hidden">
           {filteredSermons.map((sermon) => {
             const isReady = (sermon.status || "").toLowerCase().includes("clip") || (sermon.status || "").toLowerCase().includes("ready") || (sermon.status || "").toLowerCase().includes("complete");
-            const clipCount = sermon.highlights?.length || (sermon.clips_count || 0);
+            const clipsCount = sermon.highlights?.length || (sermon.clips_count || 0);
 
             return (
               <div
                 key={sermon.id}
-                className="group relative rounded-2xl border border-border/90 bg-paper p-5 transition-all duration-200 hover:border-amber/60 hover:shadow-md flex flex-col justify-between"
+                className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-surface-hover transition-colors"
               >
-                <div className="space-y-3">
-                  {/* Top Metadata Strip */}
-                  <div className="flex items-center justify-between text-xs text-muted font-sans">
-                    <span className="font-medium text-ink-secondary">
-                      {sermon.speaker || "Pastor"}
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <span>{sermon.date || "Recent"}</span>
-                      {sermon.duration && (
-                        <>
-                          <span>·</span>
-                          <span>{sermon.duration}</span>
-                        </>
-                      )}
-                    </div>
+                {/* Left: Metadata & Title */}
+                <div className="space-y-1.5 min-w-0">
+                  <div className="flex items-center gap-2 text-xs text-secondary font-sans">
+                    <span className="font-medium text-primary">{sermon.speaker || "Speaker"}</span>
+                    <span>·</span>
+                    <span>{sermon.date || "Recent"}</span>
+                    {sermon.duration && (
+                      <>
+                        <span>·</span>
+                        <span>{sermon.duration}</span>
+                      </>
+                    )}
                   </div>
 
-                  {/* Title */}
                   <h2
                     onClick={() => navigate(isReady ? `/clips/${sermon.id}` : `/processing/${sermon.id}`)}
-                    className="font-display text-lg font-bold text-ink leading-snug cursor-pointer group-hover:text-amber transition-colors line-clamp-2"
+                    className="font-display text-base sm:text-lg font-bold text-primary cursor-pointer hover:text-accent transition-colors"
                   >
                     {sermon.title || "Untitled Sermon"}
                   </h2>
 
-                  {/* Scripture Badges if detected */}
+                  {/* Scripture Badges */}
                   {sermon.scripture_references && sermon.scripture_references.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 pt-0.5">
+                    <div className="flex flex-wrap gap-1 pt-1 font-sans">
                       {sermon.scripture_references.slice(0, 3).map((ref, idx) => (
-                        <span
-                          key={idx}
-                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber bg-surface px-2.5 py-0.5 rounded-full border border-border/80"
-                        >
-                          <i className="bx bx-bookmark text-xs" />
+                        <span key={idx} className="scripture-badge">
+                          <i className="bx bx-book-open text-xs" />
                           {ref}
                         </span>
                       ))}
-                      {sermon.scripture_references.length > 3 && (
-                        <span className="text-[10px] text-muted self-center">
-                          +{sermon.scripture_references.length - 3} more
-                        </span>
-                      )}
                     </div>
                   )}
                 </div>
 
-                {/* Bottom Action Footer */}
-                <div className="mt-5 pt-4 border-t border-border/60 flex items-center justify-between font-sans">
+                {/* Right: Actions */}
+                <div className="flex items-center gap-2 shrink-0 font-sans">
                   {isReady ? (
-                    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber">
-                      <i className="bx bx-check-circle text-sm" />
-                      {clipCount > 0 ? `${clipCount} moments ready` : "Ready"}
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted">
-                      <i className="bx bx-loader-alt bx-spin text-sm" />
-                      {sermon.status || "Transcribing…"}
-                    </span>
-                  )}
+                    <>
+                      <button
+                        onClick={() => navigate(`/transcript/${sermon.id}`)}
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-base border border-border text-primary hover:border-accent flex items-center gap-1.5 transition-colors"
+                      >
+                        <i className="bx bx-file text-sm text-accent" />
+                        Manuscript
+                      </button>
 
-                  <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => navigate(`/clips/${sermon.id}`)}
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-accent text-white hover:opacity-90 flex items-center gap-1.5 transition-opacity"
+                      >
+                        <i className="bx bx-cut text-sm" />
+                        Clips ({clipsCount})
+                      </button>
+                    </>
+                  ) : (
                     <button
-                      onClick={() => navigate(`/clips/${sermon.id}`)}
-                      className="px-3 py-1.5 rounded-lg text-xs font-semibold text-ink bg-surface hover:bg-surface-warm transition-colors"
+                      onClick={() => navigate(`/processing/${sermon.id}`)}
+                      className="px-3 py-1.5 rounded-lg text-xs font-medium text-secondary bg-base border border-border flex items-center gap-1.5"
                     >
-                      Open Studio
+                      <i className="bx bx-loader-alt bx-spin text-sm text-accent" />
+                      In Progress…
                     </button>
-                  </div>
+                  )}
                 </div>
               </div>
             );
           })}
         </div>
       ) : (
-        <div className="rounded-2xl border-2 border-dashed border-border p-12 text-center space-y-4">
-          <div className="w-12 h-12 rounded-full bg-surface text-amber flex items-center justify-center mx-auto text-2xl">
+        <div className="rounded-xl border border-border bg-surface p-12 text-center space-y-3 font-sans">
+          <div className="w-10 h-10 rounded-full bg-base text-accent flex items-center justify-center mx-auto text-xl border border-border">
             <i className="bx bx-book-open" />
           </div>
           <div>
-            <h3 className="font-display text-lg font-bold text-ink">No sermons found</h3>
-            <p className="text-xs text-muted font-sans mt-1">
-              {searchQuery ? "Try searching for a different keyword or Bible reference." : "Bring in your first sermon recording to get started."}
+            <p className="text-sm font-semibold text-primary">No sermons found</p>
+            <p className="text-xs text-secondary mt-0.5">
+              {searchQuery ? "Try a different search term." : "Bring in your first sermon to start."}
             </p>
           </div>
           <Btn onClick={() => navigate("/upload")} size="sm">
-            Add a sermon
+            Add Sermon
           </Btn>
         </div>
       )}

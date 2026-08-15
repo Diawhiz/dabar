@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import Btn from "./Btn.jsx";
 
 const SCRIPTURE_TEXTS = {
@@ -110,9 +110,9 @@ export default function ManuscriptView({
   }
 
   return (
-    <div className="space-y-6">
-      {/* Manuscript Column */}
-      <div className="space-y-4 max-w-3xl mx-auto font-body text-[16px] leading-[1.8]">
+    <div className="space-y-4">
+      {/* ── Single Manuscript Column with Quiet Left Margin ─────── */}
+      <div className="space-y-3 max-w-3xl font-body text-[16px] leading-[1.8]">
         {segments.map((seg, idx) => {
           const isActive = activeIdx === idx;
           const isConfirmed = Boolean(confirmedSegments[idx]);
@@ -124,15 +124,15 @@ export default function ManuscriptView({
           return (
             <div
               key={seg.id || idx}
-              className={`manuscript-para group flex items-start gap-4 sm:gap-6 ${
+              className={`manuscript-row group ${
                 isKeyMoment
                   ? "transcript-key-moment"
                   : isActive
-                  ? "is-active-playing"
+                  ? "is-active"
                   : ""
               }`}
             >
-              {/* Timestamp Indicator */}
+              {/* Quiet Left Margin: Timestamp */}
               <div className="w-14 sm:w-16 shrink-0 text-right pt-0.5 select-none font-sans">
                 <button
                   type="button"
@@ -140,10 +140,10 @@ export default function ManuscriptView({
                     setActiveIdx(idx);
                     if (onSeek) onSeek(seg.start);
                   }}
-                  className={`text-[12px] font-mono transition-colors ${
+                  className={`text-[11px] font-mono transition-colors ${
                     isActive
-                      ? "text-amber font-bold"
-                      : "text-muted hover:text-amber"
+                      ? "text-accent font-bold"
+                      : "text-secondary hover:text-accent"
                   }`}
                   title="Play from here"
                 >
@@ -151,10 +151,10 @@ export default function ManuscriptView({
                 </button>
               </div>
 
-              {/* Text Body */}
+              {/* Center Content Column */}
               <div className="flex-1 min-w-0">
                 {isKeyMoment && (
-                  <div className="flex items-center gap-1.5 text-xs font-sans font-semibold text-amber mb-1.5">
+                  <div className="flex items-center gap-1.5 text-xs font-sans font-semibold text-accent mb-1">
                     <i className="bx bxs-star text-xs" />
                     <span>{seg.highlight_title || "Key teaching moment"}</span>
                   </div>
@@ -166,7 +166,7 @@ export default function ManuscriptView({
                       value={editText}
                       onChange={(e) => setEditText(e.target.value)}
                       rows={3}
-                      className="w-full rounded-xl border border-amber bg-paper p-3 text-sm text-ink outline-none font-serif leading-relaxed"
+                      className="w-full rounded-lg border border-accent bg-surface p-3 text-sm text-primary outline-none font-serif leading-relaxed"
                       autoFocus
                     />
                     <div className="flex items-center gap-2">
@@ -176,7 +176,7 @@ export default function ManuscriptView({
                       <button
                         type="button"
                         onClick={() => setEditingIdx(null)}
-                        className="px-3 py-1.5 rounded-lg text-xs text-muted hover:text-ink transition-colors"
+                        className="px-3 py-1.5 rounded-lg text-xs text-secondary hover:text-primary transition-colors"
                       >
                         Cancel
                       </button>
@@ -192,12 +192,12 @@ export default function ManuscriptView({
                     className="cursor-pointer"
                   >
                     <p
-                      className={`transition-all duration-200 ${
+                      className={`transition-all duration-150 ${
                         isKeyMoment
-                          ? "text-ink font-medium"
+                          ? "text-primary font-medium"
                           : isConfirmed || isActive
-                          ? "transcript-word-lit"
-                          : "transcript-word-dim hover:text-ink/90"
+                          ? "transcript-lit"
+                          : "transcript-dim hover:text-primary"
                       }`}
                     >
                       {seg.text}
@@ -205,18 +205,11 @@ export default function ManuscriptView({
                   </div>
                 )}
 
-                {/* Key Moment Explanation */}
-                {isKeyMoment && seg.highlight_reason && (
-                  <p className="text-xs text-muted italic mt-1.5 font-serif">
-                    ↳ Note: {seg.highlight_reason}
-                  </p>
-                )}
-
-                {/* Scripture Verification Prompt */}
+                {/* Scripture Side-by-side verification */}
                 {detectedRef && !isRefDismissed && (
-                  <div className="mt-3 rounded-xl border border-amber/30 bg-amber-light/80 p-3 text-xs space-y-1.5 font-sans animate-fade-in">
+                  <div className="mt-2.5 rounded-lg border border-border bg-surface p-3 text-xs space-y-1 font-sans">
                     <div className="flex items-center justify-between">
-                      <span className="font-semibold text-[#8C5516] flex items-center gap-1.5">
+                      <span className="font-semibold text-accent flex items-center gap-1.5">
                         <i className="bx bx-book-open text-sm" />
                         Scripture Reference: {detectedRef}
                       </span>
@@ -229,7 +222,7 @@ export default function ManuscriptView({
                                 e.stopPropagation();
                                 setConfirmedScriptures((p) => ({ ...p, [detectedRef]: true }));
                               }}
-                              className="px-2.5 py-0.5 rounded-full bg-amber text-white font-medium text-[11px] hover:opacity-90 transition-opacity"
+                              className="px-2.5 py-0.5 rounded bg-accent text-white font-semibold text-[11px]"
                             >
                               Verify
                             </button>
@@ -239,22 +232,22 @@ export default function ManuscriptView({
                                 e.stopPropagation();
                                 setDismissedScriptures((p) => ({ ...p, [detectedRef]: true }));
                               }}
-                              className="px-2 py-0.5 rounded text-muted hover:text-ink text-[11px]"
+                              className="px-2 py-0.5 rounded text-secondary hover:text-primary text-[11px]"
                             >
                               Dismiss
                             </button>
                           </>
                         ) : (
-                          <span className="text-amber font-semibold flex items-center gap-1 text-[11px]">
-                            <i className="bx bx-check" />
-                            Verified
+                          <span className="text-accent font-semibold flex items-center gap-1 text-[11px]">
+                            <i className="bx bxs-check-circle text-xs" />
+                            Verified in transcript
                           </span>
                         )}
                       </div>
                     </div>
 
                     {SCRIPTURE_TEXTS[detectedRef] && (
-                      <p className="text-ink-secondary italic border-l-2 border-amber/40 pl-2 mt-1 font-serif">
+                      <p className="text-secondary italic border-l-2 border-accent/40 pl-2 mt-1 font-serif">
                         "{SCRIPTURE_TEXTS[detectedRef]}"
                       </p>
                     )}
@@ -262,23 +255,23 @@ export default function ManuscriptView({
                 )}
               </div>
 
-              {/* Hover Quick Actions */}
+              {/* Hover Actions */}
               <div className="opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity shrink-0 flex items-center gap-1 pt-0.5">
                 <button
                   type="button"
                   onClick={() => handleConfirmSegment(idx)}
-                  className={`p-1.5 rounded-lg text-xs transition-colors ${
-                    isConfirmed ? "text-amber bg-surface" : "text-muted hover:text-amber"
+                  className={`p-1 rounded text-xs transition-colors ${
+                    isConfirmed ? "text-accent" : "text-secondary hover:text-accent"
                   }`}
-                  title={isConfirmed ? "Mark as draft" : "Mark as confirmed"}
+                  title={isConfirmed ? "Mark as unconfirmed" : "Mark as confirmed"}
                 >
-                  <i className={`bx ${isConfirmed ? "bxs-check-circle" : "bx-check-circle"} text-lg`} />
+                  <i className={`bx ${isConfirmed ? "bxs-check-circle" : "bx-check-circle"} text-base`} />
                 </button>
                 <button
                   type="button"
                   onClick={() => handleStartEdit(idx, seg.text)}
-                  className="p-1.5 rounded-lg text-muted hover:text-ink text-xs hover:bg-surface"
-                  title="Edit text"
+                  className="p-1 rounded text-secondary hover:text-primary text-xs"
+                  title="Edit paragraph"
                 >
                   <i className="bx bx-edit text-base" />
                 </button>

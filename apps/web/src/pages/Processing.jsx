@@ -4,10 +4,10 @@ import { getSermon, onPipelineProgress } from "../lib/api.js";
 import Btn from "../components/Btn.jsx";
 
 const STAGES = [
-  { key: "downloading", label: "Preparing Audio", detail: "Getting the recording ready on your computer" },
-  { key: "transcribing", label: "Listening & Transcribing", detail: "Converting speech into high-precision text" },
-  { key: "detecting", label: "Organizing & Finding Clips", detail: "Structuring paragraphs, checking scripture, and ranking highlights" },
-  { key: "ready", label: "Complete", detail: "Your sermon manuscript and clips are ready" },
+  { key: "downloading", label: "Preparing audio" },
+  { key: "transcribing", label: "Transcribing speech to text" },
+  { key: "detecting", label: "Structuring paragraphs & finding moments" },
+  { key: "ready", label: "Ready" },
 ];
 
 export default function Processing() {
@@ -24,7 +24,7 @@ export default function Processing() {
         setSermon(s);
         const status = (s.status || "").toLowerCase();
         if (status === "ready" || status === "complete" || status.includes("clip")) {
-          setProgressState({ stage: "ready", percent: 100, detail: "All clips and manuscript ready" });
+          setProgressState({ stage: "ready", percent: 100, detail: "Sermon processing complete" });
         }
       }
     });
@@ -49,61 +49,57 @@ export default function Processing() {
   const stageIndex = currentStageIndex === -1 ? 1 : currentStageIndex;
 
   return (
-    <div className="mx-auto max-w-xl py-10 space-y-8 animate-fade-in">
-      {/* Title */}
-      <div className="text-center space-y-2">
-        <span className="text-[11px] font-sans font-semibold uppercase tracking-wider text-amber bg-surface px-3 py-1 rounded-full border border-border">
-          {isComplete ? "Processing Complete" : "Working in Background"}
+    <div className="mx-auto max-w-lg py-8 space-y-6">
+      {/* ── Header ──────────────────────────────────────────────── */}
+      <div className="border-b border-border pb-4 space-y-1">
+        <span className="text-[11px] font-sans font-semibold uppercase tracking-wider text-accent">
+          {isComplete ? "Complete" : "In Progress"}
         </span>
-        <h1 className="font-display text-2xl sm:text-3xl font-bold tracking-tight text-ink">
-          {sermon?.title || "Preparing your sermon…"}
+        <h1 className="font-display text-2xl font-bold text-primary">
+          {sermon?.title || "Transcribing Sermon…"}
         </h1>
-        <p className="text-xs text-muted font-sans max-w-md mx-auto">
-          {isComplete
-            ? "Every word has been transcribed and key teaching moments have been curated."
-            : "You can leave this window open or let it finish in the background."}
-        </p>
       </div>
 
-      {/* Progress Card */}
-      <div className="rounded-2xl border border-border bg-paper p-6 shadow-sm space-y-4 font-sans">
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-semibold text-ink">
+      {/* ── Progress Bar ────────────────────────────────────────── */}
+      <div className="rounded-xl border border-border bg-surface p-5 space-y-3 font-sans">
+        <div className="flex items-center justify-between text-xs">
+          <span className="font-semibold text-primary">
             {STAGES[stageIndex]?.label || "Processing"}
           </span>
-          <span className="text-xs font-bold text-amber font-mono">
+          <span className="font-mono font-bold text-accent">
             {progressState.percent}%
           </span>
         </div>
 
-        {/* Progress bar */}
-        <div className="h-2 w-full rounded-full bg-surface overflow-hidden">
+        <div className="h-1.5 w-full rounded-full bg-base overflow-hidden">
           <div
-            className="h-full rounded-full bg-amber transition-all duration-500 ease-out"
+            className="h-full rounded-full bg-accent transition-all duration-300 ease-out"
             style={{ width: `${progressState.percent}%` }}
           />
         </div>
 
-        <p className="text-[11px] text-muted">
-          {progressState.detail || STAGES[stageIndex]?.detail}
-        </p>
+        {progressState.detail && (
+          <p className="text-[11px] text-secondary">
+            {progressState.detail}
+          </p>
+        )}
       </div>
 
-      {/* Stage Checklist */}
-      <div className="space-y-3 px-2 font-sans">
+      {/* ── Step Indicators ─────────────────────────────────────── */}
+      <div className="space-y-2.5 px-1 font-sans">
         {STAGES.map((stg, i) => {
           const done = i < stageIndex || isComplete;
           const active = i === stageIndex && !isComplete;
           return (
-            <div key={stg.key} className="flex items-center gap-3.5">
+            <div key={stg.key} className="flex items-center gap-3 text-xs">
               {done ? (
-                <i className="bx bx-check-circle text-lg text-amber" />
+                <i className="bx bxs-check-circle text-accent text-base" />
               ) : active ? (
-                <i className="bx bx-loader-alt bx-spin text-lg text-amber" />
+                <i className="bx bx-loader-alt bx-spin text-accent text-base" />
               ) : (
-                <i className="bx bx-circle text-lg text-border" />
+                <i className="bx bx-circle text-secondary text-base" />
               )}
-              <span className={`text-xs ${done ? "text-muted line-through" : active ? "text-ink font-semibold" : "text-muted/50"}`}>
+              <span className={done ? "text-secondary line-through" : active ? "text-primary font-semibold" : "text-secondary/60"}>
                 {stg.label}
               </span>
             </div>
@@ -111,38 +107,33 @@ export default function Processing() {
         })}
       </div>
 
-      {/* Complete CTA */}
+      {/* ── Actions when complete ───────────────────────────────── */}
       {isComplete ? (
-        <Btn onClick={() => navigate(`/clips/${sermonId}`)} size="lg" className="w-full shadow-md">
-          <i className="bx bx-film text-lg" />
-          Open Manuscript & Clips Studio
-        </Btn>
+        <div className="pt-2 flex flex-col sm:flex-row gap-3 font-sans">
+          <button
+            onClick={() => navigate(`/transcript/${sermonId}`)}
+            className="flex-1 py-2.5 px-4 rounded-lg bg-base border border-border text-primary hover:border-accent text-xs font-semibold flex items-center justify-center gap-2 transition-colors"
+          >
+            <i className="bx bx-file text-base text-accent" />
+            Read Manuscript
+          </button>
+          <button
+            onClick={() => navigate(`/clips/${sermonId}`)}
+            className="flex-1 py-2.5 px-4 rounded-lg bg-accent text-white hover:opacity-90 text-xs font-semibold flex items-center justify-center gap-2 transition-opacity"
+          >
+            <i className="bx bx-cut text-base" />
+            Review Clips
+          </button>
+        </div>
       ) : (
         <div className="text-center pt-2">
           <button
             type="button"
             onClick={() => navigate("/dashboard")}
-            className="text-xs text-muted hover:text-ink font-sans underline underline-offset-4"
+            className="text-xs text-secondary hover:text-primary font-sans underline underline-offset-4"
           >
-            Back to Sermon Desk (continues in background)
+            Back to sermons (runs in background)
           </button>
-        </div>
-      )}
-
-      {/* Live Incoming Transcript preview */}
-      {sermon?.transcript_segments && sermon.transcript_segments.length > 0 && (
-        <div className="rounded-2xl bg-surface/70 p-5 border border-border/80 space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-sans font-bold uppercase tracking-wider text-muted">
-              Live Transcript Preview
-            </span>
-            <span className="text-[10px] font-sans text-amber font-medium">
-              {sermon.transcript_segments.length} sentences captured
-            </span>
-          </div>
-          <p className="text-xs text-ink-secondary leading-relaxed italic font-serif">
-            "{sermon.transcript_segments.slice(0, 6).map((s) => s.text).join(" ").slice(0, 240)}…"
-          </p>
         </div>
       )}
     </div>

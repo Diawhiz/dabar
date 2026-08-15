@@ -2,164 +2,163 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Dabar Illumination & Manuscript Design Tokens ───────────────── */
+/* ── Light Mode (Default) ────────────────────────────────────────── */
 :root {
-  --base-dark: #161311;
-  --base-light: #FBF8F2;
-  
-  --paper: #FBF8F2;
-  --paper-elevated: #FFFFFF;
-  --surface: #F3ECE2;
-  --surface-warm: #EAE1D3;
-  --border: #E5DBD0;
-  --border-subtle: #EDE5DC;
-  
-  --ink: #1E1A17;
-  --ink-secondary: #594F46;
-  --muted: #7E7368;
-  --unconfirmed: #968A7E;
-  
-  --amber: #D48B38;
-  --amber-light: #F6EBDD;
-  --amber-glow: rgba(212, 139, 56, 0.18);
-  --amber-border: rgba(212, 139, 56, 0.35);
+  --bg-base: #FAF6EF;
+  --bg-surface: #F2EAE0;
+  --bg-surface-hover: #EAE0D4;
+  --border-base: #E0D5C7;
+  --border-focus: #D4913A;
+
+  --text-primary: #1C1815;
+  --text-secondary: #7A6F62;
+  --text-unconfirmed: #7A6F62;
+  --text-confirmed: #1C1815;
+
+  --accent: #D4913A;
+  --accent-glow: rgba(212, 145, 58, 0.22);
+  --accent-wash: rgba(212, 145, 58, 0.09);
+  --accent-wash-hover: rgba(212, 145, 58, 0.15);
+  --accent-pill-bg: rgba(212, 145, 58, 0.12);
+  --accent-pill-text: #8C5516;
+  --accent-pill-border: rgba(212, 145, 58, 0.35);
 
   --font-display: "Fraunces", Georgia, serif;
   --font-body: "Source Serif 4", Georgia, serif;
   --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
-/* ── Base Reset & Typography ─────────────────────────────────────── */
+/* ── Dark Mode ───────────────────────────────────────────────────── */
+html.dark {
+  --bg-base: #1C1815;
+  --bg-surface: #25201C;
+  --bg-surface-hover: #2E2823;
+  --border-base: #362E27;
+  --border-focus: #D4913A;
+
+  --text-primary: #F5EFE6;
+  --text-secondary: #8A7F73;
+  --text-unconfirmed: #8A7F73;
+  --text-confirmed: #F5EFE6;
+
+  --accent: #D4913A;
+  --accent-glow: rgba(212, 145, 58, 0.28);
+  --accent-wash: rgba(212, 145, 58, 0.12);
+  --accent-wash-hover: rgba(212, 145, 58, 0.18);
+  --accent-pill-bg: rgba(212, 145, 58, 0.18);
+  --accent-pill-text: #F5EFE6;
+  --accent-pill-border: rgba(212, 145, 58, 0.45);
+}
+
+/* ── Base Layer ──────────────────────────────────────────────────── */
 @layer base {
   body {
-    background-color: var(--paper);
-    color: var(--ink);
+    background-color: var(--bg-base);
+    color: var(--text-primary);
     font-family: var(--font-body);
     font-size: 16px;
-    line-height: 1.65;
+    line-height: 1.7;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    transition: background-color 0.15s ease, color 0.15s ease;
   }
 
   h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-display);
     font-weight: 600;
-    color: var(--ink);
+    color: var(--text-primary);
     letter-spacing: -0.015em;
   }
 
-  /* Accessible focus ring in warm amber */
   *:focus-visible {
-    outline: 2px solid var(--amber);
+    outline: 2px solid var(--accent);
     outline-offset: 2px;
   }
 
-  /* Selection highlight */
   ::selection {
-    background-color: var(--amber);
+    background-color: var(--accent);
     color: #FFFFFF;
   }
 }
 
-/* ── Manuscript & Illumination Classes ───────────────────────────── */
+/* ── Illumination & Manuscript System ────────────────────────────── */
 
 /* Paragraph container */
-.manuscript-para {
-  position: relative;
+.manuscript-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 1.25rem;
   padding: 0.75rem 1rem;
   border-radius: 0.5rem;
-  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+  transition: background-color 0.15s ease;
 }
-.manuscript-para:hover {
-  background-color: rgba(212, 139, 56, 0.04);
+.manuscript-row:hover {
+  background-color: var(--bg-surface);
 }
-.manuscript-para.is-active-playing {
-  background-color: rgba(212, 139, 56, 0.08);
-  box-shadow: inset 3px 0 0 var(--amber);
-}
-
-/* Unconfirmed / raw speech text */
-.transcript-word-dim {
-  color: var(--unconfirmed);
-  transition: color 0.3s ease, text-shadow 0.3s ease;
+.manuscript-row.is-active {
+  background-color: var(--bg-surface-hover);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
-/* Confirmed / highlighted lit text */
-.transcript-word-lit {
-  color: var(--ink);
+/* Dim unreviewed text */
+.transcript-dim {
+  color: var(--text-unconfirmed);
+  transition: color 0.2s ease, text-shadow 0.2s ease;
+}
+
+/* Confirmed illuminated text */
+.transcript-lit {
+  color: var(--text-confirmed);
   font-weight: 500;
-  text-shadow: 0 0 12px var(--amber-glow);
+  text-shadow: 0 0 10px var(--accent-glow);
 }
 
 /* Key moment paragraph wash */
 .transcript-key-moment {
-  background-color: rgba(212, 139, 56, 0.07);
-  border-left: 3px solid var(--amber);
+  background-color: var(--accent-wash);
+  border-left: 3px solid var(--accent);
   border-radius: 0 0.5rem 0.5rem 0;
   padding: 1rem 1.25rem;
-  margin: 1rem 0;
-  transition: background-color 0.2s ease;
+  margin: 0.75rem 0;
+  transition: background-color 0.15s ease;
 }
 .transcript-key-moment:hover {
-  background-color: rgba(212, 139, 56, 0.12);
+  background-color: var(--accent-wash-hover);
 }
 
-/* Scripture citation pill */
-.scripture-pill {
+/* Scripture reference verification badge */
+.scripture-badge {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  background-color: var(--amber-light);
-  color: #8C5516;
-  border: 1px solid var(--amber-border);
-  padding: 0.15rem 0.55rem;
+  background-color: var(--accent-pill-bg);
+  color: var(--accent-pill-text);
+  border: 1px solid var(--accent-pill-border);
+  padding: 0.2rem 0.6rem;
   border-radius: 9999px;
   font-family: var(--font-sans);
   font-size: 0.75rem;
   font-weight: 600;
-  letter-spacing: 0.01em;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-.scripture-pill:hover {
-  background-color: var(--amber);
-  color: #FFFFFF;
+  transition: background-color 0.15s ease;
 }
 
-/* ── Custom Scrollbar ────────────────────────────────────────────── */
+/* ── Native Quiet Scrollbar ──────────────────────────────────────── */
 ::-webkit-scrollbar {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--paper);
+  background: var(--bg-base);
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 4px;
+  background: var(--border-base);
+  border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--muted);
+  background: var(--text-secondary);
 }
 
-/* ── Reel Strip Scroll Container ─────────────────────────────────── */
-.reel-strip {
-  display: flex;
-  gap: 1.25rem;
-  overflow-x: auto;
-  scroll-snap-type: x mandatory;
-  scroll-padding-left: 1rem;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
-  padding-bottom: 0.75rem;
-}
-.reel-strip > * {
-  scroll-snap-align: start;
-  flex-shrink: 0;
-}
-
-/* ── Accessibility: Reduced Motion ───────────────────────────────── */
+/* ── Performance: Reduced Motion ─────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;

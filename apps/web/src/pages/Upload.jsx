@@ -19,7 +19,7 @@ export default function Upload() {
         setSelectedFilePath(path);
       }
     } catch (err) {
-      setErrorMessage("Could not open file explorer. Please try again.");
+      setErrorMessage("Could not open file picker. Please try again.");
     }
   }
 
@@ -31,7 +31,7 @@ export default function Upload() {
     if (sourceType === "youtube") {
       const trimmed = youtubeUrl.trim();
       if (!trimmed) {
-        setErrorMessage("Please paste a valid YouTube sermon link.");
+        setErrorMessage("Please enter a YouTube video link.");
         return;
       }
       if (!trimmed.includes("youtube.com/") && !trimmed.includes("youtu.be/")) {
@@ -41,7 +41,7 @@ export default function Upload() {
       source = trimmed;
     } else {
       if (!selectedFilePath) {
-        setErrorMessage("Please choose a sermon recording from your computer.");
+        setErrorMessage("Please select a sermon file from your computer.");
         return;
       }
       source = selectedFilePath;
@@ -52,7 +52,7 @@ export default function Upload() {
       const result = await createSermon(source);
       navigate(`/processing/${result.id}`);
     } catch (err) {
-      setErrorMessage(err.message || "Could not begin processing this sermon. Please try again.");
+      setErrorMessage(err.message || "Could not start processing. Please check connection and try again.");
     } finally {
       setIsProcessing(false);
     }
@@ -61,128 +61,114 @@ export default function Upload() {
   const fileName = selectedFilePath ? selectedFilePath.split(/[/\\]/).pop() : null;
 
   return (
-    <div className="mx-auto max-w-xl py-6 space-y-8 animate-fade-in">
-      {/* Header */}
-      <div className="text-center space-y-2">
-        <h1 className="font-display text-3xl font-bold tracking-tight text-ink">
+    <div className="mx-auto max-w-lg py-6 space-y-6">
+      {/* ── Header ──────────────────────────────────────────────── */}
+      <div className="border-b border-border pb-4">
+        <h1 className="font-display text-2xl font-bold text-primary">
           Add a Sermon
         </h1>
-        <p className="text-sm text-muted max-w-md mx-auto leading-relaxed">
-          Select a recording from your computer or paste a YouTube link. Dabar will transcribe, structure the manuscript, and highlight key clips.
+        <p className="text-xs text-secondary font-sans mt-0.5">
+          Select a recording file on your computer or paste a YouTube link.
         </p>
       </div>
 
-      {/* Mode Switcher */}
-      <div className="flex p-1 rounded-xl bg-surface border border-border/80 font-sans max-w-md mx-auto">
+      {/* ── Mode Selection ──────────────────────────────────────── */}
+      <div className="flex border-b border-border gap-6 text-xs font-semibold font-sans">
         <button
           type="button"
           onClick={() => { setSourceType("file"); setErrorMessage(""); }}
-          className={`flex-1 py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
+          className={`pb-2.5 flex items-center gap-1.5 transition-colors ${
             sourceType === "file"
-              ? "bg-paper text-ink shadow-xs border border-border/60"
-              : "text-muted hover:text-ink"
+              ? "text-accent border-b-2 border-accent"
+              : "text-secondary hover:text-primary"
           }`}
         >
-          <i className="bx bx-folder text-base" />
+          <i className="bx bx-upload text-sm" />
           File on this Computer
         </button>
 
         <button
           type="button"
           onClick={() => { setSourceType("youtube"); setErrorMessage(""); }}
-          className={`flex-1 py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
+          className={`pb-2.5 flex items-center gap-1.5 transition-colors ${
             sourceType === "youtube"
-              ? "bg-paper text-ink shadow-xs border border-border/60"
-              : "text-muted hover:text-ink"
+              ? "text-accent border-b-2 border-accent"
+              : "text-secondary hover:text-primary"
           }`}
         >
-          <i className="bx bxl-youtube text-base text-red-600" />
+          <i className="bx bx-link text-sm" />
           YouTube Link
         </button>
       </div>
 
-      {/* Form */}
-      <form onSubmit={handleSubmit} className="space-y-6">
+      {/* ── Form ────────────────────────────────────────────────── */}
+      <form onSubmit={handleSubmit} className="space-y-5 font-sans">
         {sourceType === "file" ? (
           <div
             onClick={handleBrowseFile}
-            className="group cursor-pointer rounded-2xl border-2 border-dashed border-border hover:border-amber/80 bg-paper hover:bg-surface/40 p-8 text-center transition-all flex flex-col items-center justify-center gap-3.5 shadow-xs"
+            className="cursor-pointer rounded-xl border border-dashed border-border hover:border-accent bg-surface p-8 text-center transition-colors flex flex-col items-center justify-center gap-2"
           >
-            <div className="w-12 h-12 rounded-2xl bg-surface group-hover:bg-amber/10 flex items-center justify-center text-amber text-2xl transition-colors shadow-xs">
-              <i className={`bx ${selectedFilePath ? "bx-check-circle" : "bx-cloud-upload"}`} />
+            <div className="w-10 h-10 rounded-full bg-base text-accent flex items-center justify-center text-xl border border-border">
+              <i className={`bx ${selectedFilePath ? "bx-check text-accent" : "bx-cloud-upload"}`} />
             </div>
 
-            <div className="space-y-1">
-              <p className="font-display text-base font-semibold text-ink">
-                {fileName || "Click to select sermon file"}
-              </p>
-              <p className="text-xs text-muted font-sans">
-                Supports video (MP4, MOV, MKV) and audio (MP3, WAV, M4A)
-              </p>
-            </div>
+            <p className="text-xs font-semibold text-primary">
+              {fileName || "Click to browse computer"}
+            </p>
+            <p className="text-[11px] text-secondary">
+              Supports MP4, MOV, MKV, MP3, WAV, M4A
+            </p>
 
             {selectedFilePath && (
-              <div className="mt-1 px-3 py-1 rounded-full bg-surface border border-border text-[11px] text-amber font-mono font-medium truncate max-w-sm">
+              <span className="text-[11px] text-accent font-mono truncate max-w-xs mt-1 block">
                 {selectedFilePath}
-              </div>
+              </span>
             )}
           </div>
         ) : (
-          <div className="space-y-2 font-sans">
-            <label className="text-xs font-semibold text-ink block">
-              YouTube Video Link
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-primary block">
+              YouTube Video URL
             </label>
             <div className="relative">
-              <i className="bx bx-link-alt absolute left-4 top-1/2 -translate-y-1/2 text-muted text-base" />
+              <i className="bx bx-link absolute left-3 top-1/2 -translate-y-1/2 text-secondary text-sm" />
               <input
                 type="text"
                 value={youtubeUrl}
                 onChange={(e) => setYoutubeUrl(e.target.value)}
                 placeholder="https://www.youtube.com/watch?v=..."
-                className="w-full rounded-xl border border-border bg-paper pl-11 pr-4 py-3 text-sm text-ink placeholder:text-muted/50 outline-none transition-colors focus:border-amber"
+                className="w-full rounded-lg border border-border bg-surface pl-8 pr-3 py-2 text-xs text-primary placeholder:text-secondary outline-none focus:border-accent transition-colors"
               />
             </div>
           </div>
         )}
 
-        {/* Error notification */}
         {errorMessage && (
-          <div className="rounded-xl border border-amber/30 bg-amber-light px-4 py-3 text-xs text-[#8C5516] flex items-center gap-2.5 font-sans">
-            <i className="bx bx-error-circle text-base shrink-0" />
+          <div className="rounded-lg border border-accent/40 bg-surface p-3 text-xs text-primary flex items-center gap-2">
+            <i className="bx bx-error-circle text-accent text-base shrink-0" />
             <span>{errorMessage}</span>
           </div>
         )}
 
-        {/* Submit CTA */}
         <Btn
           type="submit"
-          className="w-full shadow-sm"
-          size="lg"
+          className="w-full"
+          size="md"
           disabled={isProcessing || (sourceType === "file" && !selectedFilePath)}
         >
           {isProcessing ? (
             <>
-              <i className="bx bx-loader-alt bx-spin text-lg" />
-              Opening Sermon…
+              <i className="bx bx-loader-alt bx-spin text-base" />
+              Starting…
             </>
           ) : (
             <>
-              <i className="bx bx-sparkles text-lg" />
-              Begin Transcribing & Finding Clips
+              <i className="bx bx-play text-base" />
+              Transcribe Sermon
             </>
           )}
         </Btn>
       </form>
-
-      {/* Helpful reassurance note */}
-      <div className="rounded-xl bg-surface/60 border border-border/70 p-4 text-xs text-muted leading-relaxed font-sans text-center space-y-1">
-        <p className="font-semibold text-ink-secondary">
-          🔒 Private & Local
-        </p>
-        <p>
-          Your sermon recordings remain safe on your device. Audio is turned into text, Bible citations are matched, and clips are prepared directly on your computer.
-        </p>
-      </div>
     </div>
   );
 }

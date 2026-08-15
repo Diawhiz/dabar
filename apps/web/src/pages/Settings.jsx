@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { getSettings, saveSettings, checkDependencies, downloadYtDlp, getHardwareInfo } from "../lib/api.js";
+import { useTheme } from "../context/ThemeContext.jsx";
 import Btn from "../components/Btn.jsx";
 
 export default function Settings() {
+  const { theme, setTheme } = useTheme();
   const [activeTab, setActiveTab] = useState("general");
   const [settings, setSettings] = useState({
     groq_api_key: "",
@@ -44,39 +46,39 @@ export default function Settings() {
       const updated = await checkDependencies();
       setDeps(updated);
     } catch (err) {
-      alert("Could not complete tool download: " + (err.message || err));
+      alert("Could not download video tool: " + (err.message || err));
     } finally {
       setIsDownloadingTool(false);
     }
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-8 pb-20 animate-fade-in font-sans">
-      {/* Header */}
-      <div>
-        <h1 className="font-display text-3xl font-bold tracking-tight text-ink">
+    <div className="mx-auto max-w-xl space-y-6 pb-16 font-sans">
+      {/* ── Header ──────────────────────────────────────────────── */}
+      <div className="border-b border-border pb-4">
+        <h1 className="font-display text-2xl font-bold text-primary">
           Preferences
         </h1>
-        <p className="mt-1 text-xs text-muted">
-          Adjust how Dabar listens to sermons, where clips are saved, and custom church spellings.
+        <p className="text-xs text-secondary mt-0.5">
+          Appearance, transcription engine, and church vocabulary.
         </p>
       </div>
 
-      {/* Tabs Switcher */}
-      <div className="flex p-1 rounded-xl bg-surface border border-border/80 text-xs font-semibold max-w-md">
+      {/* ── Tabs ────────────────────────────────────────────────── */}
+      <div className="flex border-b border-border gap-6 text-xs font-semibold">
         {[
-          { key: "general", label: "Cloud & Storage" },
-          { key: "transcription", label: "Listening Mode" },
+          { key: "general", label: "General & Appearance" },
+          { key: "transcription", label: "Transcription Mode" },
           { key: "vocabulary", label: "Church Names" },
-          { key: "system", label: "Video Tools" },
+          { key: "tools", label: "Video Tools" },
         ].map((tab) => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
-            className={`flex-1 py-2 rounded-lg transition-all ${
+            className={`pb-2.5 transition-colors ${
               activeTab === tab.key
-                ? "bg-paper text-ink shadow-xs border border-border/60"
-                : "text-muted hover:text-ink"
+                ? "text-accent border-b-2 border-accent"
+                : "text-secondary hover:text-primary"
             }`}
           >
             {tab.label}
@@ -84,138 +86,175 @@ export default function Settings() {
         ))}
       </div>
 
-      {/* ── Tab 1: Cloud & Storage ─────────────────────────────── */}
+      {/* ── Tab 1: General & Appearance ─────────────────────────── */}
       {activeTab === "general" && (
-        <form onSubmit={handleSave} className="space-y-6">
-          <div className="rounded-2xl border border-border bg-paper p-6 shadow-xs space-y-5">
-            <label className="block space-y-1.5">
-              <span className="text-xs font-bold text-ink block">Groq Cloud Key</span>
-              <input
-                type="password"
-                value={settings.groq_api_key}
-                onChange={(e) => setSettings({ ...settings, groq_api_key: e.target.value })}
-                placeholder="gsk_..."
-                className="w-full rounded-xl border border-border bg-paper px-4 py-2.5 text-xs text-ink outline-none transition-colors focus:border-amber font-mono"
-              />
-              <span className="text-[11px] text-muted block leading-relaxed">
-                Enables ultra-fast 20-second sermon transcription and AI highlight selection. Completely free at{" "}
-                <a href="https://console.groq.com" target="_blank" rel="noreferrer" className="text-amber underline">
-                  console.groq.com
-                </a>.
-              </span>
-            </label>
+        <form onSubmit={handleSave} className="space-y-5">
+          {/* Theme Selector */}
+          <div className="space-y-2">
+            <span className="text-xs font-bold text-primary block">App Appearance</span>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setTheme("light")}
+                className={`p-3.5 rounded-xl border text-left flex items-center justify-between transition-colors ${
+                  theme === "light"
+                    ? "border-accent bg-surface shadow-xs"
+                    : "border-border bg-base hover:bg-surface text-secondary"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <i className="bx bx-sun text-accent text-lg" />
+                  <div>
+                    <p className="text-xs font-bold text-primary">Warm Light</p>
+                    <p className="text-[10px] text-secondary">Paper parchment</p>
+                  </div>
+                </div>
+                {theme === "light" && <i className="bx bxs-check-circle text-accent text-base" />}
+              </button>
 
-            <label className="block space-y-1.5">
-              <span className="text-xs font-bold text-ink block">Where to Save Video Clips</span>
-              <input
-                type="text"
-                value={settings.output_dir}
-                onChange={(e) => setSettings({ ...settings, output_dir: e.target.value })}
-                placeholder="Videos/Dabar"
-                className="w-full rounded-xl border border-border bg-paper px-4 py-2.5 text-xs text-ink outline-none transition-colors focus:border-amber"
-              />
-              <span className="text-[11px] text-muted block">
-                The folder on your computer where rendered 9:16 phone video clips will be placed.
-              </span>
-            </label>
-          </div>
-
-          {savedNotice && (
-            <div className="rounded-xl border border-amber/30 bg-amber-light px-4 py-2.5 text-xs text-[#8C5516] flex items-center gap-2">
-              <i className="bx bx-check-circle text-base" />
-              <span>Preferences saved successfully.</span>
-            </div>
-          )}
-
-          <Btn type="submit" disabled={isSaving}>
-            {isSaving ? "Saving…" : "Save Preferences"}
-          </Btn>
-        </form>
-      )}
-
-      {/* ── Tab 2: Listening Mode ───────────────────────────────── */}
-      {activeTab === "transcription" && (
-        <form onSubmit={handleSave} className="space-y-6">
-          <div className="space-y-3">
-            <span className="text-xs font-bold text-ink block">Choose How Dabar Transcribes</span>
-
-            {/* Cloud Option */}
-            <div
-              onClick={() => setSettings({ ...settings, offline_mode: false })}
-              className={`cursor-pointer rounded-2xl border p-5 transition-all space-y-1 ${
-                !settings.offline_mode
-                  ? "border-amber bg-amber-light/30 shadow-xs"
-                  : "border-border bg-paper hover:bg-surface/50"
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-ink flex items-center gap-1.5">
-                  <i className="bx bx-cloud text-amber text-base" />
-                  Fast Cloud Mode (Recommended)
-                </span>
-                {!settings.offline_mode && <i className="bx bxs-check-circle text-amber text-lg" />}
-              </div>
-              <p className="text-xs text-muted leading-relaxed">
-                Transcribes a 45-minute message in 20 seconds with highest accuracy. Captures scripture, names, and background organ music effortlessly.
-              </p>
-            </div>
-
-            {/* Offline Option */}
-            <div
-              onClick={() => setSettings({ ...settings, offline_mode: true })}
-              className={`cursor-pointer rounded-2xl border p-5 transition-all space-y-1 ${
-                settings.offline_mode
-                  ? "border-amber bg-amber-light/30 shadow-xs"
-                  : "border-border bg-paper hover:bg-surface/50"
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-ink flex items-center gap-1.5">
-                  <i className="bx bx-laptop text-amber text-base" />
-                  Offline on this Computer
-                </span>
-                {settings.offline_mode && <i className="bx bxs-check-circle text-amber text-lg" />}
-              </div>
-              <p className="text-xs text-muted leading-relaxed">
-                Runs 100% locally on your computer with zero internet required. Great for church rooms with spotty WiFi.
-              </p>
+              <button
+                type="button"
+                onClick={() => setTheme("dark")}
+                className={`p-3.5 rounded-xl border text-left flex items-center justify-between transition-colors ${
+                  theme === "dark"
+                    ? "border-accent bg-surface shadow-xs"
+                    : "border-border bg-base hover:bg-surface text-secondary"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <i className="bx bx-moon text-accent text-lg" />
+                  <div>
+                    <p className="text-xs font-bold text-primary">Warm Dark</p>
+                    <p className="text-[10px] text-secondary">Charcoal walnut</p>
+                  </div>
+                </div>
+                {theme === "dark" && <i className="bx bxs-check-circle text-accent text-base" />}
+              </button>
             </div>
           </div>
 
-          {savedNotice && (
-            <div className="rounded-xl border border-amber/30 bg-amber-light px-4 py-2.5 text-xs text-[#8C5516] flex items-center gap-2">
-              <i className="bx bx-check-circle text-base" />
-              <span>Preferences saved successfully.</span>
-            </div>
-          )}
-
-          <Btn type="submit" disabled={isSaving}>
-            {isSaving ? "Saving…" : "Save Preferences"}
-          </Btn>
-        </form>
-      )}
-
-      {/* ── Tab 3: Custom Church Vocabulary ─────────────────────── */}
-      {activeTab === "vocabulary" && (
-        <form onSubmit={handleSave} className="space-y-6">
-          <div className="rounded-2xl border border-border bg-paper p-6 shadow-xs space-y-3">
-            <span className="text-xs font-bold text-ink block">Pastors, Leaders & Church Terms</span>
-            <textarea
-              rows={6}
-              value={settings.custom_vocabulary}
-              onChange={(e) => setSettings({ ...settings, custom_vocabulary: e.target.value })}
-              placeholder="Pastor Daniel, Yahweh, Ruach HaKodesh, Gethsemane, Grace Tabernacle, Pentecost, Habakkuk..."
-              className="w-full rounded-xl border border-border bg-paper p-3 text-xs text-ink outline-none transition-colors focus:border-amber leading-relaxed"
+          {/* Groq Key */}
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-primary block">Groq Cloud API Key</label>
+            <input
+              type="password"
+              value={settings.groq_api_key}
+              onChange={(e) => setSettings({ ...settings, groq_api_key: e.target.value })}
+              placeholder="gsk_..."
+              className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-xs text-primary outline-none focus:border-accent font-mono"
             />
-            <p className="text-[11px] text-muted">
-              Add comma-separated names, places, or theological terms frequently spoken in your church. Dabar will automatically correct spelling in transcripts.
+            <p className="text-[11px] text-secondary">
+              Required for fast 20-second cloud transcription. Free at{" "}
+              <a href="https://console.groq.com" target="_blank" rel="noreferrer" className="text-accent underline">
+                console.groq.com
+              </a>.
+            </p>
+          </div>
+
+          {/* Save folder */}
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-primary block">Where to Save Video Clips</label>
+            <input
+              type="text"
+              value={settings.output_dir}
+              onChange={(e) => setSettings({ ...settings, output_dir: e.target.value })}
+              placeholder="Videos/Dabar"
+              className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-xs text-primary outline-none focus:border-accent"
+            />
+          </div>
+
+          {savedNotice && (
+            <div className="rounded-lg border border-accent/40 bg-surface px-3 py-2 text-xs text-primary flex items-center gap-2">
+              <i className="bx bxs-check-circle text-accent text-base" />
+              <span>Preferences saved.</span>
+            </div>
+          )}
+
+          <Btn type="submit" disabled={isSaving}>
+            {isSaving ? "Saving…" : "Save Preferences"}
+          </Btn>
+        </form>
+      )}
+
+      {/* ── Tab 2: Transcription Mode ───────────────────────────── */}
+      {activeTab === "transcription" && (
+        <form onSubmit={handleSave} className="space-y-4">
+          <div
+            onClick={() => setSettings({ ...settings, offline_mode: false })}
+            className={`cursor-pointer rounded-xl border p-4 transition-colors space-y-1 ${
+              !settings.offline_mode
+                ? "border-accent bg-surface"
+                : "border-border bg-base hover:bg-surface"
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-primary flex items-center gap-1.5">
+                <i className="bx bx-cloud text-accent text-base" />
+                Cloud Speed (Recommended)
+              </span>
+              {!settings.offline_mode && <i className="bx bxs-check-circle text-accent text-base" />}
+            </div>
+            <p className="text-[11px] text-secondary">
+              Transcribes a full 45-minute sermon in 20 seconds. Highest accuracy on music and church acoustics.
+            </p>
+          </div>
+
+          <div
+            onClick={() => setSettings({ ...settings, offline_mode: true })}
+            className={`cursor-pointer rounded-xl border p-4 transition-colors space-y-1 ${
+              settings.offline_mode
+                ? "border-accent bg-surface"
+                : "border-border bg-base hover:bg-surface"
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-primary flex items-center gap-1.5">
+                <i className="bx bx-laptop text-accent text-base" />
+                Offline on this Computer
+              </span>
+              {settings.offline_mode && <i className="bx bxs-check-circle text-accent text-base" />}
+            </div>
+            <p className="text-[11px] text-secondary">
+              Runs 100% locally on your computer with zero internet required.
             </p>
           </div>
 
           {savedNotice && (
-            <div className="rounded-xl border border-amber/30 bg-amber-light px-4 py-2.5 text-xs text-[#8C5516] flex items-center gap-2">
-              <i className="bx bx-check-circle text-base" />
-              <span>Church vocabulary saved.</span>
+            <div className="rounded-lg border border-accent/40 bg-surface px-3 py-2 text-xs text-primary flex items-center gap-2">
+              <i className="bx bxs-check-circle text-accent text-base" />
+              <span>Preferences saved.</span>
+            </div>
+          )}
+
+          <Btn type="submit" disabled={isSaving}>
+            {isSaving ? "Saving…" : "Save Preferences"}
+          </Btn>
+        </form>
+      )}
+
+      {/* ── Tab 3: Church Names ─────────────────────────────────── */}
+      {activeTab === "vocabulary" && (
+        <form onSubmit={handleSave} className="space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-primary block">
+              Pastor Names, Ministry Terms & Scripture Words
+            </label>
+            <textarea
+              rows={5}
+              value={settings.custom_vocabulary}
+              onChange={(e) => setSettings({ ...settings, custom_vocabulary: e.target.value })}
+              placeholder="Pastor Daniel, Yahweh, Ruach HaKodesh, Gethsemane, Pentecost, Habakkuk..."
+              className="w-full rounded-lg border border-border bg-surface p-3 text-xs text-primary outline-none focus:border-accent leading-relaxed"
+            />
+            <p className="text-[11px] text-secondary">
+              Comma-separated words frequently spoken in your church. Dabar will match and spell them correctly.
+            </p>
+          </div>
+
+          {savedNotice && (
+            <div className="rounded-lg border border-accent/40 bg-surface px-3 py-2 text-xs text-primary flex items-center gap-2">
+              <i className="bx bxs-check-circle text-accent text-base" />
+              <span>Vocabulary saved.</span>
             </div>
           )}
 
@@ -225,44 +264,38 @@ export default function Settings() {
         </form>
       )}
 
-      {/* ── Tab 4: System & Tools ───────────────────────────────── */}
-      {activeTab === "system" && (
-        <div className="space-y-6">
-          {/* Hardware status */}
-          <div className="rounded-2xl border border-border bg-paper p-5 shadow-xs space-y-2">
-            <p className="text-xs font-bold text-ink flex items-center gap-2">
-              <i className="bx bx-chip text-amber text-base" />
-              Computer Performance Profile
+      {/* ── Tab 4: Video Tools ──────────────────────────────────── */}
+      {activeTab === "tools" && (
+        <div className="space-y-4">
+          <div className="rounded-xl border border-border bg-surface p-4 space-y-1">
+            <p className="text-xs font-bold text-primary flex items-center gap-1.5">
+              <i className="bx bx-chip text-accent text-base" />
+              Computer Hardware Profile
             </p>
-            <div className="text-xs text-muted space-y-1">
-              <p>Memory Available: <strong className="text-ink">{hardware?.ram_gb || "8"} GB RAM</strong></p>
-              <p>Video Engine Mode: <strong className="text-ink">{hardware?.is_low_end ? "Low-Spec PC Mode (Fast render)" : "Standard Quality Mode"}</strong></p>
-            </div>
+            <p className="text-[11px] text-secondary">
+              Memory: <strong className="text-primary">{hardware?.ram_gb || "8"} GB RAM</strong> · Video Preset: <strong className="text-primary">{hardware?.recommended_ffmpeg_preset || "fast"}</strong>
+            </p>
           </div>
 
-          {/* External video tools */}
-          <div className="rounded-2xl border border-border bg-paper divide-y divide-border overflow-hidden shadow-xs">
-            <div className="p-4 flex items-center justify-between">
+          <div className="rounded-xl border border-border bg-surface divide-y divide-border overflow-hidden">
+            <div className="p-3.5 flex items-center justify-between">
               <div>
-                <p className="text-xs font-bold text-ink">Video & Audio Processing Engine</p>
-                <p className="text-[11px] text-muted">
-                  {deps?.ffmpeg?.found
-                    ? "Ready to export vertical video clips"
-                    : "Not found on system"}
+                <p className="text-xs font-bold text-primary">Video Clip Renderer</p>
+                <p className="text-[10px] text-secondary">
+                  {deps?.ffmpeg?.found ? "Ready to export vertical clips" : "Waiting"}
                 </p>
               </div>
-              <span className="text-[11px] font-semibold text-amber bg-surface px-2.5 py-1 rounded-full border border-border">
+              <span className="text-[11px] font-semibold text-accent flex items-center gap-1">
+                <i className={`bx ${deps?.ffmpeg?.found ? "bxs-check-circle" : "bx-circle"}`} />
                 {deps?.ffmpeg?.found ? "Ready" : "Waiting"}
               </span>
             </div>
 
-            <div className="p-4 flex items-center justify-between">
+            <div className="p-3.5 flex items-center justify-between">
               <div>
-                <p className="text-xs font-bold text-ink">YouTube Video Downloader</p>
-                <p className="text-[11px] text-muted">
-                  {deps?.yt_dlp?.found
-                    ? "Ready to import YouTube sermons"
-                    : "Click update to download latest version"}
+                <p className="text-xs font-bold text-primary">YouTube Downloader</p>
+                <p className="text-[10px] text-secondary">
+                  {deps?.yt_dlp?.found ? "Ready to import video links" : "Click to install"}
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -271,12 +304,13 @@ export default function Settings() {
                     type="button"
                     onClick={handleDownloadTool}
                     disabled={isDownloadingTool}
-                    className="text-xs font-semibold px-3 py-1 rounded-lg bg-amber text-white hover:opacity-90 transition-opacity"
+                    className="px-2.5 py-1 rounded bg-accent text-white text-xs font-semibold"
                   >
-                    {isDownloadingTool ? "Downloading…" : "Download"}
+                    {isDownloadingTool ? "Downloading…" : "Install"}
                   </button>
                 )}
-                <span className="text-[11px] font-semibold text-amber bg-surface px-2.5 py-1 rounded-full border border-border">
+                <span className="text-[11px] font-semibold text-accent flex items-center gap-1">
+                  <i className={`bx ${deps?.yt_dlp?.found ? "bxs-check-circle" : "bx-circle"}`} />
                   {deps?.yt_dlp?.found ? "Ready" : "Not Installed"}
                 </span>
               </div>

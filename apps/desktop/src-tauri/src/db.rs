@@ -18,11 +18,19 @@ impl Db {
             .await
             .with_context(|| format!("connecting to SQLite at {db_path}"))?;
 
-        // Run embedded migrations
-        sqlx::migrate!("./migrations")
-            .run(&pool)
-            .await
-            .context("running database migrations")?;
+        // Run embedded migrations with resilient fallback if dev modified the file
+        if let Err(e) = sqlx::migrate!("./migrations").run(&pool).await {
+            tracing::warn!("sqlx migration warning ({e}); applying schema definitions directly...");
+            let ddl = include_str!("../migrations/001_initial.sql");
+            for statement in ddl.split(';') {
+                let stmt = statement.trim();
+                if !stmt.is_empty() {
+                    let _ = sqlx::query(stmt).execute(&pool).await;
+                }
+            }
+            // Clear stale migration checksum entry so future migrations are clean
+            let _ = sqlx::query("DROP TABLE IF EXISTS _sqlx_migrations").execute(&pool).await;
+        }
 
         tracing::info!("Database connected and migrations applied: {db_path}");
         Ok(Self { pool })

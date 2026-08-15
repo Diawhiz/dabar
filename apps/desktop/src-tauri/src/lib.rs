@@ -51,8 +51,8 @@ async fn start_pipeline(
 
     // Determine a preliminary title
     let title = match &pipeline_source {
-        PipelineSource::YouTube(_) => "Processing\u2026".to_string(),
-        PipelineSource::GoogleDrive(_) => "Processing\u2026".to_string(),
+        PipelineSource::YouTube(_) => "Processing…".to_string(),
+        PipelineSource::GoogleDrive(_) => "Processing…".to_string(),
         PipelineSource::LocalFile(p) => p
             .file_stem()
             .and_then(|s| s.to_str())

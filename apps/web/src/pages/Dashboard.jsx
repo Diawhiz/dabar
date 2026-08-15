@@ -5,7 +5,6 @@ import { recentSermons } from "../data/mockData.js";
 import ReelStrip from "../components/ReelStrip.jsx";
 import SermonCard from "../components/SermonCard.jsx";
 import EmptyState from "../components/EmptyState.jsx";
-import Waveform from "../components/Waveform.jsx";
 import Btn from "../components/Btn.jsx";
 
 export default function Dashboard() {
@@ -61,51 +60,55 @@ export default function Dashboard() {
 
       {/* Loading */}
       {isLoading ? (
-        <div className="py-12">
-          <Waveform mode="loading" />
-          <p className="mt-4 text-center text-sm text-muted">Loading your sermons…</p>
+        <div className="py-16 text-center">
+          <i className="bx bx-loader-alt bx-spin text-3xl text-ember mb-3" aria-hidden="true" />
+          <p className="text-sm text-muted">Loading your sermon library…</p>
         </div>
       ) : sermons.length > 0 ? (
         <>
           {/* Reel strip */}
-          <ReelStrip label="Recent sermons reel">
+          <ReelStrip label="Recent sermon recordings">
             {sermons.map((sermon) => (
               <SermonCard key={sermon.id} sermon={sermon} />
             ))}
           </ReelStrip>
 
-          {/* Waveform divider */}
-          <Waveform mode="divider" />
-
           {/* Accessible list view below the reel */}
-          <section>
-            <h2 className="font-display text-xl font-semibold mb-4">All sermons</h2>
-            <div className="divide-y divide-border rounded-card border border-border overflow-hidden">
+          <section className="pt-4">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-display text-xl font-semibold text-ink">All sermons in library</h2>
+              <span className="text-xs text-muted">Click any sermon to review clips or manuscript</span>
+            </div>
+
+            <div className="divide-y divide-border rounded-card border border-border bg-paper overflow-hidden shadow-card">
               {sermons.map((sermon) => {
-                const isReady = (sermon.status || "").toLowerCase().includes("clip") || (sermon.status || "").toLowerCase().includes("ready");
+                const isReady = (sermon.status || "").toLowerCase().includes("clip") || (sermon.status || "").toLowerCase().includes("ready") || (sermon.status || "").toLowerCase().includes("complete");
                 return (
                   <button
                     key={sermon.id}
                     onClick={() => navigate(isReady ? `/clips/${sermon.id}` : `/processing/${sermon.id}`)}
-                    className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition-colors hover:bg-surface focus-visible:bg-surface"
+                    className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition-colors hover:bg-surface focus-visible:bg-surface group"
                   >
                     <div className="min-w-0">
-                      <p className="font-display text-sm font-semibold text-ink truncate">
+                      <p className="font-display text-sm font-semibold text-ink truncate group-hover:text-ember transition-colors">
                         {sermon.title}
                       </p>
                       <p className="text-xs text-muted mt-0.5">
-                        {sermon.speaker && `${sermon.speaker} · `}{sermon.date || ""}{sermon.duration ? ` · ${sermon.duration}` : ""}
+                        {sermon.speaker && `${sermon.speaker} · `}{sermon.date || "Recent"}{sermon.duration ? ` · ${sermon.duration}` : ""}
                       </p>
                     </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
+                    <div className="flex items-center gap-2 shrink-0">
                       {isReady ? (
-                        <i className="bx bx-check-circle text-ember" aria-hidden="true" />
+                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-ember bg-ember/10 px-2.5 py-1 rounded-full">
+                          <i className="bx bx-check-circle text-sm" aria-hidden="true" />
+                          Clips Ready
+                        </span>
                       ) : (
-                        <i className="bx bx-loader-alt bx-spin text-muted" aria-hidden="true" />
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-muted bg-surface px-2.5 py-1 rounded-full">
+                          <i className="bx bx-loader-alt bx-spin text-sm" aria-hidden="true" />
+                          {sermon.status || "Transcribing"}
+                        </span>
                       )}
-                      <span className={`text-xs font-medium ${isReady ? "text-ember" : "text-muted"}`}>
-                        {sermon.status || "Processing"}
-                      </span>
                     </div>
                   </button>
                 );

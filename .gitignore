@@ -3,17 +3,27 @@ venv/
 __pycache__/
 *.py[cod]
 .env
-db.sqlite3
-test.sqlite3
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
+*.part
+*.log
 .pytest_cache/
 node_modules/
 dist/
 tmp_audio/
 tmp_clips/
+scratch_test/
 target/
 src-tauri/target/
+
+# Binaries & downloads
+bin/
+*.exe
+*.dll
 
 # Sensitive YouTube Auth Cookies
 cookies.txt
 *.cookies.txt
 *.cookies
+

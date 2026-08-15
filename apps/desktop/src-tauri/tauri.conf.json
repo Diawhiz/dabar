@@ -4,19 +4,21 @@
   "version": "0.1.0",
   "identifier": "com.dabar.app",
   "build": {
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "npm --prefix ../web run dev",
     "devUrl": "http://localhost:5173",
-    "beforeBuildCommand": "npm run build",
-    "frontendDist": "../../web/dist"
+    "beforeBuildCommand": "npm --prefix ../web run build",
+    "frontendDist": "../web/dist"
   },
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Dabar",
         "width": 1280,
         "height": 800,
         "minWidth": 960,
-        "minHeight": 640
+        "minHeight": 600,
+        "center": true
       }
     ],
     "security": {
@@ -25,8 +27,13 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
-    "icon": []
+    "targets": ["nsis", "msi"],
+    "icon": [],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "displayLanguageSelector": false
+      }
+    }
   }
 }
-

@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
-import { listSermons, getTranscript, downloadClip } from "../lib/api.js";
-import { highlights as mockHighlights, clips as mockClips } from "../data/mockData.js";
-import ReelStrip from "../components/ReelStrip.jsx";
+import { useEffect, useMemo, useState, useRef } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import { listSermons, getSermon, renderClip, openInExplorer } from "../lib/api.js";
+import { highlights as mockHighlights } from "../data/mockData.js";
 import ClipCard from "../components/ClipCard.jsx";
-import Waveform from "../components/Waveform.jsx";
+import ExportModal from "../components/ExportModal.jsx";
+import ManuscriptView from "../components/ManuscriptView.jsx";
 import Btn from "../components/Btn.jsx";
 import EmptyState from "../components/EmptyState.jsx";
 
@@ -23,240 +23,396 @@ function extractVideoId(url) {
 
 export default function ClipReview() {
   const { sermonId } = useParams();
+  const navigate = useNavigate();
+  const [currentSermonId, setCurrentSermonId] = useState(sermonId || "");
+  const [activeTab, setActiveTab] = useState("clips"); // "clips" | "transcript"
   const [segments, setSegments] = useState([]);
+  const [highlights, setHighlights] = useState([]);
   const [sermonUrl, setSermonUrl] = useState("");
   const [sermonTitle, setSermonTitle] = useState("");
+  const [sermonDuration, setSermonDuration] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [activeSegment, setActiveSegment] = useState(null);
-  const [filterHighlights, setFilterHighlights] = useState(false);
-  const [downloading, setDownloading] = useState(null);
+  const [exportModalClip, setExportModalClip] = useState(null);
+  const [renderingClipId, setRenderingClipId] = useState(null);
+  const [exportedNotice, setExportedNotice] = useState(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [playbackTime, setPlaybackTime] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
 
   useEffect(() => {
     let mounted = true;
     setIsLoading(true);
 
-    listSermons()
-      .then(async (sermons) => {
-        if (!mounted || !sermons.length) {
-          setIsLoading(false);
+    async function loadData() {
+      try {
+        let targetId = sermonId;
+
+        if (!targetId) {
+          const sermons = await listSermons();
+          if (sermons && sermons.length > 0) {
+            targetId = sermons[0].id;
+          }
+        }
+
+        if (!targetId) {
+          if (mounted) setIsLoading(false);
           return;
         }
 
-        const target = sermonId
-          ? sermons.find((s) => String(s.id) === String(sermonId))
-          : sermons[0];
-
-        if (!target) {
-          setIsLoading(false);
+        setCurrentSermonId(targetId);
+        const sermon = await getSermon(targetId);
+        if (!mounted || !sermon) {
+          if (mounted) setIsLoading(false);
           return;
         }
 
-        setSermonTitle(target.title || target.youtube_url);
-        setSermonUrl(target.youtube_url);
-
-        try {
-          const data = await getTranscript(target.id);
-          if (mounted && data?.segments && data.segments.length > 0) {
-            // Ensure at least some segments are marked as highlights
-            let segs = data.segments;
-            const hasHl = segs.some((s) => s.is_highlight);
-            if (!hasHl) {
-              segs = segs.map((s, idx) => ({
-                ...s,
-                is_highlight: idx % 3 === 0 || idx === 1,
-                highlight_title: s.highlight_title || "Key Teaching Moment",
-              }));
-            }
-            setSegments(segs);
-          } else if (mounted) {
-            // Mock fallback
-            const fallbackSegs = mockHighlights.map((hl, i) => ({
-              id: hl.id,
-              start: i * 45,
-              end: (i + 1) * 45,
-              text: hl.transcript,
-              is_highlight: true,
-              highlight_title: hl.title,
-            }));
-            setSegments(fallbackSegs);
-          }
-        } catch {
-          if (mounted) {
-            const fallbackSegs = mockHighlights.map((hl, i) => ({
-              id: hl.id,
-              start: i * 45,
-              end: (i + 1) * 45,
-              text: hl.transcript,
-              is_highlight: true,
-              highlight_title: hl.title,
-            }));
-            setSegments(fallbackSegs);
-          }
+        let displayTitle = sermon.title || "Sunday Sermon";
+        if (displayTitle.match(/\.(mp4|mp3|wav|m4a|mov|mkv)$/i)) {
+          displayTitle = displayTitle.replace(/\.(mp4|mp3|wav|m4a|mov|mkv)$/i, "").replace(/[-_]/g, " ");
         }
-      })
-      .catch(() => {
-        if (mounted) {
-          const fallbackSegs = mockHighlights.map((hl, i) => ({
+        setSermonTitle(displayTitle);
+        setSermonUrl(sermon.youtube_url || "");
+
+        const hlList = Array.isArray(sermon.highlights) ? sermon.highlights : [];
+        const rawSegs = Array.isArray(sermon.transcript_segments) ? sermon.transcript_segments : [];
+
+        const structuredHls = hlList.map((hl) => ({
+          id: hl.id,
+          start: hl.start_time,
+          end: hl.end_time,
+          score: hl.score,
+          title: hl.title,
+          highlight_title: hl.title,
+          why: hl.reason || hl.suggested_hook_text || "Key pastoral teaching moment",
+          text: hl.reason || hl.title,
+          duration: `${formatSeconds(hl.start_time)} – ${formatSeconds(hl.end_time)}`,
+          is_highlight: true,
+        }));
+
+        const transcriptItems = rawSegs.map((seg, idx) => {
+          const matchingHl = hlList.find(
+            (hl) => seg.start >= hl.start_time - 0.5 && seg.end <= hl.end_time + 0.5
+          );
+          return {
+            id: matchingHl ? matchingHl.id : `seg-${idx}`,
+            start: seg.start,
+            end: seg.end,
+            text: seg.text,
+            is_highlight: Boolean(matchingHl),
+            highlight_title: matchingHl ? matchingHl.title : null,
+            highlight_reason: matchingHl ? matchingHl.reason : null,
+          };
+        });
+
+        if (structuredHls.length > 0 || transcriptItems.length > 0) {
+          setHighlights(structuredHls);
+          setSegments(transcriptItems.length > 0 ? transcriptItems : structuredHls);
+          if (transcriptItems.length > 0) {
+            const lastSeg = transcriptItems[transcriptItems.length - 1];
+            setSermonDuration(formatSeconds(lastSeg.end));
+          }
+        } else {
+          const fallbackHls = mockHighlights.map((hl, i) => ({
             id: hl.id,
             start: i * 45,
             end: (i + 1) * 45,
-            text: hl.transcript,
-            is_highlight: true,
+            title: hl.title,
             highlight_title: hl.title,
+            why: hl.why || "Pastor addresses overcoming doubt with unwavering faith.",
+            text: hl.transcript,
+            duration: `${formatSeconds(i * 45)} – ${formatSeconds((i + 1) * 45)}`,
+            is_highlight: true,
           }));
-          setSegments(fallbackSegs);
+          setHighlights(fallbackHls);
+          setSegments(fallbackHls);
+          setSermonDuration("45:12");
         }
-      })
-      .finally(() => { if (mounted) setIsLoading(false); });
+      } catch (err) {
+        console.warn("Failed to load sermon data:", err);
+      } finally {
+        if (mounted) setIsLoading(false);
+      }
+    }
 
-
+    loadData();
     return () => { mounted = false; };
   }, [sermonId]);
 
   const videoId = extractVideoId(sermonUrl);
 
-  const displayed = useMemo(() => {
-    if (filterHighlights) return segments.filter((s) => s.is_highlight);
-    return segments;
-  }, [segments, filterHighlights]);
+  const topMoment = useMemo(() => {
+    if (highlights.length === 0) return null;
+    return highlights[0];
+  }, [highlights]);
 
-  const highlightCount = useMemo(() => segments.filter((s) => s.is_highlight).length, [segments]);
+  const otherMoments = useMemo(() => {
+    if (highlights.length <= 1) return [];
+    return highlights.slice(1);
+  }, [highlights]);
 
-  async function handleDownload(seg) {
-    if (!sermonUrl) return;
-    setDownloading(seg.start);
+  const filteredSegments = useMemo(() => {
+    if (!searchTerm.trim()) return segments;
+    const q = searchTerm.toLowerCase();
+    return segments.filter((s) => s.text.toLowerCase().includes(q));
+  }, [segments, searchTerm]);
+
+  function handleUpdateSegmentText(idx, newText) {
+    setSegments((prev) => {
+      const updated = [...prev];
+      if (updated[idx]) {
+        updated[idx] = { ...updated[idx], text: newText };
+      }
+      return updated;
+    });
+  }
+
+  async function handleConfirmExport(clip, format, captionStyle, fileName) {
+    if (!currentSermonId || !clip.id) return;
+    setRenderingClipId(clip.id);
     try {
-      await downloadClip(sermonUrl, seg.start, seg.end);
-    } catch {
-      // silent for now
+      const outputPath = await renderClip(currentSermonId, clip.id);
+      setExportedNotice({
+        title: clip.highlight_title || clip.title || fileName || "Clip",
+        path: outputPath,
+      });
+      setExportModalClip(null);
+    } catch (err) {
+      alert("Clip export failed: " + (err.message || err));
     } finally {
-      setDownloading(null);
+      setRenderingClipId(null);
     }
   }
 
+  function handleSeek(time) {
+    setPlaybackTime(time);
+    setIsPlaying(true);
+  }
+
+  function handleTogglePlay() {
+    setIsPlaying((prev) => !prev);
+  }
+
   return (
-    <div className="space-y-8 pb-20">
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className="space-y-6 pb-24">
+      {/* ── 1. Status Strip Header ───────────────────────────────── */}
+      <div className="rounded-card border border-border bg-paper p-5 shadow-card flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h1 className="font-display text-3xl font-bold tracking-tight">Review your clips</h1>
-          <p className="mt-1 text-sm text-muted">
-            {sermonTitle || "Browse sermon moments and export the ones you want."}
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-ember mb-1">
+            <span>Sermon Studio</span>
+            <span>·</span>
+            <span>{sermonDuration ? `${sermonDuration} total runtime` : "Ready"}</span>
+          </div>
+          <h1 className="font-display text-2xl md:text-3xl font-bold text-ink leading-tight">
+            {sermonTitle || "Sermon Highlights & Transcript"}
+          </h1>
+          <p className="mt-1 text-xs text-muted">
+            {highlights.length} {highlights.length === 1 ? "moment" : "moments"} worth sharing identified from this message.
           </p>
         </div>
-        <div className="flex gap-2">
-          <Btn
-            size="sm"
-            variant={filterHighlights ? "primary" : "ghost"}
-            onClick={() => setFilterHighlights(!filterHighlights)}
-          >
-            <i className="bx bx-star text-base" aria-hidden="true" />
-            Key moments ({highlightCount})
+
+        <div className="flex items-center gap-2 shrink-0">
+          <Btn size="sm" variant="ghost" onClick={() => navigate("/dashboard")}>
+            <i className="bx bx-left-arrow-alt text-base" aria-hidden="true" />
+            Library
+          </Btn>
+          <Btn size="sm" variant="outline" onClick={() => navigate("/upload")}>
+            <i className="bx bx-upload text-base" aria-hidden="true" />
+            New Sermon
           </Btn>
         </div>
       </div>
 
-      {isLoading ? (
-        <div className="py-12">
-          <Waveform mode="loading" />
-          <p className="mt-4 text-center text-sm text-muted">Loading clips…</p>
-        </div>
-      ) : displayed.length > 0 ? (
-        <>
-          {/* Clip reel strip using actual segments */}
-          <ReelStrip label="Clip preview reel">
-            {displayed.slice(0, 12).map((seg, i) => (
-              <ClipCard
-                key={seg.id || i}
-                clip={{
-                  title: seg.highlight_title || seg.text.slice(0, 60) + "…",
-                  duration: `${formatSeconds(seg.start)} – ${formatSeconds(seg.end)}`,
-                  format: "9:16",
-                  captions: seg.is_highlight ? "Key moment" : "",
-                }}
-                onPreview={() => setActiveSegment(seg)}
-                onExport={() => handleDownload(seg)}
-              />
-            ))}
-          </ReelStrip>
-
-          <Waveform mode="divider" />
-
-          {/* Full transcript list */}
-          <section className="space-y-3">
-            <h2 className="font-display text-xl font-semibold">
-              {filterHighlights ? "Key moments" : "Full transcript"}
-            </h2>
-
-            <div className="divide-y divide-border rounded-card border border-border overflow-hidden">
-              {displayed.map((seg, i) => {
-                const isActive = activeSegment && activeSegment.start === seg.start;
-                return (
-                  <div
-                    key={seg.id || i}
-                    className={`px-5 py-4 transition-colors ${isActive ? "bg-ember/5" : "hover:bg-surface"}`}
-                  >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 mb-1.5">
-                          <span className="text-xs font-medium text-ember font-body">
-                            {formatSeconds(seg.start)} – {formatSeconds(seg.end)}
-                          </span>
-                          {seg.is_highlight && (
-                            <span className="inline-flex items-center gap-1 text-xs font-medium text-ember">
-                              <i className="bx bx-star" aria-hidden="true" />
-                              {seg.highlight_title || "Key moment"}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-sm text-ink leading-relaxed">
-                          "{seg.text}"
-                        </p>
-                      </div>
-
-                      <div className="flex shrink-0 items-center gap-2">
-                        <button
-                          onClick={() => setActiveSegment(isActive ? null : seg)}
-                          className="rounded-card p-2 text-muted hover:text-ember hover:bg-surface transition-colors"
-                          aria-label={isActive ? "Close preview" : "Preview this clip"}
-                        >
-                          <i className={`bx ${isActive ? "bx-x" : "bx-play"} text-xl`} aria-hidden="true" />
-                        </button>
-                        <button
-                          onClick={() => handleDownload(seg)}
-                          disabled={downloading === seg.start}
-                          className="rounded-card p-2 text-muted hover:text-ember hover:bg-surface transition-colors disabled:opacity-50"
-                          aria-label="Download clip"
-                        >
-                          <i className={`bx ${downloading === seg.start ? "bx-loader-alt bx-spin" : "bx-download"} text-xl`} aria-hidden="true" />
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Inline video preview */}
-                    {isActive && videoId && (
-                      <div className="mt-4 rounded-lg overflow-hidden border border-border bg-ink">
-                        <div className="aspect-video">
-                          <iframe
-                            src={`https://www.youtube.com/embed/${videoId}?start=${Math.floor(seg.start)}&end=${Math.ceil(seg.end)}&autoplay=1&rel=0`}
-                            title="Clip preview"
-                            className="h-full w-full"
-                            allow="autoplay; encrypted-media"
-                            allowFullScreen
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+      {/* ── 2. Export Success Toast ──────────────────────────────── */}
+      {exportedNotice && (
+        <div className="rounded-card border border-ember/40 bg-ember/10 p-4 flex items-center justify-between gap-4 shadow-sm animate-fade-in">
+          <div className="flex items-center gap-3">
+            <i className="bx bx-check-circle text-2xl text-ember shrink-0" aria-hidden="true" />
+            <div>
+              <p className="text-sm font-semibold text-ink">
+                "{exportedNotice.title}" rendered successfully!
+              </p>
+              <p className="text-xs text-muted truncate max-w-md">{exportedNotice.path}</p>
             </div>
-          </section>
-        </>
+          </div>
+          <div className="flex items-center gap-2">
+            <Btn
+              size="sm"
+              variant="outline"
+              onClick={() => openInExplorer(exportedNotice.path)}
+            >
+              <i className="bx bx-folder-open text-base" aria-hidden="true" />
+              Show in Folder
+            </Btn>
+            <button
+              onClick={() => setExportedNotice(null)}
+              className="text-muted hover:text-ink p-1"
+              aria-label="Dismiss notice"
+            >
+              <i className="bx bx-x text-lg" aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── 3. Mode Tabs: Clips vs Transcript ─────────────────────── */}
+      <div className="flex border-b border-border gap-8 text-sm font-medium">
+        <button
+          type="button"
+          onClick={() => setActiveTab("clips")}
+          className={`pb-3.5 transition-colors relative flex items-center gap-2 ${
+            activeTab === "clips"
+              ? "text-ember font-bold border-b-2 border-ember"
+              : "text-muted hover:text-ink"
+          }`}
+        >
+          <i className="bx bx-film text-lg" aria-hidden="true" />
+          Clips & Key Moments ({highlights.length})
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab("transcript")}
+          className={`pb-3.5 transition-colors relative flex items-center gap-2 ${
+            activeTab === "transcript"
+              ? "text-ember font-bold border-b-2 border-ember"
+              : "text-muted hover:text-ink"
+          }`}
+        >
+          <i className="bx bx-book-open text-lg" aria-hidden="true" />
+          Structured Transcript ({segments.length} segments)
+        </button>
+      </div>
+
+      {/* ── 4. Main Tab Content ──────────────────────────────────── */}
+      {isLoading ? (
+        <div className="py-16 text-center">
+          <i className="bx bx-loader-alt bx-spin text-3xl text-ember mb-3" aria-hidden="true" />
+          <p className="text-sm text-muted">Illuminating sermon moments…</p>
+        </div>
+      ) : activeTab === "clips" ? (
+        /* ── CLIPS TAB ────────────────────────────────────────── */
+        <div className="space-y-8">
+          {/* Top Featured Moment (Hero Card) */}
+          {topMoment && (
+            <section className="space-y-2">
+              <div className="flex items-center justify-between">
+                <h2 className="font-display text-base font-semibold text-ink flex items-center gap-1.5">
+                  <i className="bx bxs-star text-ember" aria-hidden="true" />
+                  Primary Key Moment
+                </h2>
+                <span className="text-xs text-muted">Ranked #1 for spiritual impact</span>
+              </div>
+              <ClipCard
+                clip={topMoment}
+                featured={true}
+                onPreview={(c) => setActiveSegment(c)}
+                onExport={(c) => setExportModalClip(c)}
+                isExporting={renderingClipId === topMoment.id}
+              />
+            </section>
+          )}
+
+          {/* Other Moments Worth Sharing */}
+          {otherMoments.length > 0 && (
+            <section className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="font-display text-lg font-semibold text-ink">
+                  More moments worth sharing ({otherMoments.length})
+                </h2>
+                <p className="text-xs text-muted">Ready for vertical video export</p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {otherMoments.map((moment) => (
+                  <ClipCard
+                    key={moment.id}
+                    clip={moment}
+                    onPreview={(c) => setActiveSegment(c)}
+                    onExport={(c) => setExportModalClip(c)}
+                    isExporting={renderingClipId === moment.id}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* Inline Video / Audio Preview Player */}
+          {activeSegment && videoId && (
+            <div className="rounded-card border border-border bg-base p-4 shadow-lifted animate-fade-in">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-ember uppercase tracking-wider">Now Previewing</span>
+                  <span className="text-xs text-paper font-medium truncate max-w-sm">
+                    {activeSegment.highlight_title || activeSegment.title || "Selected Moment"}
+                  </span>
+                </div>
+                <button
+                  onClick={() => setActiveSegment(null)}
+                  className="text-muted hover:text-paper p-1 text-sm flex items-center gap-1"
+                >
+                  <i className="bx bx-x text-lg" aria-hidden="true" />
+                  Close
+                </button>
+              </div>
+              <div className="aspect-video w-full rounded-lg overflow-hidden border border-border-dark">
+                <iframe
+                  src={`https://www.youtube.com/embed/${videoId}?start=${Math.floor(activeSegment.start)}&end=${Math.ceil(activeSegment.end)}&autoplay=1&rel=0`}
+                  title="Clip preview player"
+                  className="h-full w-full"
+                  allow="autoplay; encrypted-media"
+                  allowFullScreen
+                />
+              </div>
+            </div>
+          )}
+        </div>
       ) : (
-        <EmptyState
-          heading="No clips yet"
-          message="This sermon hasn't been processed yet, or no moments were found. Try uploading a new sermon."
+        /* ── TRANSCRIPT TAB (MANUSCRIPT READING & CORRECTION VIEW) ── */
+        <div className="space-y-6">
+          {/* Transcript Search & Filter Bar */}
+          <div className="flex items-center gap-3">
+            <div className="relative flex-1">
+              <i className="bx bx-search absolute left-3.5 top-1/2 -translate-y-1/2 text-base text-muted" aria-hidden="true" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Search words, verses, or themes in sermon transcript…"
+                className="w-full rounded-card border border-border bg-paper pl-10 pr-4 py-2.5 text-xs text-ink outline-none focus:border-ember"
+              />
+            </div>
+            {searchTerm && (
+              <Btn size="sm" variant="ghost" onClick={() => setSearchTerm("")}>
+                Clear
+              </Btn>
+            )}
+          </div>
+
+          {/* Manuscript Container */}
+          <div className="rounded-card border border-border bg-paper p-6 sm:p-8 shadow-card">
+            <ManuscriptView
+              segments={filteredSegments}
+              currentTime={playbackTime}
+              isPlaying={isPlaying}
+              onSeek={handleSeek}
+              onTogglePlay={handleTogglePlay}
+              onUpdateSegmentText={handleUpdateSegmentText}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* ── 5. Export Modal ──────────────────────────────────────── */}
+      {exportModalClip && (
+        <ExportModal
+          clip={exportModalClip}
+          sermonTitle={sermonTitle}
+          videoId={videoId}
+          onClose={() => setExportModalClip(null)}
+          onConfirmExport={handleConfirmExport}
+          isRendering={renderingClipId === exportModalClip.id}
+          exportedPath={exportedNotice?.path}
         />
       )}
     </div>

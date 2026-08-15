@@ -6,8 +6,8 @@ BIN_DIR="$HOME/.local/bin"
 mkdir -p "$BIN_DIR"
 export PATH="$BIN_DIR:$PWD/bin:$PATH"
 
-echo "==> Installing yt-dlp binary..."
-curl -sL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o ./bin/yt-dlp
+echo "==> Installing yt-dlp binary (pinned version 2025.02.19)..."
+curl -sL https://github.com/yt-dlp/yt-dlp/releases/download/2025.02.19/yt-dlp -o ./bin/yt-dlp
 chmod +x ./bin/yt-dlp
 cp ./bin/yt-dlp "$BIN_DIR/yt-dlp"
 

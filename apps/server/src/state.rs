@@ -86,7 +86,7 @@ impl AppState {
         highlight_id: Uuid,
     ) -> anyhow::Result<Option<(Highlight, Sermon)>> {
         let hl_row = sqlx::query(
-            "SELECT id, sermon_id, title, start_time, end_time, score
+            "SELECT id, sermon_id, title, start_time, end_time, score, reason, suggested_hook_text
              FROM highlights
              WHERE id = ?",
         )
@@ -105,6 +105,8 @@ impl AppState {
             start_time: hl_row.try_get::<f64, _>("start_time")? as f32,
             end_time: hl_row.try_get::<f64, _>("end_time")? as f32,
             score: hl_row.try_get::<f64, _>("score")? as f32,
+            reason: hl_row.try_get("reason").unwrap_or_default(),
+            suggested_hook_text: hl_row.try_get("suggested_hook_text").unwrap_or_default(),
         };
 
         let sermon_id_str: String = hl_row.try_get("sermon_id")?;
@@ -120,7 +122,7 @@ impl AppState {
 
     async fn list_highlights(&self, sermon_id: Uuid) -> anyhow::Result<Vec<Highlight>> {
         let rows = sqlx::query(
-            "SELECT id, title, start_time, end_time, score
+            "SELECT id, title, start_time, end_time, score, reason, suggested_hook_text
              FROM highlights
              WHERE sermon_id = ?
              ORDER BY score DESC, start_time ASC",
@@ -138,6 +140,8 @@ impl AppState {
                     start_time: row.try_get::<f64, _>("start_time")? as f32,
                     end_time: row.try_get::<f64, _>("end_time")? as f32,
                     score: row.try_get::<f64, _>("score")? as f32,
+                    reason: row.try_get("reason").unwrap_or_default(),
+                    suggested_hook_text: row.try_get("suggested_hook_text").unwrap_or_default(),
                 })
             })
             .collect()
@@ -235,8 +239,8 @@ impl AppState {
 
         for hl in highlights {
             sqlx::query(
-                "INSERT INTO highlights (id, sermon_id, title, start_time, end_time, score)
-                 VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO highlights (id, sermon_id, title, start_time, end_time, score, reason, suggested_hook_text)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             )
             .bind(hl.id.to_string())
             .bind(id.to_string())
@@ -244,6 +248,8 @@ impl AppState {
             .bind(hl.start_time as f64)
             .bind(hl.end_time as f64)
             .bind(hl.score as f64)
+            .bind(&hl.reason)
+            .bind(&hl.suggested_hook_text)
             .execute(&mut *tx)
             .await
             .context("inserting highlight")?;
@@ -265,8 +271,21 @@ fn database_url() -> String {
     let url =
         std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite://dabar.sqlite3?mode=rwc".into());
 
-    if url.starts_with("sqlite:") && !url.contains('?') {
-        format!("{url}?mode=rwc")
+    if url.starts_with("sqlite:") {
+        let mut formatted = if !url.contains('?') {
+            format!("{url}?mode=rwc")
+        } else {
+            url
+        };
+
+        // If invoked from apps/server, anchor relative path to workspace root
+        if (formatted.starts_with("sqlite://dabar.sqlite3") || formatted.starts_with("sqlite:dabar.sqlite3"))
+            && std::path::Path::new("../../Cargo.toml").exists()
+        {
+            formatted = formatted.replace("dabar.sqlite3", "../../dabar.sqlite3");
+        }
+
+        formatted
     } else {
         url
     }

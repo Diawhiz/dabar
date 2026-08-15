@@ -55,7 +55,12 @@ flowchart TD
 - **Zero-Timeout Async Background Processing**: Non-blocking `tokio::spawn` background worker manages stage transitions (`queued` $\rightarrow$ `downloading` $\rightarrow$ `transcribing` $\rightarrow$ `detecting` $\rightarrow$ `ready`).
 - **YouTube Cloud IP Bypass**: Configured with `yt-dlp` `player_client: ["android_vr", "tv"]` to bypass YouTube PO Token and SABR streaming restrictions.
 - **Groq Whisper Large V3 Turbo**: High-precision speech-to-text with segment timestamps and sentence boundary alignment.
-- **Groq Llama 3.3 70B Key Moment Detection**: 70-billion parameter LLM identifies 30–90 second high-impact preaching moments.
+- **AI Sermon Highlight Detection (`detect_sermon_highlights`)**: 
+  - Converts timestamped Whisper segments into `[HH:MM:SS]` inline prompt format.
+  - Queries Groq LLM (`llama-3.3-70b-versatile`) with structured JSON mode (`response_format: { type: "json_object" }`).
+  - Enforces strict clip validation (clips must satisfy `start_timestamp < end_timestamp` and duration between **30 and 90 seconds**).
+  - Implements auto-retry (1 retry) and non-crashing graceful fallback (logs error and returns empty list if LLM fails after 2 attempts).
+  - Stores clip metadata (`reason`, `suggested_hook_text`, `title`, `start_time`, `end_time`, `score`) in database.
 - **FFmpeg 1080x1920 Blur-Pad Canvas**: Generates vertical 9:16 short-form video clips (Shorts/Reels/TikTok) with blurred background padding.
 - **Dual Database Engine**: SQLx connects to managed **PostgreSQL** on Render in production and **SQLite** locally.
 - **Tauri v2 Desktop App**: Packages the React UI into a native 15MB desktop app for local offline GPU video processing.

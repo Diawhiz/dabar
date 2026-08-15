@@ -8,47 +8,14 @@ pub struct DownloadedAudio {
     pub title: Option<String>,
 }
 
-#[derive(Debug, serde::Deserialize)]
-#[allow(dead_code)]
-struct PipedStreamResponse {
-    title: Option<String>,
-    #[serde(rename = "audioStreams")]
-    audio_streams: Option<Vec<PipedAudioStream>>,
-}
-
-#[derive(Debug, serde::Deserialize)]
-#[allow(dead_code)]
-struct PipedAudioStream {
-    url: String,
-    format: Option<String>,
-    quality: Option<String>,
-    #[serde(rename = "mimeType")]
-    mime_type: Option<String>,
-}
-
-#[derive(Debug, serde::Deserialize)]
-#[allow(dead_code)]
-struct InvidiousResponse {
-    title: Option<String>,
-    #[serde(rename = "adaptiveFormats")]
-    adaptive_formats: Option<Vec<InvidiousFormat>>,
-}
-
-#[derive(Debug, serde::Deserialize)]
-#[allow(dead_code)]
-struct InvidiousFormat {
-    url: String,
-    #[serde(rename = "type")]
-    format_type: Option<String>,
-}
-
+/// Extract a YouTube video ID from various URL formats or a raw 11-char ID.
 pub fn extract_youtube_id(url_or_id: &str) -> Option<String> {
     let trimmed = url_or_id.trim();
     if trimmed.is_empty() {
         return None;
     }
     // If it's already a raw 11-char ID
-    if trimmed.len() == 11 && !trimmed.contains('/') && !trimmed.contains('?') && !trimmed.contains('=') {
+    if trimmed.len() == 11 && trimmed.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-') {
         return Some(trimmed.to_string());
     }
 
@@ -87,31 +54,11 @@ pub fn extract_youtube_id(url_or_id: &str) -> Option<String> {
     None
 }
 
-fn get_piped_endpoints() -> Vec<String> {
-    if let Ok(custom) = std::env::var("PIPED_API_URL") {
-        let trimmed = custom.trim();
-        if !trimmed.is_empty() {
-            return vec![trimmed.to_string()];
-        }
-    }
-
-    vec![
-        "https://api.piped.video".to_string(),
-        "https://pipedapi.kavin.rocks".to_string(),
-        "https://pipedapi.tokhmi.xyz".to_string(),
-        "https://pipedapi.moomoo.me".to_string(),
-    ]
-}
-
-fn get_invidious_endpoints() -> Vec<String> {
-    vec![
-        "https://inv.tux.pizza".to_string(),
-        "https://invidious.nerdvpn.de".to_string(),
-        "https://vid.puffyan.us".to_string(),
-        "https://invidious.drgns.space".to_string(),
-    ]
-}
-
+/// Download audio from a YouTube URL using yt-dlp (audio-only, mp3 format).
+///
+/// Shells out to yt-dlp in a logged-out/no-cookie context. The downloaded
+/// file is saved to `output_dir` with a unique filename derived from the
+/// video ID. Returns the local file path and video title on success.
 pub async fn download_youtube_audio(
     youtube_url: &str,
     output_dir: &Path,
@@ -121,285 +68,89 @@ pub async fn download_youtube_audio(
         .with_context(|| format!("creating audio output directory {}", output_dir.display()))?;
 
     let video_id = extract_youtube_id(youtube_url)
-        .with_context(|| format!("could not extract YouTube video ID from {youtube_url}"))?;
+        .with_context(|| format!("could not extract YouTube video ID from '{youtube_url}' — expected a valid youtube.com or youtu.be URL"))?;
 
-    // Tier 1: Piped API
-    match download_via_piped(&video_id, output_dir).await {
-        Ok(audio) => return Ok(audio),
-        Err(err) => eprintln!("Piped API failed: {err:#}. Falling back to Invidious API..."),
+    // Use a deterministic filename template
+    let dest_template = output_dir.join(&video_id);
+
+    // High-performance single-pass yt-dlp download:
+    // 1. '-f "ba[abr<=128]/ba/bestaudio/b"' selects small, high-efficiency native audio stream (e.g. 50-70kbps opus/m4a).
+    // 2. '-N 4' (concurrent fragments) downloads 4 streams in parallel, bypassing YouTube's single-connection rate-limiting throttle.
+    // 3. '--print after_video:title' captures the title in the same single invocation (eliminates extra 4-8s latency).
+    // 4. Skips yt-dlp FFmpeg re-encoding step since Whisper preprocessor directly downsamples to 16kHz mono.
+    let mut cmd = get_binary_command("yt-dlp");
+    cmd.arg("-f")
+        .arg("ba[abr<=128]/ba/bestaudio/b")
+        .arg("-N")
+        .arg("4")
+        .arg("--buffer-size")
+        .arg("64K")
+        .arg("--print")
+        .arg("after_video:title")
+        .arg("-o")
+        .arg(format!("{}.%(ext)s", dest_template.display()));
+
+    apply_yt_dlp_common_args(&mut cmd);
+    cmd.arg(youtube_url);
+
+    let output = cmd
+        .output()
+        .await
+        .context("failed to spawn yt-dlp process — is yt-dlp installed and on PATH?")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format_yt_dlp_error("audio download", &stderr));
     }
 
-    // Tier 2: Invidious API
-    download_via_invidious(&video_id, output_dir).await
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let title = stdout
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(str::to_string);
+
+    let found_path = find_downloaded_file(output_dir, &video_id).await?;
+
+    Ok(DownloadedAudio {
+        path: found_path,
+        title,
+    })
 }
 
-async fn download_via_piped(
-    video_id: &str,
-    output_dir: &Path,
-) -> Result<DownloadedAudio> {
-    let endpoints = get_piped_endpoints();
-
-    let client = reqwest::Client::builder()
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-        .timeout(std::time::Duration::from_secs(20))
-        .build()
-        .context("building reqwest client for Piped API")?;
-
-    let mut last_err = anyhow::anyhow!("No Piped API endpoints available");
-
-    for endpoint in &endpoints {
-        let stream_req_url = format!("{endpoint}/streams/{video_id}");
-        let res = client.get(&stream_req_url).send().await;
-
-        let response = match res {
-            Ok(r) => r,
-            Err(e) => {
-                last_err = anyhow::anyhow!("Piped API endpoint {endpoint} request error: {e}");
-                continue;
-            }
-        };
-
-        if !response.status().is_success() {
-            let status = response.status();
-            last_err = anyhow::anyhow!("Piped API endpoint {endpoint} returned status {status}");
-            continue;
-        }
-
-        let parsed: PipedStreamResponse = match response.json().await {
-            Ok(p) => p,
-            Err(e) => {
-                last_err = anyhow::anyhow!("Piped API endpoint {endpoint} JSON parse error: {e}");
-                continue;
-            }
-        };
-
-        let streams = match parsed.audio_streams {
-            Some(s) if !s.is_empty() => s,
-            _ => {
-                last_err = anyhow::anyhow!("Piped API endpoint {endpoint} returned no audio streams");
-                continue;
-            }
-        };
-
-        let selected_stream = streams
-            .iter()
-            .find(|s| {
-                s.mime_type
-                    .as_deref()
-                    .map(|m| m.contains("audio/mp4") || m.contains("audio/m4a"))
-                    .unwrap_or(false)
-                    || s.format.as_deref().map(|f| f == "M4A").unwrap_or(false)
-            })
-            .unwrap_or(&streams[0]);
-
-        let dest_path = output_dir.join(format!("{video_id}.m4a"));
-
-        let bytes = client
-            .get(&selected_stream.url)
-            .send()
-            .await
-            .context("downloading audio stream from Piped CDN")?
-            .error_for_status()
-            .context("Piped CDN audio download failed")?
-            .bytes()
-            .await
-            .context("reading audio bytes from Piped stream")?;
-
-        tokio::fs::write(&dest_path, bytes)
-            .await
-            .context("writing audio file to disk")?;
-
-        return Ok(DownloadedAudio {
-            path: dest_path,
-            title: parsed.title,
-        });
-    }
-
-    Err(last_err)
-}
-
-async fn download_via_invidious(
-    video_id: &str,
-    output_dir: &Path,
-) -> Result<DownloadedAudio> {
-    let endpoints = get_invidious_endpoints();
-
-    let client = reqwest::Client::builder()
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-        .timeout(std::time::Duration::from_secs(20))
-        .build()
-        .context("building reqwest client for Invidious API")?;
-
-    let mut last_err = anyhow::anyhow!("No Invidious API endpoints available");
-
-    for endpoint in &endpoints {
-        let req_url = format!("{endpoint}/api/v1/videos/{video_id}");
-        let res = client.get(&req_url).send().await;
-
-        let response = match res {
-            Ok(r) => r,
-            Err(e) => {
-                last_err = anyhow::anyhow!("Invidious endpoint {endpoint} request error: {e}");
-                continue;
-            }
-        };
-
-        if !response.status().is_success() {
-            let status = response.status();
-            last_err = anyhow::anyhow!("Invidious endpoint {endpoint} returned status {status}");
-            continue;
-        }
-
-        let parsed: InvidiousResponse = match response.json().await {
-            Ok(p) => p,
-            Err(e) => {
-                last_err = anyhow::anyhow!("Invidious endpoint {endpoint} JSON parse error: {e}");
-                continue;
-            }
-        };
-
-        let formats = match parsed.adaptive_formats {
-            Some(f) if !f.is_empty() => f,
-            _ => {
-                last_err = anyhow::anyhow!("Invidious endpoint {endpoint} returned no audio formats");
-                continue;
-            }
-        };
-
-        let selected = formats
-            .iter()
-            .find(|f| f.format_type.as_deref().map(|t| t.starts_with("audio/")).unwrap_or(false))
-            .unwrap_or(&formats[0]);
-
-        let dest_path = output_dir.join(format!("{video_id}.m4a"));
-
-        let bytes = client
-            .get(&selected.url)
-            .send()
-            .await
-            .context("downloading audio stream from Invidious CDN")?
-            .error_for_status()
-            .context("Invidious CDN audio download failed")?
-            .bytes()
-            .await
-            .context("reading audio bytes from Invidious stream")?;
-
-        tokio::fs::write(&dest_path, bytes)
-            .await
-            .context("writing audio file to disk")?;
-
-        return Ok(DownloadedAudio {
-            path: dest_path,
-            title: parsed.title,
-        });
-    }
-
-    Err(last_err)
-}
-
+/// Resolve a direct stream URL for a YouTube video using yt-dlp.
+///
+/// Returns a best-audio URL suitable for piping directly into ffmpeg. Used
+/// by the clip-download endpoints to extract vertical clips without a full
+/// file download step.
 pub async fn resolve_stream_url(youtube_url: &str) -> Result<String> {
-    let video_id = extract_youtube_id(youtube_url)
-        .with_context(|| format!("could not extract YouTube video ID from {youtube_url}"))?;
+    let _video_id = extract_youtube_id(youtube_url)
+        .with_context(|| format!("could not extract YouTube video ID from '{youtube_url}'"))?;
 
-    let endpoints = get_piped_endpoints();
+    let mut cmd = get_binary_command("yt-dlp");
+    cmd.arg("--get-url")
+        .arg("-f")
+        .arg("bestvideo+bestaudio/best");
 
-    let client = reqwest::Client::builder()
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .context("building reqwest client for Piped API")?;
+    apply_yt_dlp_common_args(&mut cmd);
+    cmd.arg(youtube_url);
 
-    let mut last_err = anyhow::anyhow!("No Piped API endpoints available");
+    let output = cmd
+        .output()
+        .await
+        .context("failed to spawn yt-dlp process for stream URL resolution")?;
 
-    for endpoint in &endpoints {
-        let stream_req_url = format!("{endpoint}/streams/{video_id}");
-        let res = client.get(&stream_req_url).send().await;
-
-        let response = match res {
-            Ok(r) => r,
-            Err(e) => {
-                last_err = anyhow::anyhow!("Piped API endpoint {endpoint} request error: {e}");
-                continue;
-            }
-        };
-
-        if !response.status().is_success() {
-            let status = response.status();
-            last_err = anyhow::anyhow!("Piped API endpoint {endpoint} returned status {status}");
-            continue;
-        }
-
-        let parsed: PipedStreamResponse = match response.json().await {
-            Ok(p) => p,
-            Err(e) => {
-                last_err = anyhow::anyhow!("Piped API endpoint {endpoint} JSON parse error: {e}");
-                continue;
-            }
-        };
-
-        let streams = match parsed.audio_streams {
-            Some(s) if !s.is_empty() => s,
-            _ => {
-                last_err = anyhow::anyhow!("Piped API endpoint {endpoint} returned no audio streams");
-                continue;
-            }
-        };
-
-        let selected_stream = streams
-            .iter()
-            .find(|s| {
-                s.mime_type
-                    .as_deref()
-                    .map(|m| m.contains("audio/mp4") || m.contains("audio/m4a"))
-                    .unwrap_or(false)
-                    || s.format.as_deref().map(|f| f == "M4A").unwrap_or(false)
-            })
-            .unwrap_or(&streams[0]);
-
-        return Ok(selected_stream.url.clone());
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format_yt_dlp_error("stream URL resolution", &stderr));
     }
 
-    Err(last_err)
-}
-
-#[allow(dead_code)]
-fn apply_cookies_arg(cmd: &mut Command) {
-    if let Some(writable_path) = get_writable_cookies_path() {
-        cmd.arg("--cookies").arg(writable_path);
+    let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if url.is_empty() {
+        anyhow::bail!("yt-dlp returned an empty stream URL for '{youtube_url}'");
     }
-}
 
-#[allow(dead_code)]
-fn get_writable_cookies_path() -> Option<PathBuf> {
-    if let Ok(cookies_path) = std::env::var("YT_DLP_COOKIES_PATH") {
-        let trimmed = cookies_path.trim();
-        if !trimmed.is_empty() {
-            let src = Path::new(trimmed);
-            if src.exists() {
-                let dest = std::env::temp_dir().join("dabar_cookies_writable.txt");
-                if let Err(e) = std::fs::copy(src, &dest) {
-                    eprintln!("Warning: failed to copy cookies file to writable location: {:?}", e);
-                    return Some(PathBuf::from(trimmed));
-                }
-                return Some(dest);
-            }
-        }
-    }
-    None
-}
-
-#[allow(dead_code)]
-fn format_yt_dlp_error(action: &str, stderr: &str) -> anyhow::Error {
-    let trimmed = stderr.trim();
-    if trimmed.contains("Sign in to confirm you're not a bot")
-        || trimmed.contains("confirm you're not a bot")
-    {
-        anyhow::anyhow!(
-            "YouTube bot-detection error during {action}: 'Sign in to confirm you're not a bot'. Export cookies.txt from a logged-in YouTube browser session, upload to server/Render Secret Files, and set YT_DLP_COOKIES_PATH environment variable."
-        )
-    } else {
-        anyhow::anyhow!("yt-dlp failed during {action}: {trimmed}")
-    }
+    Ok(url)
 }
 
 pub async fn check_yt_dlp_installed() -> Result<String> {
@@ -421,6 +172,157 @@ pub async fn check_yt_dlp_installed() -> Result<String> {
 
     Ok(version)
 }
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+/// Scan `dir` for any file whose name starts with `video_id`.
+async fn find_downloaded_file(dir: &Path, video_id: &str) -> Result<PathBuf> {
+    let mut entries = tokio::fs::read_dir(dir)
+        .await
+        .with_context(|| format!("reading download directory {}", dir.display()))?;
+
+    while let Some(entry) = entries.next_entry().await? {
+        let name = entry.file_name();
+        if let Some(name_str) = name.to_str() {
+            if name_str.starts_with(video_id) {
+                return Ok(entry.path());
+            }
+        }
+    }
+
+    anyhow::bail!(
+        "yt-dlp completed successfully but no output file found for video ID '{video_id}' in {}",
+        dir.display()
+    );
+}
+
+/// Translate yt-dlp stderr into a user-friendly error message.
+///
+/// Covers: private/unavailable video, geo-restricted content, invalid URL,
+/// bot-detection, and generic fallback.
+fn format_yt_dlp_error(action: &str, stderr: &str) -> anyhow::Error {
+    let trimmed = stderr.trim();
+
+    if trimmed.contains("Private video")
+        || trimmed.contains("Video unavailable")
+        || trimmed.contains("This video is not available")
+    {
+        return anyhow::anyhow!(
+            "Sermon download failed: the YouTube video is private or unavailable. \
+             Please check the URL and ensure the video is publicly accessible."
+        );
+    }
+
+    if trimmed.contains("geo restriction")
+        || trimmed.contains("not available in your country")
+        || trimmed.contains("blocked it in your country")
+    {
+        return anyhow::anyhow!(
+            "Sermon download failed: the YouTube video is geo-restricted and cannot \
+             be accessed from this server's region."
+        );
+    }
+
+    if trimmed.contains("is not a valid URL")
+        || trimmed.contains("Unsupported URL")
+        || trimmed.contains("Unable to extract")
+    {
+        return anyhow::anyhow!(
+            "Sermon download failed: the provided URL is not a valid YouTube link."
+        );
+    }
+
+    if trimmed.contains("Sign in to confirm you're not a bot")
+        || trimmed.contains("confirm you're not a bot")
+    {
+        return anyhow::anyhow!(
+            "YouTube bot-detection error during {action}: 'Sign in to confirm \
+             you're not a bot'. Export cookies.txt from a logged-in YouTube \
+             browser session, upload to server, and set YT_DLP_COOKIES_PATH \
+             environment variable."
+        );
+    }
+
+    if trimmed.contains("age-restricted")
+        || trimmed.contains("age verification")
+    {
+        return anyhow::anyhow!(
+            "Sermon download failed: the YouTube video is age-restricted. \
+             Provide cookies from a logged-in session via YT_DLP_COOKIES_PATH."
+        );
+    }
+
+    anyhow::anyhow!("yt-dlp failed during {action}: {trimmed}")
+}
+
+/// Applies common yt-dlp flags for robust YouTube extraction:
+/// - Uses embedded and mobile player clients to bypass web bot checks.
+/// - Passes cookies if YT_DLP_COOKIES_PATH, YT_DLP_COOKIES_FROM_BROWSER, or a local cookies.txt exists.
+/// - Enables JS runtime if Node.js is present.
+fn apply_yt_dlp_common_args(cmd: &mut Command) {
+    cmd.arg("--no-playlist")
+        .arg("--no-check-certificates")
+        .arg("--no-cache-dir")
+        .arg("--extractor-args")
+        .arg("youtube:player_client=android,web,ios");
+
+    // Optional cookies support
+    if let Ok(cookies_path) = std::env::var("YT_DLP_COOKIES_PATH") {
+        let p = Path::new(&cookies_path);
+        if p.exists() {
+            cmd.arg("--cookies").arg(p);
+        }
+    } else {
+        // Auto-detect cookies.txt in workspace root or cwd
+        if let Ok(cwd) = std::env::current_dir() {
+            let direct = cwd.join("cookies.txt");
+            let parent = cwd.parent().map(|p| p.join("cookies.txt"));
+            if direct.exists() {
+                cmd.arg("--cookies").arg(direct);
+            } else if let Some(parent_p) = parent {
+                if parent_p.exists() {
+                    cmd.arg("--cookies").arg(parent_p);
+                }
+            }
+        }
+    }
+
+    if let Ok(browser) = std::env::var("YT_DLP_COOKIES_FROM_BROWSER") {
+        if !browser.trim().is_empty() {
+            cmd.arg("--cookies-from-browser").arg(browser.trim());
+        }
+    }
+
+    if which_node_exists() {
+        cmd.arg("--js-runtimes").arg("node");
+    }
+}
+
+fn which_node_exists() -> bool {
+    if let Ok(cwd) = std::env::current_dir() {
+        if cwd.join("bin/node/bin/node.exe").exists()
+            || cwd.join("bin/node.exe").exists()
+            || cwd.parent().map(|p| p.join("bin/node.exe").exists()).unwrap_or(false)
+        {
+            return true;
+        }
+    }
+    std::process::Command::new("node")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+// ---------------------------------------------------------------------------
+// Binary resolution — resolves yt-dlp executable path by searching:
+// 1. YT_DLP_PATH env var
+// 2. Ancestor directories' bin/ folders (walks up from cwd)
+// 3. ~/.local/bin
+// 4. System PATH (fallback)
+// ---------------------------------------------------------------------------
 
 fn get_binary_command(name: &str) -> Command {
     let mut target_path = PathBuf::from(name);
@@ -453,10 +355,18 @@ fn get_binary_command(name: &str) -> Command {
             name.to_string()
         };
 
+        // Walk up ancestor directories (cwd, cwd/.., cwd/../.., ...) to find
+        // bin/<exe> at the workspace root regardless of which subdirectory
+        // cargo run was invoked from (e.g. apps/server/ -> dabar/bin/).
         if let Ok(cwd) = std::env::current_dir() {
-            let candidate = cwd.join("bin").join(&exe_name);
-            if candidate.exists() {
-                target_path = candidate;
+            let mut dir: Option<&Path> = Some(cwd.as_path());
+            while let Some(ancestor) = dir {
+                let candidate = ancestor.join("bin").join(&exe_name);
+                if candidate.exists() {
+                    target_path = candidate;
+                    break;
+                }
+                dir = ancestor.parent();
             }
         }
 
@@ -481,14 +391,16 @@ fn create_cmd_with_path(target_path: &Path) -> Command {
     if let Ok(cwd) = std::env::current_dir() {
         let node_bin = cwd.join("bin").join("node").join("bin");
         let local_bin = cwd.join("bin");
+        let parent_bin = cwd.parent().map(|p| p.join("bin")).unwrap_or_else(|| cwd.clone());
         let home_bin = std::env::var("HOME")
             .map(|h| PathBuf::from(h).join(".local/bin"))
             .unwrap_or_else(|_| PathBuf::from("/home/render/.local/bin"));
 
         let updated_path = format!(
-            "{}{separator}{}{separator}{}{separator}{current_path}",
+            "{}{separator}{}{separator}{}{separator}{}{separator}{current_path}",
             node_bin.display(),
             local_bin.display(),
+            parent_bin.display(),
             home_bin.display()
         );
         cmd.env("PATH", updated_path);
@@ -496,3 +408,47 @@ fn create_cmd_with_path(target_path: &Path) -> Command {
 
     cmd
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_youtube_id() {
+        assert_eq!(extract_youtube_id("dQw4w9WgXcQ"), Some("dQw4w9WgXcQ".to_string()));
+        assert_eq!(
+            extract_youtube_id("https://www.youtube.com/watch?v=dQw4w9WgXcQ"),
+            Some("dQw4w9WgXcQ".to_string())
+        );
+        assert_eq!(
+            extract_youtube_id("https://youtu.be/dQw4w9WgXcQ"),
+            Some("dQw4w9WgXcQ".to_string())
+        );
+        assert_eq!(
+            extract_youtube_id("https://www.youtube.com/embed/dQw4w9WgXcQ"),
+            Some("dQw4w9WgXcQ".to_string())
+        );
+        assert_eq!(
+            extract_youtube_id("https://www.youtube.com/shorts/dQw4w9WgXcQ"),
+            Some("dQw4w9WgXcQ".to_string())
+        );
+        assert_eq!(extract_youtube_id("invalid url"), None);
+        assert_eq!(extract_youtube_id(""), None);
+    }
+
+    #[test]
+    fn test_format_yt_dlp_error() {
+        let err_private = format_yt_dlp_error("test", "ERROR: Private video");
+        assert!(err_private.to_string().contains("private or unavailable"));
+
+        let err_geo = format_yt_dlp_error("test", "ERROR: Video not available in your country due to geo restriction");
+        assert!(err_geo.to_string().contains("geo-restricted"));
+
+        let err_invalid = format_yt_dlp_error("test", "ERROR: 'not_a_url' is not a valid URL");
+        assert!(err_invalid.to_string().contains("not a valid YouTube link"));
+
+        let err_bot = format_yt_dlp_error("test", "ERROR: Sign in to confirm you're not a bot");
+        assert!(err_bot.to_string().contains("bot-detection"));
+    }
+}
+

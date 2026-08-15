@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { createSermon, pickMediaFile } from "../lib/api.js";
 import Btn from "../components/Btn.jsx";
@@ -7,9 +7,36 @@ export default function Upload() {
   const [sourceType, setSourceType] = useState("file"); // "file" | "youtube" | "gdrive"
   const [urlInput, setUrlInput] = useState("");
   const [selectedFilePath, setSelectedFilePath] = useState(null);
+  const [manualPath, setManualPath] = useState("");
+  const [showManualPath, setShowManualPath] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const navigate = useNavigate();
+
+  // Listen for Tauri native file drag-drop if available
+  useEffect(() => {
+    let unlisten = null;
+    async function setupTauriDrop() {
+      try {
+        const event = await import("@tauri-apps/api/event");
+        if (event && event.listen) {
+          unlisten = await event.listen("tauri://drag-drop", (e) => {
+            if (e.payload?.paths?.length > 0) {
+              setSelectedFilePath(e.payload.paths[0]);
+              setErrorMessage("");
+            }
+          });
+        }
+      } catch {
+        // Not in Tauri or plugin not active
+      }
+    }
+    setupTauriDrop();
+    return () => {
+      if (typeof unlisten === "function") unlisten();
+    };
+  }, []);
 
   async function handleBrowseFile() {
     setErrorMessage("");
@@ -18,8 +45,34 @@ export default function Upload() {
       if (path) {
         setSelectedFilePath(path);
       }
-    } catch {
-      setErrorMessage("Could not open file picker. Please try again.");
+    } catch (err) {
+      setErrorMessage("Could not open file picker: " + (err.message || err));
+    }
+  }
+
+  function handleDragOver(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  }
+
+  function handleDragLeave(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  }
+
+  function handleDrop(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    if (e.dataTransfer?.files?.length > 0) {
+      const file = e.dataTransfer.files[0];
+      // In Tauri / Electron or standard browsers, use path property if present
+      const path = file.path || file.name;
+      setSelectedFilePath(path);
+      setErrorMessage("");
     }
   }
 
@@ -29,11 +82,12 @@ export default function Upload() {
 
     let source = "";
     if (sourceType === "file") {
-      if (!selectedFilePath) {
-        setErrorMessage("Please select a recording file from your computer.");
+      const finalPath = selectedFilePath || manualPath.trim();
+      if (!finalPath) {
+        setErrorMessage("Please choose or drag a recording file from your computer.");
         return;
       }
-      source = selectedFilePath;
+      source = finalPath;
     } else if (sourceType === "youtube") {
       const trimmed = urlInput.trim();
       if (!trimmed) {
@@ -86,7 +140,7 @@ export default function Upload() {
 
       <div className="page-content flex justify-center py-10">
         <div className="w-full max-w-lg space-y-6">
-          {/* ── Source Type Control ─────────────────────────────────── */}
+          {/* ── Source Type Segmented Control ─────────────────────────── */}
           <div className="flex p-1 bg-surface border border-border rounded-md text-xs font-medium">
             <button
               type="button"
@@ -140,25 +194,72 @@ export default function Upload() {
           {/* ── Form Body ─────────────────────────────────────────────── */}
           <form onSubmit={handleSubmit} className="space-y-4">
             {sourceType === "file" && (
-              <div
-                onClick={handleBrowseFile}
-                className="cursor-pointer border border-dashed border-border hover:border-accent bg-surface p-8 rounded-md text-center transition-colors flex flex-col items-center justify-center gap-2.5"
-              >
-                <div className="w-8 h-8 rounded bg-surface-hover text-accent flex items-center justify-center text-lg border border-border">
-                  <i className={`bx ${selectedFilePath ? "bx-check text-accent" : "bx-upload"}`} />
+              <div className="space-y-3">
+                <div
+                  onClick={handleBrowseFile}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  className={`cursor-pointer border-2 border-dashed p-8 rounded-md text-center transition-all flex flex-col items-center justify-center gap-2.5 select-none ${
+                    isDragging
+                      ? "border-accent bg-accent/10 scale-[1.01]"
+                      : "border-border hover:border-accent bg-surface"
+                  }`}
+                >
+                  <div className="w-8 h-8 rounded bg-surface-hover text-accent flex items-center justify-center text-lg border border-border">
+                    <i className={`bx ${selectedFilePath ? "bx-check text-accent" : isDragging ? "bx-down-arrow-alt" : "bx-upload"}`} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-primary">
+                      {fileName || (isDragging ? "Drop sermon file here" : "Click to browse or drag & drop file")}
+                    </p>
+                    <p className="text-[11px] text-muted mt-0.5">
+                      Supports MP4, MOV, MP3, M4A, WAV audio and video
+                    </p>
+                  </div>
+                  {selectedFilePath && (
+                    <span className="text-[11px] text-accent font-mono truncate max-w-md mt-1 block">
+                      {selectedFilePath}
+                    </span>
+                  )}
                 </div>
-                <div>
-                  <p className="text-xs font-semibold text-primary">
-                    {fileName || "Click to choose sermon file"}
-                  </p>
-                  <p className="text-[11px] text-muted mt-0.5">
-                    Supports MP4, MOV, MP3, M4A, WAV audio and video
-                  </p>
+
+                {/* Manual Path Input Toggle */}
+                <div className="flex items-center justify-between text-[11px] px-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowManualPath(!showManualPath)}
+                    className="text-muted hover:text-primary underline underline-offset-2"
+                  >
+                    {showManualPath ? "Hide path input" : "Or type / paste file path"}
+                  </button>
+                  {selectedFilePath && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedFilePath(null);
+                        setManualPath("");
+                      }}
+                      className="text-muted hover:text-danger"
+                    >
+                      Clear selected file
+                    </button>
+                  )}
                 </div>
-                {selectedFilePath && (
-                  <span className="text-[11px] text-accent font-mono truncate max-w-md mt-1 block">
-                    {selectedFilePath}
-                  </span>
+
+                {showManualPath && (
+                  <div className="space-y-1">
+                    <input
+                      type="text"
+                      value={manualPath}
+                      onChange={(e) => {
+                        setManualPath(e.target.value);
+                        setSelectedFilePath(null);
+                      }}
+                      placeholder="C:\Users\aremu\Downloads\sermon.mp4"
+                      className="field-input font-mono text-xs"
+                    />
+                  </div>
                 )}
               </div>
             )}
@@ -216,7 +317,10 @@ export default function Upload() {
               <Btn
                 type="submit"
                 className="w-full"
-                disabled={isProcessing || (sourceType === "file" && !selectedFilePath)}
+                disabled={
+                  isProcessing ||
+                  (sourceType === "file" && !selectedFilePath && !manualPath.trim())
+                }
               >
                 {isProcessing ? (
                   <>

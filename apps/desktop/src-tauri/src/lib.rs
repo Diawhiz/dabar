@@ -225,24 +225,28 @@ async fn check_dependencies(state: State<'_, AppState>) -> Result<deps::DepsStat
 }
 
 /// Open a native file picker to select a sermon audio or video file.
-/// Uses an async channel so the main window message loop never freezes.
+/// Spawns a dedicated OS thread outside of Tokio's worker pool so Windows Common Item Dialog
+/// has clean Single-Threaded Apartment (STA) COM state, preventing "Not Responding" shell hangs.
 #[tauri::command]
-async fn pick_media_file(app: AppHandle) -> Result<Option<String>, String> {
-    use tauri_plugin_dialog::DialogExt;
+async fn pick_media_file() -> Result<Option<String>, String> {
     let (tx, rx) = tokio::sync::oneshot::channel();
 
-    app.dialog()
-        .file()
-        .add_filter(
-            "Audio & Video Files",
-            &[
-                "mp4", "mov", "webm", "mkv", "mp3", "wav", "m4a", "ogg", "opus", "aac", "flac",
-                "MP4", "MOV", "WEBM", "MKV", "MP3", "WAV", "M4A", "OGG", "OPUS", "AAC", "FLAC",
-            ],
-        )
-        .pick_file(move |file_path| {
-            let _ = tx.send(file_path.map(|p| p.to_string()));
-        });
+    std::thread::Builder::new()
+        .name("dabar-file-picker".into())
+        .spawn(move || {
+            let file = rfd::FileDialog::new()
+                .set_title("Select Sermon Recording")
+                .add_filter(
+                    "Audio & Video Files",
+                    &[
+                        "mp4", "mov", "webm", "mkv", "mp3", "wav", "m4a", "ogg", "opus", "aac", "flac",
+                    ],
+                )
+                .pick_file();
+
+            let _ = tx.send(file.map(|p| p.to_string_lossy().to_string()));
+        })
+        .map_err(|e| e.to_string())?;
 
     rx.await.map_err(|e| e.to_string())
 }

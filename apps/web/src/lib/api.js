@@ -106,6 +106,22 @@ export async function renderClip(sermonId, highlightId) {
 }
 
 /**
+ * Render an arbitrary time range clip to disk and return the output file path.
+ */
+export async function renderClipRange(sermonId, startTime, endTime, clipTitle) {
+  const core = await getTauriCore();
+  if (core) {
+    return await core.invoke("render_clip_range", {
+      sermonId,
+      startTime: Number(startTime),
+      endTime: Number(endTime),
+      clipTitle: clipTitle || null,
+    });
+  }
+  return "C:\\Users\\Mock\\Videos\\Dabar\\mock_range_clip.mp4";
+}
+
+/**
  * Re-run highlight detection on an already transcribed sermon.
  */
 export async function retryHighlights(sermonId) {

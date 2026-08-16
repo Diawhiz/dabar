@@ -27,6 +27,10 @@ export default function ManuscriptView({
   segments = [],
   currentTime = 0,
   isPlaying = false,
+  clipRange = null,
+  selectionMode = false,
+  onSetRangeStart,
+  onSetRangeEnd,
   onSeek,
   onTogglePlay,
   onUpdateSegmentText,
@@ -117,6 +121,21 @@ export default function ManuscriptView({
         const isActive = activeIdx === idx;
         const isConfirmed = Boolean(confirmedSegments[idx]);
         const isKeyMoment = seg.is_highlight;
+        const isInClipRange =
+          clipRange &&
+          clipRange.start !== null &&
+          clipRange.end !== null &&
+          seg.start >= clipRange.start - 0.2 &&
+          seg.end <= clipRange.end + 0.5;
+        const isRangeStart =
+          clipRange &&
+          clipRange.start !== null &&
+          Math.abs(seg.start - clipRange.start) < 0.5;
+        const isRangeEnd =
+          clipRange &&
+          clipRange.end !== null &&
+          Math.abs(seg.end - clipRange.end) < 0.5;
+
         const detectedRef = detectScripture(seg.text);
         const isRefConfirmed = detectedRef && confirmedScriptures[detectedRef];
         const isRefDismissed = detectedRef && dismissedScriptures[detectedRef];
@@ -124,8 +143,10 @@ export default function ManuscriptView({
         return (
           <div
             key={seg.id || idx}
-            className={`manuscript-row group ${
-              isKeyMoment
+            className={`manuscript-row group transition-all ${
+              isInClipRange
+                ? "bg-accent-muted/20 border-l-2 border-accent pl-2 rounded-r"
+                : isKeyMoment
                 ? "transcript-key-moment"
                 : isActive
                 ? "is-active"
@@ -138,10 +159,18 @@ export default function ManuscriptView({
                 type="button"
                 onClick={() => {
                   setActiveIdx(idx);
-                  if (onSeek) onSeek(seg.start);
+                  if (selectionMode && onSetRangeStart && (!clipRange?.start || clipRange?.end)) {
+                    onSetRangeStart(seg.start);
+                  } else if (selectionMode && onSetRangeEnd && clipRange?.start && !clipRange?.end) {
+                    onSetRangeEnd(seg.end);
+                  } else if (onSeek) {
+                    onSeek(seg.start);
+                  }
                 }}
                 className={`text-[11px] transition-colors ${
-                  isActive
+                  isRangeStart || isRangeEnd
+                    ? "text-accent font-bold underline"
+                    : isActive
                     ? "text-accent font-bold"
                     : "text-muted hover:text-accent"
                 }`}
@@ -193,7 +222,7 @@ export default function ManuscriptView({
                 >
                   <p
                     className={`text-xs leading-relaxed transition-colors ${
-                      isKeyMoment
+                      isInClipRange || isKeyMoment
                         ? "text-primary font-medium"
                         : isConfirmed || isActive
                         ? "transcript-lit"
@@ -263,6 +292,26 @@ export default function ManuscriptView({
 
             {/* Hover Actions */}
             <div className="opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity shrink-0 flex items-center gap-1 pt-0.5">
+              {onSetRangeStart && (
+                <button
+                  type="button"
+                  onClick={() => onSetRangeStart(seg.start)}
+                  className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-surface border border-border text-secondary hover:text-accent hover:border-accent transition-colors"
+                  title="Set as clip start [in]"
+                >
+                  Set Start
+                </button>
+              )}
+              {onSetRangeEnd && (
+                <button
+                  type="button"
+                  onClick={() => onSetRangeEnd(seg.end)}
+                  className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-surface border border-border text-secondary hover:text-accent hover:border-accent transition-colors"
+                  title="Set as clip end [out]"
+                >
+                  Set End
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => handleConfirmSegment(idx)}

@@ -404,3 +404,53 @@ pub async fn render_clip_to_disk(
 
     Ok(output_path)
 }
+
+/// Render an arbitrary time range clip to disk.
+pub async fn render_clip_range_to_disk(
+    sermon: &Sermon,
+    start_time: f32,
+    end_time: f32,
+    clip_title: Option<&str>,
+    output_dir: &Path,
+) -> Result<PathBuf> {
+    if end_time <= start_time {
+        anyhow::bail!("Invalid clip range: end time ({end_time:.2}s) must be greater than start time ({start_time:.2}s)");
+    }
+
+    tokio::fs::create_dir_all(output_dir).await?;
+
+    let default_title = format!("clip_{:.0}s_{:.0}s", start_time, end_time);
+    let raw_title = clip_title.filter(|t| !t.trim().is_empty()).unwrap_or(&default_title);
+    let safe_title: String = raw_title
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .take(60)
+        .collect();
+    let output_path = output_dir.join(format!("dabar_{safe_title}.mp4"));
+
+    // Prefer local audio_path or youtube_url
+    let input_source: String = if let Some(audio_p) = &sermon.audio_path {
+        if Path::new(audio_p).exists() {
+            audio_p.clone()
+        } else if Path::new(&sermon.youtube_url).exists() {
+            sermon.youtube_url.clone()
+        } else {
+            dabar_core::downloader::resolve_stream_url(&sermon.youtube_url).await?
+        }
+    } else if Path::new(&sermon.youtube_url).exists() {
+        sermon.youtube_url.clone()
+    } else {
+        dabar_core::downloader::resolve_stream_url(&sermon.youtube_url).await?
+    };
+
+    dabar_core::ffmpeg::extract_vertical_clip(
+        &input_source,
+        &output_path,
+        start_time,
+        end_time,
+    )
+    .await?;
+
+    Ok(output_path)
+}
+

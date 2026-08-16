@@ -4,10 +4,10 @@ import { getSermon, onPipelineProgress } from "../lib/api.js";
 import Btn from "../components/Btn.jsx";
 
 const STAGES = [
-  { key: "downloading", label: "Preparing sermon recording" },
-  { key: "transcribing", label: "Transcribing speech to text" },
-  { key: "detecting", label: "Finding key teaching moments & Scripture" },
-  { key: "ready", label: "Clips & full manuscript ready" },
+  { key: "downloading", label: "Preparing sermon recording & audio streams" },
+  { key: "transcribing", label: "Transcribing speech via Groq Whisper Large v3 Turbo" },
+  { key: "detecting", label: "Analyzing preaching moments & Scripture via GPT-OSS" },
+  { key: "ready", label: "Clips & full manuscript illuminated" },
 ];
 
 export default function Processing() {
@@ -64,25 +64,41 @@ export default function Processing() {
   return (
     <div className="flex flex-col min-h-screen">
       <header className="page-header">
-        <div>
-          <h1 className="text-base font-semibold text-primary">Processing Pipeline</h1>
-          <p className="text-xs text-secondary mt-0.5">
-            {sermon?.title || "Transcribing sermon recording…"}
-          </p>
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="scripture-badge text-[10px]">
+              LIVE PROCESSING
+            </span>
+          </div>
+          <h1 className="font-editorial text-2xl font-bold text-primary">
+            {sermon?.title || "Transcribing Sermon Recording…"}
+          </h1>
         </div>
       </header>
 
       <div className="page-content flex justify-center py-12">
-        <div className="w-full max-w-md space-y-6">
+        <div className="w-full max-w-lg space-y-6">
           {/* Progress Card */}
-          <div className="border border-border rounded-md bg-surface p-5 space-y-4">
+          <div className="pulpit-hero p-6 space-y-5">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-primary">
-                {STAGES[stageIndex]?.label || "Processing…"}
-              </span>
-              <span className="font-mono text-xs font-bold text-accent">
-                {progressState.percent}%
-              </span>
+              <div className="space-y-1">
+                <span className="text-xs font-semibold text-primary block">
+                  {STAGES[stageIndex]?.label || "Processing sermon…"}
+                </span>
+                <span className="text-[11px] text-muted font-mono-code">
+                  Stage {stageIndex + 1} of 4
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="audio-equalizer">
+                  <span className="audio-equalizer-bar" />
+                  <span className="audio-equalizer-bar" />
+                  <span className="audio-equalizer-bar" />
+                </div>
+                <span className="font-mono-code text-base font-bold text-accent">
+                  {progressState.percent}%
+                </span>
+              </div>
             </div>
 
             {/* Progress Track */}
@@ -94,14 +110,14 @@ export default function Processing() {
             </div>
 
             {progressState.detail && (
-              <p className="text-[11px] text-secondary font-mono">
+              <p className="text-xs text-secondary font-mono-code bg-surface/60 p-2.5 rounded-lg border border-border">
                 {progressState.detail}
               </p>
             )}
           </div>
 
           {/* Checklist */}
-          <div className="border border-border rounded-md bg-surface divide-y divide-border overflow-hidden">
+          <div className="border border-border rounded-xl bg-surface divide-y divide-border overflow-hidden shadow-xs">
             {STAGES.map((stg, i) => {
               const isDone = i < stageIndex || isComplete;
               const isActive = i === stageIndex && !isComplete;
@@ -109,26 +125,26 @@ export default function Processing() {
               return (
                 <div
                   key={stg.key}
-                  className="px-4 py-2.5 flex items-center justify-between text-xs"
+                  className="px-5 py-3.5 flex items-center justify-between text-xs"
                 >
                   <span
                     className={
                       isDone
-                        ? "text-secondary line-through"
+                        ? "text-muted line-through"
                         : isActive
-                        ? "text-primary font-medium"
-                        : "text-muted"
+                        ? "text-primary font-semibold"
+                        : "text-secondary"
                     }
                   >
                     {stg.label}
                   </span>
                   <div>
                     {isDone ? (
-                      <i className="bx bxs-check-circle text-success text-base" />
+                      <i className="bx bxs-check-circle text-success text-lg" />
                     ) : isActive ? (
-                      <i className="bx bx-loader-alt bx-spin text-accent text-base" />
+                      <i className="bx bx-loader-alt bx-spin text-accent text-lg" />
                     ) : (
-                      <i className="bx bx-circle text-muted text-base" />
+                      <i className="bx bx-circle text-muted text-lg" />
                     )}
                   </div>
                 </div>
@@ -141,19 +157,21 @@ export default function Processing() {
             <div className="flex items-center gap-3 pt-2">
               <Btn
                 variant="secondary"
+                size="lg"
                 className="flex-1"
                 onClick={() => navigate(`/transcript/${sermonId}`)}
               >
-                <i className="bx bx-file text-sm" />
+                <i className="bx bx-book-open text-base text-accent" />
                 <span>Read Manuscript</span>
               </Btn>
               <Btn
                 variant="primary"
+                size="lg"
                 className="flex-1"
                 onClick={() => navigate(`/clips/${sermonId}`)}
               >
-                <i className="bx bx-cut text-sm" />
-                <span>Review Clips</span>
+                <i className="bx bx-film text-base" />
+                <span>Studio Clips & Reels</span>
               </Btn>
             </div>
           ) : (
@@ -161,9 +179,9 @@ export default function Processing() {
               <button
                 type="button"
                 onClick={() => navigate("/dashboard")}
-                className="text-xs text-secondary hover:text-primary underline underline-offset-4"
+                className="text-xs text-secondary hover:text-accent font-medium underline underline-offset-4"
               >
-                Return to library (pipeline continues in background)
+                Return to library (processing runs safely in the background)
               </button>
             </div>
           )}

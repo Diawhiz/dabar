@@ -69,7 +69,6 @@ export default function Upload() {
 
     if (e.dataTransfer?.files?.length > 0) {
       const file = e.dataTransfer.files[0];
-      // In Tauri / Electron or standard browsers, use path property if present
       const path = file.path || file.name;
       setSelectedFilePath(path);
       setErrorMessage("");
@@ -130,32 +129,36 @@ export default function Upload() {
   return (
     <div className="flex flex-col min-h-screen">
       <header className="page-header">
-        <div>
-          <h1 className="text-base font-semibold text-primary">Add Sermon Recording</h1>
-          <p className="text-xs text-secondary mt-0.5">
-            Add an audio or video recording from your computer, YouTube, or Google Drive.
-          </p>
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="scripture-badge text-[10px]">
+              INGESTION PIPELINE
+            </span>
+          </div>
+          <h1 className="font-editorial text-2xl font-bold text-primary">
+            Import Sermon Recording
+          </h1>
         </div>
       </header>
 
       <div className="page-content flex justify-center py-10">
-        <div className="w-full max-w-lg space-y-6">
-          {/* ── Source Type Segmented Control ─────────────────────────── */}
-          <div className="flex p-1 bg-surface border border-border rounded-md text-xs font-medium">
+        <div className="w-full max-w-xl space-y-6">
+          {/* Source Type Selector */}
+          <div className="flex p-1.5 bg-surface border border-border rounded-xl shadow-xs text-xs font-semibold">
             <button
               type="button"
               onClick={() => {
                 setSourceType("file");
                 setErrorMessage("");
               }}
-              className={`flex-1 py-1.5 px-3 rounded flex items-center justify-center gap-1.5 transition-colors ${
+              className={`flex-1 py-2 px-3 rounded-lg flex items-center justify-center gap-2 transition-all ${
                 sourceType === "file"
-                  ? "bg-surface-active text-primary font-semibold border border-border-strong"
+                  ? "bg-accent text-accent-fg shadow-xs"
                   : "text-secondary hover:text-primary"
               }`}
             >
               <i className="bx bx-file text-sm" />
-              <span>File on Computer</span>
+              <span>Local File</span>
             </button>
 
             <button
@@ -164,14 +167,14 @@ export default function Upload() {
                 setSourceType("youtube");
                 setErrorMessage("");
               }}
-              className={`flex-1 py-1.5 px-3 rounded flex items-center justify-center gap-1.5 transition-colors ${
+              className={`flex-1 py-2 px-3 rounded-lg flex items-center justify-center gap-2 transition-all ${
                 sourceType === "youtube"
-                  ? "bg-surface-active text-primary font-semibold border border-border-strong"
+                  ? "bg-accent text-accent-fg shadow-xs"
                   : "text-secondary hover:text-primary"
               }`}
             >
-              <i className="bx bxl-youtube text-sm text-red-500" />
-              <span>YouTube Link</span>
+              <i className="bx bxl-youtube text-base text-red-500" />
+              <span>YouTube Video</span>
             </button>
 
             <button
@@ -180,19 +183,19 @@ export default function Upload() {
                 setSourceType("gdrive");
                 setErrorMessage("");
               }}
-              className={`flex-1 py-1.5 px-3 rounded flex items-center justify-center gap-1.5 transition-colors ${
+              className={`flex-1 py-2 px-3 rounded-lg flex items-center justify-center gap-2 transition-all ${
                 sourceType === "gdrive"
-                  ? "bg-surface-active text-primary font-semibold border border-border-strong"
+                  ? "bg-accent text-accent-fg shadow-xs"
                   : "text-secondary hover:text-primary"
               }`}
             >
-              <i className="bx bxs-cloud text-sm text-accent" />
-              <span>Google Drive Link</span>
+              <i className="bx bxs-cloud text-base text-sky-400" />
+              <span>Google Drive</span>
             </button>
           </div>
 
-          {/* ── Form Body ─────────────────────────────────────────────── */}
-          <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Ingestion Form */}
+          <form onSubmit={handleSubmit} className="space-y-5">
             {sourceType === "file" && (
               <div className="space-y-3">
                 <div
@@ -200,38 +203,38 @@ export default function Upload() {
                   onDragOver={handleDragOver}
                   onDragLeave={handleDragLeave}
                   onDrop={handleDrop}
-                  className={`cursor-pointer border-2 border-dashed p-8 rounded-md text-center transition-all flex flex-col items-center justify-center gap-2.5 select-none ${
+                  className={`cursor-pointer border-2 border-dashed p-10 rounded-xl text-center transition-all flex flex-col items-center justify-center gap-3 select-none ${
                     isDragging
                       ? "border-accent bg-accent/10 scale-[1.01]"
-                      : "border-border hover:border-accent bg-surface"
+                      : "border-border hover:border-accent/80 bg-surface"
                   }`}
                 >
-                  <div className="w-8 h-8 rounded bg-surface-hover text-accent flex items-center justify-center text-lg border border-border">
+                  <div className="w-12 h-12 rounded-xl bg-accent-muted text-accent flex items-center justify-center text-2xl border border-accent/20">
                     <i className={`bx ${selectedFilePath ? "bx-check text-accent" : isDragging ? "bx-down-arrow-alt" : "bx-upload"}`} />
                   </div>
-                  <div>
-                    <p className="text-xs font-semibold text-primary">
-                      {fileName || (isDragging ? "Drop sermon file here" : "Click to browse or drag & drop file")}
+                  <div className="space-y-1">
+                    <p className="font-editorial text-base font-bold text-primary">
+                      {fileName || (isDragging ? "Drop sermon file here" : "Click to select or drop sermon media")}
                     </p>
-                    <p className="text-[11px] text-muted mt-0.5">
-                      Supports MP4, MOV, MP3, M4A, WAV audio and video
+                    <p className="text-xs text-secondary">
+                      Supports MP4, MOV, MKV, MP3, M4A, WAV audio and video
                     </p>
                   </div>
                   {selectedFilePath && (
-                    <span className="text-[11px] text-accent font-mono truncate max-w-md mt-1 block">
+                    <span className="text-xs text-accent font-mono-code truncate max-w-md mt-1 block px-2.5 py-1 rounded bg-surface border border-border">
                       {selectedFilePath}
                     </span>
                   )}
                 </div>
 
-                {/* Manual Path Input Toggle */}
-                <div className="flex items-center justify-between text-[11px] px-1">
+                {/* Path helper */}
+                <div className="flex items-center justify-between text-xs px-1">
                   <button
                     type="button"
                     onClick={() => setShowManualPath(!showManualPath)}
-                    className="text-muted hover:text-primary underline underline-offset-2"
+                    className="text-secondary hover:text-accent underline underline-offset-2 font-mono-code text-[11px]"
                   >
-                    {showManualPath ? "Hide path input" : "Or type / paste file path"}
+                    {showManualPath ? "Hide path input" : "Or type / paste absolute file path"}
                   </button>
                   {selectedFilePath && (
                     <button
@@ -240,24 +243,21 @@ export default function Upload() {
                         setSelectedFilePath(null);
                         setManualPath("");
                       }}
-                      className="text-muted hover:text-danger"
+                      className="text-danger hover:underline text-[11px]"
                     >
-                      Clear selected file
+                      Clear selection
                     </button>
                   )}
                 </div>
 
                 {showManualPath && (
-                  <div className="space-y-1">
+                  <div className="space-y-1.5 pt-1">
                     <input
                       type="text"
                       value={manualPath}
-                      onChange={(e) => {
-                        setManualPath(e.target.value);
-                        setSelectedFilePath(null);
-                      }}
-                      placeholder="C:\Users\aremu\Downloads\sermon.mp4"
-                      className="field-input font-mono text-xs"
+                      onChange={(e) => setManualPath(e.target.value)}
+                      placeholder="C:\Users\Pastor\Videos\Sunday_Message.mp4"
+                      className="field-input text-xs font-mono-code"
                     />
                   </div>
                 )}
@@ -265,49 +265,55 @@ export default function Upload() {
             )}
 
             {sourceType === "youtube" && (
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-primary block">
-                  YouTube Video Link
-                </label>
-                <div className="relative">
-                  <i className="bx bx-link absolute left-2.5 top-1/2 -translate-y-1/2 text-muted text-sm" />
-                  <input
-                    type="url"
-                    value={urlInput}
-                    onChange={(e) => setUrlInput(e.target.value)}
-                    placeholder="https://www.youtube.com/watch?v=..."
-                    className="w-full bg-surface border border-border rounded pl-8 pr-3 py-1.5 text-xs text-primary placeholder:text-muted outline-none focus:border-accent font-mono"
-                  />
+              <div className="space-y-3 p-6 rounded-xl border border-border bg-surface">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-primary block">
+                    YouTube Sermon Link
+                  </label>
+                  <div className="relative">
+                    <i className="bx bxl-youtube absolute left-3 top-1/2 -translate-y-1/2 text-red-500 text-lg" />
+                    <input
+                      type="text"
+                      value={urlInput}
+                      onChange={(e) => setUrlInput(e.target.value)}
+                      placeholder="https://www.youtube.com/watch?v=..."
+                      className="field-input pl-10 text-xs"
+                      autoFocus
+                    />
+                  </div>
                 </div>
-                <p className="text-[11px] text-muted">
-                  Audio will be automatically retrieved and prepared for transcription.
+                <p className="text-[11px] text-secondary">
+                  Dabar streams and transcribes directly using Groq Whisper without storing huge video caches.
                 </p>
               </div>
             )}
 
             {sourceType === "gdrive" && (
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-primary block">
-                  Google Drive Link
-                </label>
-                <div className="relative">
-                  <i className="bx bx-link absolute left-2.5 top-1/2 -translate-y-1/2 text-muted text-sm" />
-                  <input
-                    type="url"
-                    value={urlInput}
-                    onChange={(e) => setUrlInput(e.target.value)}
-                    placeholder="https://drive.google.com/file/d/.../view?usp=sharing"
-                    className="w-full bg-surface border border-border rounded pl-8 pr-3 py-1.5 text-xs text-primary placeholder:text-muted outline-none focus:border-accent font-mono"
-                  />
+              <div className="space-y-3 p-6 rounded-xl border border-border bg-surface">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-primary block">
+                    Google Drive Shareable Link
+                  </label>
+                  <div className="relative">
+                    <i className="bx bxs-cloud absolute left-3 top-1/2 -translate-y-1/2 text-sky-400 text-lg" />
+                    <input
+                      type="text"
+                      value={urlInput}
+                      onChange={(e) => setUrlInput(e.target.value)}
+                      placeholder="https://drive.google.com/file/d/.../view?usp=sharing"
+                      className="field-input pl-10 text-xs"
+                      autoFocus
+                    />
+                  </div>
                 </div>
-                <p className="text-[11px] text-muted">
-                  Make sure the link sharing is set to <strong>"Anyone with the link can view"</strong>.
+                <p className="text-[11px] text-secondary">
+                  Ensure the Google Drive link has <strong className="text-primary">"Anyone with the link can view"</strong> permissions.
                 </p>
               </div>
             )}
 
             {errorMessage && (
-              <div className="border border-danger/30 bg-danger-muted p-2.5 rounded text-xs text-danger flex items-center gap-2">
+              <div className="p-3 rounded-lg border border-danger/30 bg-danger-muted text-xs text-danger flex items-center gap-2">
                 <i className="bx bx-error-circle text-base shrink-0" />
                 <span>{errorMessage}</span>
               </div>
@@ -316,21 +322,20 @@ export default function Upload() {
             <div className="pt-2">
               <Btn
                 type="submit"
+                variant="primary"
+                size="lg"
                 className="w-full"
-                disabled={
-                  isProcessing ||
-                  (sourceType === "file" && !selectedFilePath && !manualPath.trim())
-                }
+                disabled={isProcessing}
               >
                 {isProcessing ? (
                   <>
-                    <i className="bx bx-loader-alt bx-spin text-sm" />
-                    <span>Preparing Sermon…</span>
+                    <i className="bx bx-loader-alt bx-spin text-lg" />
+                    <span>Initiating Pipeline…</span>
                   </>
                 ) : (
                   <>
-                    <i className="bx bx-play text-sm" />
-                    <span>Transcribe Sermon</span>
+                    <i className="bx bx-zap text-lg" />
+                    <span>Begin Transcription & Clip Extraction</span>
                   </>
                 )}
               </Btn>

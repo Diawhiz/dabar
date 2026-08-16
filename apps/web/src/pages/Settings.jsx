@@ -112,16 +112,18 @@ export default function Settings() {
     <div className="flex flex-col min-h-screen pb-16">
       {/* ── Page Header ───────────────────────────────────────────── */}
       <header className="page-header">
-        <div>
-          <h1 className="text-base font-semibold text-primary">Settings</h1>
-          <p className="text-xs text-secondary mt-0.5">
-            Manage appearance, offline tools, storage locations, and church vocabulary.
-          </p>
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="scripture-badge text-[10px]">
+              CONFIGURATION
+            </span>
+          </div>
+          <h1 className="font-editorial text-2xl font-bold text-primary">Studio Settings</h1>
         </div>
       </header>
 
       {/* ── Tabs Toolbar ──────────────────────────────────────────── */}
-      <div className="px-6 py-2 border-b border-border bg-surface/30 flex gap-2 text-xs font-medium">
+      <div className="px-8 py-3 border-b border-border bg-surface/40 flex gap-2 text-xs font-semibold">
         {[
           { key: "general", label: "General & Storage", icon: "bx-slider" },
           { key: "offline", label: "Processing & Offline Tools", icon: "bx-chip" },
@@ -131,13 +133,13 @@ export default function Settings() {
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
-            className={`px-3 py-1 rounded flex items-center gap-1.5 transition-colors ${
+            className={`px-3.5 py-1.5 rounded-lg flex items-center gap-2 transition-all ${
               activeTab === tab.key
-                ? "bg-surface-active text-primary font-semibold border border-border-strong"
+                ? "bg-accent text-accent-fg shadow-xs"
                 : "text-secondary hover:text-primary"
             }`}
           >
-            <i className={`bx ${tab.icon} text-sm`} />
+            <i className={`bx ${tab.icon} text-base`} />
             <span>{tab.label}</span>
           </button>
         ))}
@@ -150,50 +152,50 @@ export default function Settings() {
           {activeTab === "general" && (
             <form onSubmit={handleSave} className="space-y-5 text-xs">
               {/* Theme Mode */}
-              <div className="space-y-1.5">
-                <label className="font-semibold text-primary block">
-                  Theme Appearance
+              <div className="space-y-2">
+                <label className="font-semibold text-primary block text-xs">
+                  Studio Theme Appearance
                 </label>
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     type="button"
                     onClick={() => setTheme("dark")}
-                    className={`p-3 rounded border text-left flex items-center justify-between transition-colors ${
+                    className={`p-3.5 rounded-xl border text-left flex items-center justify-between transition-all ${
                       theme === "dark"
-                        ? "border-accent bg-surface-active"
+                        ? "border-accent bg-accent-muted/40 shadow-xs"
                         : "border-border bg-surface hover:bg-surface-hover text-secondary"
                     }`}
                   >
-                    <div className="flex items-center gap-2">
-                      <i className="bx bx-moon text-base text-accent" />
+                    <div className="flex items-center gap-2.5">
+                      <i className="bx bx-moon text-lg text-accent" />
                       <div>
-                        <p className="font-semibold text-primary">Dark Mode</p>
-                        <p className="text-[10px] text-muted">Pro tool dark grey</p>
+                        <p className="font-semibold text-primary">Sanctuary Dark</p>
+                        <p className="text-[10px] text-muted">Warm obsidian & gold</p>
                       </div>
                     </div>
                     {theme === "dark" && (
-                      <i className="bx bxs-check-circle text-accent text-sm" />
+                      <i className="bx bxs-check-circle text-accent text-base" />
                     )}
                   </button>
 
                   <button
                     type="button"
                     onClick={() => setTheme("light")}
-                    className={`p-3 rounded border text-left flex items-center justify-between transition-colors ${
+                    className={`p-3.5 rounded-xl border text-left flex items-center justify-between transition-all ${
                       theme === "light"
-                        ? "border-accent bg-surface-active"
+                        ? "border-accent bg-accent-muted/40 shadow-xs"
                         : "border-border bg-surface hover:bg-surface-hover text-secondary"
                     }`}
                   >
-                    <div className="flex items-center gap-2">
-                      <i className="bx bx-sun text-base text-accent" />
+                    <div className="flex items-center gap-2.5">
+                      <i className="bx bx-sun text-lg text-accent" />
                       <div>
-                        <p className="font-semibold text-primary">Light Mode</p>
-                        <p className="text-[10px] text-muted">Clean high-contrast light</p>
+                        <p className="font-semibold text-primary">Sacred Linen</p>
+                        <p className="text-[10px] text-muted">Parchment & rich bronze</p>
                       </div>
                     </div>
                     {theme === "light" && (
-                      <i className="bx bxs-check-circle text-accent text-sm" />
+                      <i className="bx bxs-check-circle text-accent text-base" />
                     )}
                   </button>
                 </div>

@@ -32,12 +32,13 @@ pub struct TranscriptionResult {
 }
 
 // Groq has a hard 25 MB payload limit.
-// We trigger chunking fallback if compressed audio exceeds 24 MB.
+// We trigger chunking fallback if compressed audio exceeds 24 MB or duration exceeds 20 minutes (1200s).
 const GROQ_MAX_FILE_BYTES: u64 = 25 * 1024 * 1024; // 25 MB
 const CHUNK_TRIGGER_BYTES: u64 = 24 * 1024 * 1024; // 24 MB
+const CHUNK_TRIGGER_DURATION_SECS: f32 = 1200.0; // 20 minutes
 
-// 30 minutes chunk duration with 5 seconds overlap
-const CHUNK_DURATION_SECS: f32 = 1800.0;
+// 15 minutes chunk duration with 5 seconds overlap
+const CHUNK_DURATION_SECS: f32 = 900.0;
 const CHUNK_OVERLAP_SECS: f32 = 5.0;
 
 #[derive(Debug, Deserialize)]
@@ -469,7 +470,7 @@ async fn transcribe_audio_internal(
     ffmpeg::preprocess_audio_for_whisper(raw_audio_path, &preprocessed_path).await?;
 
     if let Some(ref cb) = progress_callback {
-        cb(0.35);
+        cb(0.15);
     }
 
     let metadata = tokio::fs::metadata(&preprocessed_path)
@@ -478,15 +479,18 @@ async fn transcribe_audio_internal(
 
     let file_size = metadata.len();
     let size_mb = (file_size as f64) / (1024.0 * 1024.0);
+    let duration = ffmpeg::get_media_duration(&preprocessed_path).await.unwrap_or(0.0);
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(300))
         .build()
         .context("building reqwest client")?;
 
-    if file_size <= CHUNK_TRIGGER_BYTES {
+    let needs_chunking = file_size > CHUNK_TRIGGER_BYTES || duration >= CHUNK_TRIGGER_DURATION_SECS;
+
+    if !needs_chunking {
         tracing::info!(
-            "Preprocessed audio fits in single request ({size_mb:.2} MB <= 24.00 MB limit margin)"
+            "Preprocessed audio fits in single request ({size_mb:.2} MB, duration: {duration:.1}s)"
         );
         let res = transcribe_single_audio_file(&client, api_key, &preprocessed_path, 0.0).await;
         if let Some(ref cb) = progress_callback {
@@ -494,14 +498,18 @@ async fn transcribe_audio_internal(
         }
         res
     } else {
-        tracing::warn!(
-            "Preprocessed audio ({size_mb:.2} MB) exceeds safe margin (24.00 MB). Initiating chunked transcription fallback..."
+        tracing::info!(
+            "Preprocessed audio ({size_mb:.2} MB, duration: {duration:.1}s) triggers chunked transcription. Initiating parallel chunked flow..."
         );
-        let res = transcribe_chunked_audio(&client, api_key, &preprocessed_path, temp_dir).await;
-        if let Some(ref cb) = progress_callback {
-            cb(1.0);
-        }
-        res
+        transcribe_chunked_audio(
+            &client,
+            api_key,
+            &preprocessed_path,
+            temp_dir,
+            duration,
+            progress_callback,
+        )
+        .await
     }
 }
 
@@ -632,21 +640,30 @@ async fn transcribe_chunked_audio(
     api_key: &str,
     audio_path: &Path,
     chunk_dir: &Path,
+    total_duration: f32,
+    progress_callback: Option<Box<dyn Fn(f32) + Send>>,
 ) -> Result<Vec<TranscriptSegment>> {
-    let total_duration = ffmpeg::get_media_duration(audio_path).await?;
+    let duration = if total_duration > 0.0 {
+        total_duration
+    } else {
+        ffmpeg::get_media_duration(audio_path).await?
+    };
+
     tracing::info!(
         "Splitting audio of total duration {:.2}s into ~{:.0}s chunks with {:.0}s overlap",
-        total_duration,
+        duration,
         CHUNK_DURATION_SECS,
         CHUNK_OVERLAP_SECS
     );
 
-    let mut chunk_specs: Vec<(usize, f32, std::path::PathBuf)> = Vec::new();
     let mut current_start: f32 = 0.0;
     let mut chunk_index: usize = 0;
+    let mut join_set = tokio::task::JoinSet::new();
+    let mut total_chunks = 0;
 
-    while current_start < total_duration {
-        let duration_to_extract = (total_duration - current_start).min(CHUNK_DURATION_SECS);
+    // Overlap audio chunk extraction with immediate network dispatch
+    while current_start < duration {
+        let duration_to_extract = (duration - current_start).min(CHUNK_DURATION_SECS);
         let chunk_file = chunk_dir.join(format!("chunk_{chunk_index:03}.mp3"));
 
         tracing::info!(
@@ -662,37 +679,63 @@ async fn transcribe_chunked_audio(
         .await
         .with_context(|| format!("extracting audio chunk #{chunk_index}"))?;
 
-        chunk_specs.push((chunk_index, current_start, chunk_file));
-
-        let advance = CHUNK_DURATION_SECS - CHUNK_OVERLAP_SECS;
-        current_start += advance;
-        chunk_index += 1;
-    }
-
-    let mut join_set = tokio::task::JoinSet::new();
-    for (idx, start_time, file_path) in chunk_specs {
         let client_clone = client.clone();
         let api_key_clone = api_key.to_string();
+        let file_path = chunk_file;
+        let start_time = current_start;
+        let idx = chunk_index;
+
         join_set.spawn(async move {
             let res = transcribe_single_audio_file(&client_clone, &api_key_clone, &file_path, 0.0).await;
             (idx, start_time, res)
         });
+
+        let advance = CHUNK_DURATION_SECS - CHUNK_OVERLAP_SECS;
+        current_start += advance;
+        chunk_index += 1;
+        total_chunks += 1;
+    }
+
+    if let Some(ref cb) = progress_callback {
+        cb(0.25);
     }
 
     let mut chunk_results: Vec<(f32, Vec<TranscriptSegment>)> = Vec::new();
+    let mut completed_chunks = 0;
+
     while let Some(res) = join_set.join_next().await {
         let (_idx, start_time, result) = res.context("joining chunk transcription task")?;
         let segments = result?;
         chunk_results.push((start_time, segments));
+        completed_chunks += 1;
+
+        if let Some(ref cb) = progress_callback {
+            if total_chunks > 0 {
+                let pct = 0.25 + 0.65 * (completed_chunks as f32 / total_chunks as f32);
+                cb(pct.min(0.92));
+            }
+        }
+    }
+
+    if let Some(ref cb) = progress_callback {
+        cb(0.95);
     }
 
     chunk_results.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-    Ok(stitch_transcript_chunks(chunk_results))
+    let stitched = stitch_transcript_chunks(chunk_results);
+
+    if let Some(ref cb) = progress_callback {
+        cb(1.0);
+    }
+
+    Ok(stitched)
 }
 
 pub fn stitch_transcript_chunks(
-    chunk_results: Vec<(f32, Vec<TranscriptSegment>)>,
+    mut chunk_results: Vec<(f32, Vec<TranscriptSegment>)>,
 ) -> Vec<TranscriptSegment> {
+    chunk_results.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+
     let mut stitched: Vec<TranscriptSegment> = Vec::new();
     let mut last_end: f32 = 0.0;
 
@@ -704,9 +747,11 @@ pub fn stitch_transcript_chunks(
             seg.end = abs_end;
 
             if !stitched.is_empty() {
+                // If segment completely falls inside previously covered time span, skip duplicate
                 if abs_end <= last_end + 0.3 {
                     continue;
                 }
+                // If segment crosses the boundary, clamp start to last_end to prevent overlap
                 if abs_start < last_end {
                     seg.start = last_end;
                 }
@@ -778,5 +823,84 @@ mod tests {
         assert_eq!(stitched.len(), 2);
         assert_eq!(stitched[0].start, 0.0);
         assert_eq!(stitched[1].end, 10.0);
+    }
+
+    #[test]
+    fn test_stitch_multiple_overlapping_chunks() {
+        let chunk0 = vec![
+            TranscriptSegment {
+                start: 0.0,
+                end: 5.0,
+                text: "In the beginning".into(),
+            },
+            TranscriptSegment {
+                start: 5.0,
+                end: 10.0,
+                text: "God created the heavens".into(),
+            },
+        ];
+
+        // Chunk 1 starts at 8.0s (2.0s overlap with Chunk 0's 8.0-10.0 range)
+        let chunk1 = vec![
+            // Duplicate segment from overlap (abs: 8.0 -> 9.8s <= 10.0s + 0.3s)
+            TranscriptSegment {
+                start: 0.0,
+                end: 1.8,
+                text: "created the heavens".into(),
+            },
+            // Overlap boundary segment (abs: 9.8 -> 14.0s) -> clamped to start at 10.0s
+            TranscriptSegment {
+                start: 1.8,
+                end: 6.0,
+                text: "and the earth.".into(),
+            },
+            // Subsequent normal segment (abs: 14.0 -> 20.0s)
+            TranscriptSegment {
+                start: 6.0,
+                end: 12.0,
+                text: "Now the earth was formless and empty.".into(),
+            },
+        ];
+
+        let stitched = stitch_transcript_chunks(vec![(0.0, chunk0), (8.0, chunk1)]);
+        assert_eq!(stitched.len(), 4);
+        assert_eq!(stitched[0].text, "In the beginning");
+        assert_eq!(stitched[0].start, 0.0);
+        assert_eq!(stitched[0].end, 5.0);
+
+        assert_eq!(stitched[1].text, "God created the heavens");
+        assert_eq!(stitched[1].start, 5.0);
+        assert_eq!(stitched[1].end, 10.0);
+
+        // Clamped start
+        assert_eq!(stitched[2].text, "and the earth.");
+        assert_eq!(stitched[2].start, 10.0);
+        assert_eq!(stitched[2].end, 14.0);
+
+        assert_eq!(stitched[3].text, "Now the earth was formless and empty.");
+        assert_eq!(stitched[3].start, 14.0);
+        assert_eq!(stitched[3].end, 20.0);
+    }
+
+    #[test]
+    fn test_stitch_out_of_order_chunks() {
+        let chunk0 = vec![TranscriptSegment {
+            start: 0.0,
+            end: 5.0,
+            text: "Part 1".into(),
+        }];
+        let chunk1 = vec![TranscriptSegment {
+            start: 0.0,
+            end: 5.0,
+            text: "Part 2".into(),
+        }];
+
+        // Passed out of chronological order
+        let stitched = stitch_transcript_chunks(vec![(10.0, chunk1), (0.0, chunk0)]);
+        assert_eq!(stitched.len(), 2);
+        assert_eq!(stitched[0].text, "Part 1");
+        assert_eq!(stitched[0].start, 0.0);
+        assert_eq!(stitched[1].text, "Part 2");
+        assert_eq!(stitched[1].start, 10.0);
     }
 }

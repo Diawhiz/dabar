@@ -123,16 +123,21 @@ pub async fn run_pipeline(
                 let _ = db.update_title(sermon_id, title).await;
             }
             
-            // Persist audio in app storage for local playback and export
+            // Persist audio in app storage for local playback and export (try atomic move first, fallback to copy)
             let persistent_path = audio_storage_dir.join(format!("{sermon_id}.mp3"));
-            if let Err(e) = tokio::fs::copy(&downloaded.path, &persistent_path).await {
-                tracing::warn!("Could not copy audio to persistent storage: {e}");
-                downloaded.path
-            } else {
-                db.save_checkpoint(sermon_id, "downloading", &persistent_path.to_string_lossy()).await?;
-                emit(&app, sermon_id, "downloading", 100, "Audio downloaded successfully.");
+            let final_path = if tokio::fs::rename(&downloaded.path, &persistent_path).await.is_ok() {
                 persistent_path
-            }
+            } else if let Ok(_) = tokio::fs::copy(&downloaded.path, &persistent_path).await {
+                let _ = tokio::fs::remove_file(&downloaded.path).await;
+                persistent_path
+            } else {
+                tracing::warn!("Could not move or copy audio to persistent storage, using temp path");
+                downloaded.path
+            };
+
+            db.save_checkpoint(sermon_id, "downloading", &final_path.to_string_lossy()).await?;
+            emit(&app, sermon_id, "downloading", 100, "Audio downloaded successfully.");
+            final_path
         }
         PipelineSource::GoogleDrive(url) => {
             emit(&app, sermon_id, "downloading", 10, "Downloading audio from Google Drive…");
@@ -142,14 +147,19 @@ pub async fn run_pipeline(
             }
 
             let persistent_path = audio_storage_dir.join(format!("{sermon_id}.mp3"));
-            if let Err(e) = tokio::fs::copy(&downloaded.path, &persistent_path).await {
-                tracing::warn!("Could not copy audio to persistent storage: {e}");
-                downloaded.path
-            } else {
-                db.save_checkpoint(sermon_id, "downloading", &persistent_path.to_string_lossy()).await?;
-                emit(&app, sermon_id, "downloading", 100, "Audio downloaded from Google Drive.");
+            let final_path = if tokio::fs::rename(&downloaded.path, &persistent_path).await.is_ok() {
                 persistent_path
-            }
+            } else if let Ok(_) = tokio::fs::copy(&downloaded.path, &persistent_path).await {
+                let _ = tokio::fs::remove_file(&downloaded.path).await;
+                persistent_path
+            } else {
+                tracing::warn!("Could not move or copy audio to persistent storage, using temp path");
+                downloaded.path
+            };
+
+            db.save_checkpoint(sermon_id, "downloading", &final_path.to_string_lossy()).await?;
+            emit(&app, sermon_id, "downloading", 100, "Audio downloaded from Google Drive.");
+            final_path
         }
         PipelineSource::LocalFile(path) => {
             // Validate the file exists and is readable
@@ -180,7 +190,14 @@ pub async fn run_pipeline(
             let app_clone = app.clone();
             move |progress_pct: f32| {
                 let pct = (progress_pct * 100.0) as u8;
-                emit(&app_clone, sermon_id, "transcribing", pct.min(95), "Transcribing sermon audio…");
+                let detail = if pct < 20 {
+                    "Preprocessing sermon audio…"
+                } else if pct < 95 {
+                    "Transcribing sermon audio via Groq Whisper…"
+                } else {
+                    "Stitching & aligning transcript segments…"
+                };
+                emit(&app_clone, sermon_id, "transcribing", pct.min(95), detail);
             }
         })),
     )
@@ -196,6 +213,7 @@ pub async fn run_pipeline(
         anyhow::bail!("Transcription produced no text. The audio may be silent or unsupported.");
     }
 
+    db.save_checkpoint(sermon_id, "transcribing", &audio_path.to_string_lossy()).await?;
     emit(&app, sermon_id, "transcribing", 100, "Transcription complete.");
 
     // ── Stage 3: Highlight / Chapter Summary Status ──────────────────────────

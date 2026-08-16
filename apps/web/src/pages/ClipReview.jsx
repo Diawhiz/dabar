@@ -194,197 +194,212 @@ export default function ClipReview() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen pb-32">
-      {/* ── 1. Page Header ───────────────────────────────────────────── */}
-      <header className="page-header">
-        <div className="space-y-1 min-w-0">
-          <div className="flex flex-wrap items-center gap-2 text-xs font-mono-code text-secondary">
+    <div className="space-y-12 pb-32 animate-in fade-in duration-700">
+      {/* ── Macro Header & Spatial Rhythm ────────────────────────────── */}
+      <section className="space-y-3 pt-6">
+        <div className="flex items-center gap-3">
+          <span className="eyebrow-tag">
+            CLIPS & MOMENTS STUDIO
+          </span>
+          <span className="font-mono-code text-xs text-muted">
+            {sermonDuration ? `${sermonDuration} total runtime` : "Ready"}
+          </span>
+          {scriptureRefs.length > 0 && (
             <span className="scripture-badge text-[10px]">
-              CLIPS STUDIO
+              {scriptureRefs.join(", ")}
             </span>
-            <span>·</span>
-            <span>{sermonDuration ? `${sermonDuration} runtime` : "Ready"}</span>
-            {scriptureRefs.length > 0 && (
-              <>
-                <span>·</span>
-                <span className="text-accent font-semibold">
-                  {scriptureRefs.join(", ")}
-                </span>
-              </>
-            )}
+          )}
+        </div>
+
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+          <div>
+            <h1 className="font-editorial text-3xl sm:text-5xl font-bold tracking-tight text-primary leading-tight">
+              {sermonTitle || "Sermon Manuscript & Moments"}
+            </h1>
+            <p className="text-secondary text-xs sm:text-sm mt-2 max-w-xl font-light">
+              {highlights.length} viral teaching moments identified · Aspect-ratio safe 9:16 reels ready for export.
+            </p>
           </div>
 
-          <h1 className="font-editorial text-2xl font-bold text-primary truncate leading-snug">
-            {sermonTitle || "Sermon Manuscript & Clips"}
-          </h1>
+          <div className="flex items-center gap-3 shrink-0">
+            <Btn variant="secondary" icon="bx-left-arrow-alt" onClick={() => navigate("/dashboard")}>
+              Library
+            </Btn>
+            <Btn variant="primary" icon="bx-plus" onClick={() => navigate("/upload")}>
+              New Sermon
+            </Btn>
+          </div>
         </div>
+      </section>
 
-        <div className="flex items-center gap-2.5 shrink-0">
-          <Btn size="sm" variant="secondary" onClick={() => navigate("/dashboard")}>
-            <i className="bx bx-left-arrow-alt text-base" />
-            <span>Library</span>
-          </Btn>
-          <Btn size="sm" variant="primary" onClick={() => navigate("/upload")}>
-            <i className="bx bx-plus text-base" />
-            <span>Add Sermon</span>
-          </Btn>
-        </div>
-      </header>
-
-      {/* ── 2. Content Body ─────────────────────────────────────────── */}
-      <div className="page-content space-y-6 flex-1">
-        {/* Export Success Toast */}
-        {exportedNotice && (
-          <div className="rounded-xl border border-accent/40 bg-accent-muted/40 p-4 flex items-center justify-between gap-4 shadow-sm animate-in fade-in">
+      {/* ── Export Success Toast ─────────────────────────────────────── */}
+      {exportedNotice && (
+        <div className="doppelrand-shell border-accent/40 bg-accent-muted/20">
+          <div className="doppelrand-core p-4 flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-accent text-accent-fg flex items-center justify-center text-lg">
+              <div className="w-10 h-10 rounded-full bg-accent text-accent-fg flex items-center justify-center text-xl shadow-[0_0_12px_var(--accent-glow)]">
                 <i className="bx bxs-check-circle" />
               </div>
               <div>
-                <p className="text-xs font-bold text-primary">
+                <p className="font-editorial text-base font-bold text-primary">
                   "{exportedNotice.title}" rendered successfully!
                 </p>
-                <p className="text-[11px] text-muted font-mono-code truncate max-w-md">
+                <p className="text-xs text-muted font-mono-code truncate max-w-lg">
                   {exportedNotice.path}
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               <Btn
                 size="sm"
                 variant="secondary"
+                icon="bx-folder-open"
                 onClick={() => openInExplorer(exportedNotice.path)}
               >
-                <i className="bx bx-folder-open text-base text-accent" />
-                <span>Show in Folder</span>
+                Show in Folder
               </Btn>
               <button
                 onClick={() => setExportedNotice(null)}
-                className="text-muted hover:text-primary p-1"
+                className="text-muted hover:text-primary p-1 transition-colors"
               >
-                <i className="bx bx-x text-lg" />
+                <i className="bx bx-x text-2xl" />
               </button>
             </div>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Studio View Switcher Tabs */}
-        <div className="flex p-1 rounded-xl bg-surface border border-border max-w-xs shadow-xs">
+      {/* ── Studio Mode Switcher Tabs ─────────────────────────────────── */}
+      <div className="flex items-center justify-start">
+        <div className="flex p-1 rounded-full bg-surface border border-white/[0.08] shadow-ambient backdrop-blur-md">
           <button
             type="button"
             onClick={() => setActiveTab("clips")}
-            className={`flex-1 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
+            className={`px-6 py-2 rounded-full text-xs font-semibold tracking-tight transition-all duration-500 ease-fluid flex items-center gap-2 ${
               activeTab === "clips"
-                ? "bg-accent text-accent-fg shadow-xs"
+                ? "bg-accent text-accent-fg shadow-[0_2px_12px_var(--accent-glow)]"
                 : "text-secondary hover:text-primary"
             }`}
           >
             <i className="bx bx-film text-sm" />
-            <span>Clips ({highlights.length})</span>
+            <span>Extracted Clips ({highlights.length})</span>
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTab("transcript")}
-            className={`flex-1 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
+            className={`px-6 py-2 rounded-full text-xs font-semibold tracking-tight transition-all duration-500 ease-fluid flex items-center gap-2 ${
               activeTab === "transcript"
-                ? "bg-accent text-accent-fg shadow-xs"
+                ? "bg-accent text-accent-fg shadow-[0_2px_12px_var(--accent-glow)]"
                 : "text-secondary hover:text-primary"
             }`}
           >
             <i className="bx bx-book-open text-sm" />
-            <span>Manuscript</span>
+            <span>Full Manuscript</span>
           </button>
         </div>
+      </div>
 
-        {isLoading ? (
-          <div className="py-24 text-center space-y-3 bg-surface border border-border rounded-xl">
-            <i className="bx bx-loader-alt bx-spin text-3xl text-accent" />
-            <p className="text-xs text-secondary font-medium">Illuminating sermon manuscript and moments…</p>
+      {/* ── Studio Stage Body ────────────────────────────────────────── */}
+      {isLoading ? (
+        <div className="doppelrand-shell">
+          <div className="doppelrand-core py-28 text-center space-y-4">
+            <i className="bx bx-loader-alt bx-spin text-4xl text-accent" />
+            <p className="font-editorial text-xl text-secondary">
+              Illuminating sermon manuscript & preaching moments…
+            </p>
           </div>
-        ) : activeTab === "clips" ? (
-          /* ── CLIPS STUDIO TAB ──────────────────────────────────────── */
-          <div className="space-y-8">
-            {/* Top Featured Moment */}
-            {topMoment && (
-              <section className="space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-xs font-mono-code font-bold uppercase tracking-wider text-accent flex items-center gap-1.5">
-                    <i className="bx bxs-star text-sm" />
-                    Primary Teaching Highlight
-                  </h2>
-                  <span className="text-[11px] text-muted font-mono-code">Aspect-Ratio Safe 9:16 Reel</span>
-                </div>
-                <ClipCard
-                  clip={topMoment}
-                  featured={true}
-                  onPreview={(c) => setActiveSegment(c)}
-                  onExport={(c) => setExportModalClip(c)}
-                  isExporting={renderingClipId === topMoment.id}
-                />
-              </section>
-            )}
+        </div>
+      ) : activeTab === "clips" ? (
+        <div className="space-y-12">
+          {/* Featured Top Moment (Primary Highlight) */}
+          {topMoment && (
+            <section className="space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="eyebrow-tag text-[10px]">
+                  <i className="bx bxs-star text-xs" />
+                  Primary Broadcast Moment
+                </span>
+                <span className="text-xs text-muted font-mono-code">
+                  Pre-configured 9:16 Vertical Master
+                </span>
+              </div>
+              <ClipCard
+                clip={topMoment}
+                featured={true}
+                onPreview={(c) => setActiveSegment(c)}
+                onExport={(c) => setExportModalClip(c)}
+                isExporting={renderingClipId === topMoment.id}
+              />
+            </section>
+          )}
 
-            {/* Other Key Moments */}
-            {otherMoments.length > 0 && (
-              <section className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h2 className="font-editorial text-xl font-bold text-primary">
+          {/* Secondary Moments Grid (Asymmetrical Layout) */}
+          {otherMoments.length > 0 && (
+            <section className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="font-editorial text-2xl sm:text-3xl font-bold text-primary">
                     More Preaching Moments ({otherMoments.length})
                   </h2>
-                  <p className="text-xs text-secondary">Ready to preview or render as social reels</p>
+                  <p className="text-xs text-secondary mt-0.5">
+                    Click preview to inspect playback bounds or export directly
+                  </p>
                 </div>
+              </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {otherMoments.map((moment) => (
-                    <ClipCard
-                      key={moment.id}
-                      clip={moment}
-                      onPreview={(c) => setActiveSegment(c)}
-                      onExport={(c) => setExportModalClip(c)}
-                      isExporting={renderingClipId === moment.id}
-                    />
-                  ))}
-                </div>
-              </section>
-            )}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                {otherMoments.map((moment) => (
+                  <ClipCard
+                    key={moment.id}
+                    clip={moment}
+                    onPreview={(c) => setActiveSegment(c)}
+                    onExport={(c) => setExportModalClip(c)}
+                    isExporting={renderingClipId === moment.id}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
 
-            {/* Universal Video/Audio In-Page Player */}
-            {activeSegment && (
-              <div className="rounded-xl border border-accent/30 bg-surface p-5 shadow-2xl space-y-4 animate-in fade-in">
-                <div className="flex items-center justify-between border-b border-border pb-3">
-                  <div className="flex items-center gap-2.5">
-                    <span className="scripture-badge text-[10px]">
-                      PREVIEWING MOMENT
+          {/* Active Moment In-Page Player */}
+          {activeSegment && (
+            <div className="doppelrand-shell animate-in fade-in duration-500">
+              <div className="doppelrand-core space-y-5">
+                <div className="flex items-center justify-between border-b border-white/[0.08] pb-4">
+                  <div className="flex items-center gap-3">
+                    <span className="eyebrow-tag text-[10px]">
+                      LIVE PREVIEW
                     </span>
-                    <span className="font-editorial text-sm font-semibold text-primary truncate max-w-sm">
+                    <h3 className="font-editorial text-lg font-bold text-primary truncate max-w-md">
                       {activeSegment.highlight_title || activeSegment.title || "Selected Moment"}
-                    </span>
+                    </h3>
                     <span className="text-xs text-muted font-mono-code">
                       ({formatSeconds(activeSegment.start)} – {formatSeconds(activeSegment.end)})
                     </span>
                   </div>
-                  <div className="flex items-center gap-2">
+
+                  <div className="flex items-center gap-3">
                     <Btn
                       size="sm"
                       variant="primary"
+                      icon="bx-film"
                       onClick={() => setExportModalClip(activeSegment)}
                     >
-                      <i className="bx bx-film text-sm" />
-                      <span>Export Video Reel</span>
+                      Export Video Reel
                     </Btn>
                     <button
                       onClick={() => setActiveSegment(null)}
-                      className="text-muted hover:text-primary text-xs p-1 rounded-md hover:bg-surface-hover transition-colors"
+                      className="w-8 h-8 rounded-full bg-white/[0.04] text-muted hover:text-primary flex items-center justify-center transition-colors"
                       aria-label="Close clip preview"
                     >
-                      <i className="bx bx-x text-xl" />
+                      <i className="bx bx-x text-2xl" />
                     </button>
                   </div>
                 </div>
 
                 {videoId ? (
-                  <div className="aspect-video w-full rounded-lg overflow-hidden border border-border bg-black">
+                  <div className="aspect-video w-full rounded-2xl overflow-hidden border border-white/[0.08] bg-black shadow-ambient">
                     <iframe
                       src={`https://www.youtube.com/embed/${videoId}?start=${Math.floor(activeSegment.start)}&end=${Math.ceil(activeSegment.end)}&autoplay=1&rel=0`}
                       title="Clip preview player"
@@ -394,12 +409,12 @@ export default function ClipReview() {
                     />
                   </div>
                 ) : mediaAssetUrl ? (
-                  <div className="w-full rounded-lg overflow-hidden border border-border bg-black/90 p-4 space-y-3">
+                  <div className="w-full rounded-2xl overflow-hidden border border-white/[0.08] bg-black/90 p-5 space-y-4 shadow-ambient">
                     <video
                       controls
                       autoPlay
                       src={mediaAssetUrl}
-                      className="w-full max-h-80 rounded mx-auto bg-black"
+                      className="w-full max-h-96 rounded-xl mx-auto bg-black"
                       onLoadedMetadata={(e) => {
                         e.target.currentTime = activeSegment.start || 0;
                       }}
@@ -410,17 +425,17 @@ export default function ClipReview() {
                         }
                       }}
                     />
-                    <div className="flex items-center justify-between text-xs text-secondary font-editorial italic">
-                      <p>"{activeSegment.why || activeSegment.text || "Preaching clip moment"}"</p>
-                      <span className="font-mono-code text-accent font-semibold shrink-0">
+                    <div className="flex items-center justify-between text-xs text-secondary font-editorial italic px-2">
+                      <p>"{activeSegment.why || activeSegment.text || "Preaching teaching moment"}"</p>
+                      <span className="font-mono-code text-accent font-bold shrink-0">
                         Duration: {Math.round((activeSegment.end || 0) - (activeSegment.start || 0))}s
                       </span>
                     </div>
                   </div>
                 ) : (
-                  <div className="text-center py-10 space-y-2 border border-dashed border-border rounded-lg bg-base">
-                    <i className="bx bx-film text-3xl text-accent" />
-                    <p className="font-editorial text-sm font-semibold text-primary">
+                  <div className="text-center py-14 space-y-3 border border-dashed border-white/[0.08] rounded-2xl bg-white/[0.02]">
+                    <i className="bx bx-film text-4xl text-accent" />
+                    <p className="font-editorial text-lg font-bold text-primary">
                       {activeSegment.highlight_title || activeSegment.title}
                     </p>
                     <p className="text-xs text-secondary max-w-md mx-auto italic font-editorial">
@@ -429,33 +444,25 @@ export default function ClipReview() {
                   </div>
                 )}
               </div>
-            )}
-          </div>
-        ) : (
-          /* ── MANUSCRIPT VIEW TAB ──────────────────────────────────── */
-          <div className="space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="relative flex-1 max-w-md">
-                <i className="bx bx-search absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted" />
-                <input
-                  type="text"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Search sermon words, Scripture citations, or topics…"
-                  className="field-input pl-9 text-xs"
-                />
-              </div>
-              {searchTerm && (
-                <button
-                  onClick={() => setSearchTerm("")}
-                  className="text-xs text-accent hover:underline"
-                >
-                  Clear search
-                </button>
-              )}
             </div>
+          )}
+        </div>
+      ) : (
+        /* ── MANUSCRIPT VIEW ────────────────────────────────────────── */
+        <div className="space-y-6">
+          <div className="relative w-full max-w-md">
+            <i className="bx bx-search absolute left-4 top-1/2 -translate-y-1/2 text-muted text-base" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search sermon words, Scripture citations, or topics…"
+              className="w-full rounded-full bg-white/[0.04] border border-white/[0.08] pl-11 pr-4 py-2.5 text-xs text-primary placeholder:text-muted outline-none focus:border-accent transition-all duration-300"
+            />
+          </div>
 
-            <div className="rounded-xl border border-border bg-surface p-6 sm:p-10 shadow-xs">
+          <div className="doppelrand-shell">
+            <div className="doppelrand-core p-6 sm:p-12">
               <ManuscriptView
                 segments={filteredSegments}
                 currentTime={playbackTime}
@@ -466,21 +473,21 @@ export default function ClipReview() {
               />
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* ── 3. Floating Bottom Equalizer Audio Dock ─────────────────── */}
-      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-surface/90 backdrop-blur-xl border border-border/80 shadow-2xl rounded-full px-5 py-2.5 flex items-center gap-4 text-xs font-sans animate-in fade-in">
+      {/* ── Floating Equalizer Audio Dock ────────────────────────────── */}
+      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-surface/90 backdrop-blur-2xl border border-white/[0.12] shadow-2xl rounded-full px-6 py-3 flex items-center gap-5 text-xs font-sans animate-in fade-in duration-500">
         <button
           type="button"
           onClick={handleTogglePlay}
-          className="w-8 h-8 rounded-full bg-accent text-accent-fg flex items-center justify-center shadow-md hover:bg-accent-hover transition-all active:scale-95"
+          className="w-10 h-10 rounded-full bg-gradient-to-tr from-accent to-[#D49326] text-accent-fg flex items-center justify-center shadow-[0_0_15px_var(--accent-glow)] hover:brightness-110 active:scale-95 transition-all duration-300"
           aria-label={isPlaying ? "Pause audio" : "Play audio"}
         >
-          <i className={`bx ${isPlaying ? "bx-pause" : "bx-play"} text-xl`} />
+          <i className={`bx ${isPlaying ? "bx-pause" : "bx-play"} text-2xl`} />
         </button>
 
-        <div className="flex items-center gap-1.5 font-mono-code font-bold text-xs text-primary">
+        <div className="flex items-center gap-2 font-mono-code font-bold text-xs text-primary">
           <div className="audio-equalizer mr-1">
             <span className="audio-equalizer-bar" />
             <span className="audio-equalizer-bar" />
@@ -493,7 +500,7 @@ export default function ClipReview() {
         </div>
 
         <div
-          className="w-28 sm:w-44 h-1.5 bg-surface-hover rounded-full overflow-hidden cursor-pointer"
+          className="w-32 sm:w-52 h-2 bg-white/[0.08] rounded-full overflow-hidden cursor-pointer shadow-inner-glow"
           onClick={(e) => {
             const rect = e.currentTarget.getBoundingClientRect();
             const clickX = e.clientX - rect.left;
@@ -502,17 +509,17 @@ export default function ClipReview() {
           }}
         >
           <div
-            className="h-full bg-accent rounded-full shadow-[0_0_8px_var(--accent-glow)] transition-all"
+            className="h-full bg-gradient-to-r from-accent to-[#F59E0B] rounded-full shadow-[0_0_10px_var(--accent-glow)] transition-all duration-300"
             style={{ width: `${Math.min(100, (playbackTime / 2700) * 100)}%` }}
           />
         </div>
 
         <span className="text-[11px] text-muted hidden sm:inline font-mono-code">
-          <kbd className="px-1.5 py-0.5 rounded bg-surface-hover border border-border text-[9px] text-primary">Space</kbd> Play
+          <kbd className="px-2 py-0.5 rounded-full bg-white/[0.06] border border-white/[0.1] text-[9.5px] text-primary">Space</kbd> Play
         </span>
       </div>
 
-      {/* ── 4. Export Video Modal ────────────────────────────────────── */}
+      {/* ── Export Video Modal ────────────────────────────────────────── */}
       {exportModalClip && (
         <ExportModal
           clip={exportModalClip}

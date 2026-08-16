@@ -1,37 +1,50 @@
 import { useState } from "react";
 import Btn from "./Btn.jsx";
+import { openInExplorer } from "../lib/api.js";
 
-const FORMAT_OPTIONS = [
+const ASPECT_RATIOS = [
   {
-    id: "vertical",
-    label: "Phone Size",
-    ratioTag: "9:16",
-    subtitle: "Reels, Shorts & TikTok",
-    ratioClass: "aspect-[9/16] w-36",
-    icon: "bx-mobile",
+    key: "9:16",
+    label: "Vertical Reel (9:16)",
+    sub: "Instagram Reels, TikTok, YouTube Shorts",
+    icon: "bx-mobile-alt",
+    widthClass: "w-36 h-64",
   },
   {
-    id: "square",
-    label: "Square Feed",
-    ratioTag: "1:1",
-    subtitle: "Instagram & Facebook feed",
-    ratioClass: "aspect-square w-40",
+    key: "1:1",
+    label: "Square Post (1:1)",
+    sub: "Instagram Feed, Facebook, Twitter/X",
     icon: "bx-square",
+    widthClass: "w-48 h-48",
   },
   {
-    id: "widescreen",
-    label: "Cinema",
-    ratioTag: "16:9",
-    subtitle: "YouTube & church archive",
-    ratioClass: "aspect-video w-48",
+    key: "16:9",
+    label: "Widescreen (16:9)",
+    sub: "YouTube Landscape, Church Website",
     icon: "bx-tv",
+    widthClass: "w-64 h-36",
   },
 ];
 
 const CAPTION_STYLES = [
-  { id: "ember", label: "Pulpit Highlight", desc: "Key biblical emphasis highlighted in warm gold" },
-  { id: "minimal", label: "Clean Subtitle", desc: "Crisp, unobtrusive lower-third typography" },
-  { id: "solid", label: "Solid Bar", desc: "High-contrast dark card behind spoken text" },
+  {
+    key: "editorial",
+    label: "Living Pulpit",
+    preview: "High-contrast serif, warm gold speaker highlight",
+    cssClass: "font-editorial text-amber-300 font-bold",
+  },
+  {
+    key: "bold",
+    label: "Kinetic Punch",
+    preview: "Bold uppercase, high-retention viral style",
+    cssClass: "font-sans uppercase font-extrabold text-yellow-400 tracking-wider",
+  },
+  {
+    key: "clean",
+    label: "Minimal Classic",
+    preview: "Crisp white subtitle with soft shadow",
+    cssClass: "font-sans font-semibold text-white",
+  },
 ];
 
 export default function ExportModal({
@@ -41,237 +54,226 @@ export default function ExportModal({
   mediaAssetUrl,
   onClose,
   onConfirmExport,
-  isRendering,
-  exportedPath,
+  isRendering = false,
+  exportedPath = null,
 }) {
-  const [selectedFormat, setSelectedFormat] = useState("vertical");
-  const [selectedCaption, setSelectedCaption] = useState("ember");
-  const [fileName, setFileName] = useState(() => {
-    const cleanTitle = (clip?.highlight_title || clip?.title || "Sermon Clip")
-      .replace(/[^a-zA-Z0-9 -]/g, "")
-      .trim();
-    return `${cleanTitle} (Vertical Clip)`;
-  });
+  const [aspectRatio, setAspectRatio] = useState("9:16");
+  const [captionStyle, setCaptionStyle] = useState("editorial");
+  const [customFileName, setCustomFileName] = useState(
+    clip?.highlight_title || clip?.title || "sermon_clip"
+  );
 
-  if (!clip) return null;
+  const durationSec =
+    clip?.start && clip?.end ? Math.round(clip.end - clip.start) : 45;
 
-  const currentFormat =
-    FORMAT_OPTIONS.find((f) => f.id === selectedFormat) || FORMAT_OPTIONS[0];
+  const currentCaptionObj =
+    CAPTION_STYLES.find((c) => c.key === captionStyle) || CAPTION_STYLES[0];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md font-sans">
-      <div className="w-full max-w-2xl rounded-xl border border-border bg-surface shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-        {/* Modal Header */}
-        <div className="flex items-center justify-between border-b border-border px-6 py-4 bg-surface-hover/40">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-accent/15 border border-accent/30 text-accent flex items-center justify-center text-lg">
-              <i className="bx bx-film" />
-            </div>
-            <div>
-              <h2 className="font-editorial text-base font-bold text-primary">Export Video Reel</h2>
-              <p className="text-[11px] text-secondary font-mono-code">
-                Render aspect-ratio safe MP4 with custom caption overlay
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="w-7 h-7 rounded-md text-muted hover:text-primary hover:bg-surface-hover flex items-center justify-center transition-colors"
-          >
-            <i className="bx bx-x text-xl" />
-          </button>
-        </div>
-
-        {/* Modal Body */}
-        <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-          {/* Left: Preview Canvas */}
-          <div className="flex flex-col items-center justify-center bg-base rounded-xl border border-border p-5 min-h-[300px]">
-            <div className="flex items-center justify-between w-full mb-3 px-1">
-              <span className="text-[10px] font-mono-code font-bold text-accent uppercase tracking-wider">
-                {currentFormat.label} ({currentFormat.ratioTag})
-              </span>
-              <span className="text-[10px] font-mono-code text-muted">
-                1080p HD Ready
-              </span>
-            </div>
-
-            <div
-              className={`relative ${currentFormat.ratioClass} bg-surface rounded-lg overflow-hidden border border-border/80 shadow-lg flex items-center justify-center`}
-            >
-              {videoId ? (
-                <iframe
-                  src={`https://www.youtube.com/embed/${videoId}?start=${Math.floor(
-                    clip.start || 0
-                  )}&end=${Math.ceil(clip.end || 60)}&autoplay=1&mute=1&controls=0&loop=1&rel=0`}
-                  title="Clip Reflow Preview"
-                  className="w-full h-full object-cover scale-150 pointer-events-none opacity-85"
-                />
-              ) : mediaAssetUrl ? (
-                <video
-                  src={mediaAssetUrl}
-                  className="w-full h-full object-cover pointer-events-none opacity-85"
-                  onLoadedMetadata={(e) => {
-                    e.target.currentTime = clip.start || 0;
-                  }}
-                />
-              ) : (
-                <div className="text-center p-3 space-y-1">
-                  <i className="bx bx-movie-play text-2xl text-accent" />
-                  <p className="text-[10px] text-secondary font-mono-code">Aspect Ratio Master</p>
-                </div>
-              )}
-
-              {/* Caption Overlay Live Simulation */}
-              <div className="absolute bottom-3 left-2 right-2 text-center pointer-events-none">
-                {selectedCaption === "ember" && (
-                  <div className="px-2 py-1 bg-black/80 backdrop-blur-xs rounded border border-white/10 inline-block shadow-sm">
-                    <p className="text-[10px] text-white leading-tight font-sans">
-                      "Faith comes by <span className="text-accent font-bold">hearing</span> the Word."
-                    </p>
-                  </div>
-                )}
-                {selectedCaption === "minimal" && (
-                  <p className="text-[10px] text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] leading-tight font-medium">
-                    "{clip.text ? clip.text.slice(0, 38) + "…" : "Sermon insight"}"
-                  </p>
-                )}
-                {selectedCaption === "solid" && (
-                  <div className="bg-black/90 px-2 py-1 rounded inline-block border-l-2 border-accent">
-                    <p className="text-[9px] font-bold text-white uppercase font-mono-code">
-                      {clip.highlight_title || clip.title || "Preaching Moment"}
-                    </p>
-                  </div>
-                )}
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-3xl animate-in fade-in duration-300">
+      <div className="doppelrand-shell max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="doppelrand-core space-y-6">
+          {/* ── Modal Header ───────────────────────────────────────── */}
+          <div className="flex items-center justify-between border-b border-white/[0.08] pb-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="eyebrow-tag text-[9px]">
+                  STUDIO RENDER CHASSIS
+                </span>
+                <span className="text-xs text-muted font-mono-code">
+                  ~{durationSec}s Runtime
+                </span>
               </div>
+              <h2 className="font-editorial text-2xl font-bold text-primary">
+                Export Preaching Reel
+              </h2>
             </div>
 
-            <p className="text-[11px] text-muted font-editorial italic mt-3 truncate max-w-[200px] text-center">
-              "{clip.highlight_title || clip.title}"
-            </p>
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-9 h-9 rounded-full bg-white/[0.05] hover:bg-white/[0.1] text-muted hover:text-primary flex items-center justify-center transition-colors"
+              aria-label="Close export dialog"
+            >
+              <i className="bx bx-x text-2xl" />
+            </button>
           </div>
 
-          {/* Right: Controls */}
-          <div className="space-y-4 text-xs">
-            {/* Format choice */}
-            <div className="space-y-1.5">
-              <label className="font-semibold text-primary block text-xs">
-                1. Aspect Ratio Format
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                {FORMAT_OPTIONS.map((fmt) => {
-                  const isSelected = selectedFormat === fmt.id;
-                  return (
+          {/* ── Render Layout: Preview Stage vs Controls ────────────── */}
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-start">
+            {/* Aspect Ratio Canvas Simulator */}
+            <div className="md:col-span-5 flex flex-col items-center justify-center p-6 rounded-2xl bg-black/70 border border-white/[0.08] shadow-inner-glow min-h-[360px]">
+              <span className="text-[10px] uppercase font-mono-code text-muted font-semibold tracking-wider mb-4">
+                Render Canvas · {aspectRatio}
+              </span>
+
+              <div
+                className={`relative bg-neutral-950 border border-white/[0.15] rounded-xl overflow-hidden shadow-2xl flex flex-col justify-between p-3 transition-all duration-500 ${
+                  aspectRatio === "9:16"
+                    ? "w-44 h-72"
+                    : aspectRatio === "1:1"
+                    ? "w-56 h-56"
+                    : "w-72 h-44"
+                }`}
+              >
+                {/* Background Video / Audio Pulse Simulation */}
+                <div className="absolute inset-0 bg-gradient-to-b from-transparent via-black/40 to-black/90 pointer-events-none z-10" />
+
+                {/* Top Badge */}
+                <div className="relative z-20 flex items-center justify-between text-[9px] font-mono-code text-white/80">
+                  <span className="px-1.5 py-0.5 rounded bg-black/60 backdrop-blur-xs font-semibold">
+                    DABAR
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                    REC
+                  </span>
+                </div>
+
+                {/* Middle Preaching Clip Simulation */}
+                <div className="relative z-20 my-auto text-center px-1 space-y-1">
+                  <div className="w-8 h-8 rounded-full bg-accent/20 border border-accent/40 text-accent flex items-center justify-center mx-auto text-sm">
+                    <i className="bx bx-play" />
+                  </div>
+                  <p className="font-editorial text-[10.5px] text-white/90 font-bold truncate">
+                    {clip?.highlight_title || clip?.title || "Preaching Moment"}
+                  </p>
+                </div>
+
+                {/* Subtitle / Caption Typography Overlay */}
+                <div className="relative z-20 text-center pb-1">
+                  <p
+                    className={`${currentCaptionObj.cssClass} text-[11px] leading-tight drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]`}
+                  >
+                    "{clip?.why ? clip.why.slice(0, 50) + "…" : "Faith cometh by hearing the word…"}"
+                  </p>
+                </div>
+              </div>
+
+              <span className="text-[10px] text-muted font-mono-code mt-4">
+                Target: {aspectRatio === "9:16" ? "1080 × 1920 px (FHD Vertical)" : aspectRatio === "1:1" ? "1080 × 1080 px" : "1920 × 1080 px"}
+              </span>
+            </div>
+
+            {/* Render Settings */}
+            <div className="md:col-span-7 space-y-6">
+              {/* Aspect Ratio Options */}
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-primary block">
+                  Aspect Ratio & Frame Format
+                </label>
+                <div className="grid grid-cols-3 gap-2.5">
+                  {ASPECT_RATIOS.map((fmt) => (
                     <button
-                      key={fmt.id}
+                      key={fmt.key}
                       type="button"
-                      onClick={() => {
-                        setSelectedFormat(fmt.id);
-                        setFileName((prev) => {
-                          const base = prev.replace(
-                            /\s*\((Vertical Clip|Phone Size|Square|Landscape|Cinema|Square Feed)\)/i,
-                            ""
-                          );
-                          return `${base} (${fmt.label})`;
-                        });
-                      }}
-                      className={`p-2.5 rounded-lg border text-left transition-all ${
-                        isSelected
+                      onClick={() => setAspectRatio(fmt.key)}
+                      className={`p-3 rounded-xl border text-left transition-all duration-300 ${
+                        aspectRatio === fmt.key
                           ? "border-accent bg-accent-muted/40 shadow-xs"
-                          : "border-border bg-surface hover:bg-surface-hover text-secondary"
+                          : "border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.05] text-secondary"
                       }`}
                     >
                       <i
-                        className={`bx ${fmt.icon} text-base mb-1 block ${
-                          isSelected ? "text-accent" : "text-muted"
+                        className={`bx ${fmt.icon} text-lg ${
+                          aspectRatio === fmt.key ? "text-accent" : "text-muted"
                         }`}
                       />
-                      <p className="font-semibold text-primary leading-tight text-[11px]">
-                        {fmt.label}
+                      <p className="font-semibold text-xs text-primary mt-1">
+                        {fmt.key}
                       </p>
-                      <p className="text-[9.5px] text-muted font-mono-code mt-0.5">
-                        {fmt.ratioTag}
+                      <p className="text-[10px] text-muted line-clamp-1">
+                        {fmt.label.split("(")[0]}
                       </p>
                     </button>
-                  );
-                })}
+                  ))}
+                </div>
               </div>
-            </div>
 
-            {/* Caption style */}
-            <div className="space-y-1.5">
-              <label className="font-semibold text-primary block text-xs">
-                2. Caption Typography Style
-              </label>
-              <div className="space-y-1.5">
-                {CAPTION_STYLES.map((style) => {
-                  const isSelected = selectedCaption === style.id;
-                  return (
+              {/* Subtitle Aesthetic */}
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-primary block">
+                  Subtitle & Typography Style
+                </label>
+                <div className="grid grid-cols-3 gap-2.5">
+                  {CAPTION_STYLES.map((cap) => (
                     <button
-                      key={style.id}
+                      key={cap.key}
                       type="button"
-                      onClick={() => setSelectedCaption(style.id)}
-                      className={`w-full p-2.5 rounded-lg border text-left flex items-center justify-between transition-all ${
-                        isSelected
-                          ? "border-accent bg-accent-muted/30"
-                          : "border-border bg-surface hover:bg-surface-hover text-secondary"
+                      onClick={() => setCaptionStyle(cap.key)}
+                      className={`p-3 rounded-xl border text-left transition-all duration-300 ${
+                        captionStyle === cap.key
+                          ? "border-accent bg-accent-muted/40 shadow-xs"
+                          : "border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.05] text-secondary"
                       }`}
                     >
-                      <div>
-                        <p className="font-semibold text-primary text-[11.5px]">
-                          {style.label}
-                        </p>
-                        <p className="text-[10px] text-muted">{style.desc}</p>
-                      </div>
-                      {isSelected && (
-                        <i className="bx bxs-check-circle text-base text-accent" />
-                      )}
+                      <p className="font-semibold text-xs text-primary">
+                        {cap.label}
+                      </p>
+                      <p className="text-[9.5px] text-muted mt-0.5 line-clamp-2">
+                        {cap.preview}
+                      </p>
                     </button>
-                  );
-                })}
+                  ))}
+                </div>
+              </div>
+
+              {/* Output Filename */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-primary block">
+                  File Title
+                </label>
+                <input
+                  type="text"
+                  value={customFileName}
+                  onChange={(e) => setCustomFileName(e.target.value)}
+                  className="w-full rounded-xl bg-white/[0.04] border border-white/[0.1] px-4 py-2.5 text-xs text-primary font-mono-code outline-none focus:border-accent"
+                />
+                <span className="text-[10.5px] text-muted block font-mono-code">
+                  Saved to: Videos/Dabar/{customFileName.replace(/\s+/g, "_")}.mp4
+                </span>
               </div>
             </div>
+          </div>
 
-            {/* File name */}
-            <div className="space-y-1.5">
-              <label className="font-semibold text-primary block text-xs">
-                3. File Output Title
-              </label>
-              <input
-                type="text"
-                value={fileName}
-                onChange={(e) => setFileName(e.target.value)}
-                className="field-input text-xs font-mono-code"
-              />
-              <p className="text-[10px] text-muted">
-                Renders MP4 to your configured <code className="text-accent">Videos/Dabar</code> folder.
-              </p>
-            </div>
-
-            {/* Footer Buttons */}
-            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-border">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-3 py-1.5 rounded-md text-xs text-secondary hover:text-primary transition-colors font-medium"
-              >
-                Cancel
-              </button>
+          {/* ── Render Feedback & Actions ───────────────────────────── */}
+          {exportedPath && (
+            <div className="p-3.5 rounded-xl border border-success/30 bg-success-muted flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2.5 text-xs text-success font-medium">
+                <i className="bx bxs-check-circle text-lg" />
+                <span>Render completed and saved.</span>
+              </div>
               <Btn
-                size="md"
-                variant="primary"
-                onClick={() =>
-                  onConfirmExport(clip, selectedFormat, selectedCaption, fileName)
-                }
-                disabled={isRendering}
+                size="sm"
+                variant="secondary"
+                icon="bx-folder-open"
+                onClick={() => openInExplorer(exportedPath)}
               >
-                <i
-                  className={`bx ${
-                    isRendering ? "bx-loader-alt bx-spin" : "bx-film"
-                  } text-base`}
-                />
-                <span>{isRendering ? "Rendering Video…" : "Export Video Clip"}</span>
+                Open in Explorer
               </Btn>
             </div>
+          )}
+
+          <div className="flex items-center justify-end gap-3 pt-4 border-t border-white/[0.08]">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-5 py-2.5 rounded-full text-xs font-semibold text-secondary hover:text-primary transition-colors"
+            >
+              Cancel
+            </button>
+
+            <Btn
+              size="lg"
+              variant="primary"
+              icon={isRendering ? "bx-loader-alt bx-spin" : "bx-film"}
+              disabled={isRendering}
+              onClick={() =>
+                onConfirmExport(clip, aspectRatio, captionStyle, customFileName)
+              }
+            >
+              {isRendering ? "Processing Video Stream…" : "Render & Save Video"}
+            </Btn>
           </div>
         </div>
       </div>

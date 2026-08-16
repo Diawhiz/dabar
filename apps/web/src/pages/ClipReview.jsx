@@ -161,10 +161,17 @@ export default function ClipReview() {
   }
 
   async function handleConfirmExport(clip, format, captionStyle, fileName) {
-    if (!currentSermonId || !clip.id) return;
-    setRenderingClipId(clip.id);
+    if (!currentSermonId || !clip) return;
+    const clipKey = clip.id || `clip-${clip.start}`;
+    setRenderingClipId(clipKey);
     try {
-      const outputPath = await renderClip(currentSermonId, clip.id);
+      const outputPath = await renderClip(
+        currentSermonId,
+        clip.id,
+        clip.start,
+        clip.end,
+        fileName || clip.highlight_title || clip.title
+      );
       setExportedNotice({
         title: clip.highlight_title || clip.title || fileName || "Clip",
         path: outputPath,

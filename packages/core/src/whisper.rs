@@ -138,6 +138,39 @@ pub async fn transcribe_audio(
 // ── AssemblyAI Implementation ───────────────────────────────────────────────
 
 /// Transcribes and extracts Auto-Chapters using AssemblyAI.
+async fn upload_with_retry(
+    client: &reqwest::Client,
+    api_key: &str,
+    audio_bytes: Vec<u8>,
+) -> Result<reqwest::Response> {
+    let max_attempts = 3;
+    let mut last_err = None;
+
+    for attempt in 1..=max_attempts {
+        tracing::info!("AssemblyAI upload attempt {attempt}/{max_attempts}...");
+        match client
+            .post(ASSEMBLYAI_UPLOAD_URL)
+            .header("Authorization", api_key)
+            .header("Content-Type", "application/octet-stream")
+            .body(audio_bytes.clone())
+            .send()
+            .await
+        {
+            Ok(resp) => return Ok(resp),
+            Err(e) => {
+                tracing::warn!("AssemblyAI upload attempt {attempt} failed: {e}. {}",
+                    if attempt < max_attempts { "Retrying..." } else { "Giving up." });
+                last_err = Some(e);
+                if attempt < max_attempts {
+                    tokio::time::sleep(std::time::Duration::from_secs(3 * attempt)).await;
+                }
+            }
+        }
+    }
+
+    Err(last_err.unwrap()).context("uploading audio to AssemblyAI (all attempts exhausted)")
+}
+
 async fn transcribe_audio_assemblyai(
     api_key: &str,
     raw_audio_path: &Path,
@@ -157,20 +190,24 @@ async fn transcribe_audio_assemblyai(
         cb(0.05);
     }
 
-    // Step 1: Upload audio file
-    tracing::info!("Uploading sermon audio to AssemblyAI: {}", raw_audio_path.display());
-    let audio_bytes = tokio::fs::read(raw_audio_path)
+    // Compress to mono 16kHz 32kbps before upload — raw YouTube-sourced audio (up to 128kbps)
+    // can be 4-6x larger and risks the upload exceeding the client timeout on slower connections.
+    let temp_dir = std::env::temp_dir().join(format!("dabar_assemblyai_{}", uuid::Uuid::new_v4()));
+    tokio::fs::create_dir_all(&temp_dir)
         .await
-        .with_context(|| format!("reading audio file {}", raw_audio_path.display()))?;
+        .with_context(|| format!("creating temp directory {}", temp_dir.display()))?;
+    let preprocessed_path = temp_dir.join("preprocessed_mono16k.mp3");
+    ffmpeg::preprocess_audio_for_whisper(raw_audio_path, &preprocessed_path).await?;
 
-    let upload_resp = client
-        .post(ASSEMBLYAI_UPLOAD_URL)
-        .header("Authorization", api_key)
-        .header("Content-Type", "application/octet-stream")
-        .body(audio_bytes)
-        .send()
+    // Step 1: Upload audio file
+    tracing::info!("Uploading sermon audio to AssemblyAI: {}", preprocessed_path.display());
+    let audio_bytes = tokio::fs::read(&preprocessed_path)
         .await
-        .context("uploading audio to AssemblyAI")?;
+        .with_context(|| format!("reading preprocessed audio file {}", preprocessed_path.display()))?;
+    tracing::info!("Preprocessed audio size for AssemblyAI upload: {:.2} MB", audio_bytes.len() as f64 / 1_048_576.0);
+
+    let upload_resp = upload_with_retry(&client, api_key, audio_bytes).await?;
+    let _ = tokio::fs::remove_dir_all(&temp_dir).await;
 
     if !upload_resp.status().is_success() {
         let status = upload_resp.status();

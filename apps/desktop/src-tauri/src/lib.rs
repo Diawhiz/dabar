@@ -70,15 +70,6 @@ async fn start_pipeline(
     state.db.insert_sermon(&sermon).await.map_err(|e| e.to_string())?;
 
     // Read settings for API keys and transcription backend choice
-    let assemblyai_api_key = state
-        .db
-        .get_setting("assemblyai_api_key")
-        .await
-        .ok()
-        .flatten()
-        .or_else(|| std::env::var("ASSEMBLYAI_API_KEY").ok())
-        .unwrap_or_default();
-
     let groq_api_key = state
         .db
         .get_setting("groq_api_key")
@@ -110,10 +101,6 @@ async fn start_pipeline(
             state.app_data_dir.join("whisper-models").join(filename)
         };
         dabar_core::whisper::TranscriptionBackend::Local { model_path }
-    } else if !assemblyai_api_key.trim().is_empty() {
-        dabar_core::whisper::TranscriptionBackend::AssemblyAI {
-            api_key: assemblyai_api_key.clone(),
-        }
     } else {
         dabar_core::whisper::TranscriptionBackend::Groq {
             api_key: groq_api_key.clone(),
@@ -166,22 +153,25 @@ async fn retry_highlights(
         .map_err(|e| e.to_string())
 }
 
-/// Render a specific highlight clip to disk and return the output file path.
+/// Render a specific highlight clip or timestamp range to disk and return the output file path.
 #[tauri::command]
 async fn render_clip(
     sermon_id: String,
-    highlight_id: String,
+    highlight_id: Option<String>,
+    clip_id: Option<String>,
+    start_time: Option<f32>,
+    end_time: Option<f32>,
+    clip_title: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
-    let sermon_id = Uuid::parse_str(&sermon_id).map_err(|e| e.to_string())?;
-    let highlight_id = Uuid::parse_str(&highlight_id).map_err(|e| e.to_string())?;
+    let sermon_uuid = Uuid::parse_str(&sermon_id).map_err(|e| format!("Invalid sermon ID: {e}"))?;
 
     let sermon = state
         .db
-        .get_sermon(sermon_id)
+        .get_sermon(sermon_uuid)
         .await
         .map_err(|e| e.to_string())?
-        .ok_or_else(|| "Sermon not found".to_string())?;
+        .ok_or_else(|| format!("Sermon not found: {sermon_id}"))?;
 
     let output_dir = state
         .db
@@ -192,15 +182,59 @@ async fn render_clip(
         .map(PathBuf::from)
         .unwrap_or_else(|| {
             dirs::video_dir()
-                .unwrap_or_else(|| dirs::home_dir().unwrap_or_default())
+                .unwrap_or_else(|| state.app_data_dir.clone())
                 .join("Dabar")
         });
 
-    let output_path = pipeline::render_clip_to_disk(&sermon, highlight_id, &output_dir)
+    let effective_id_str = highlight_id.or(clip_id);
+    let maybe_uuid = effective_id_str.as_deref().and_then(|s| Uuid::parse_str(s).ok());
+
+    // 1. If we have a valid UUID that matches a sermon highlight:
+    if let Some(h_id) = maybe_uuid {
+        if sermon.highlights.iter().any(|h| h.id == h_id) {
+            let output_path = pipeline::render_clip_to_disk(&sermon, h_id, &output_dir)
+                .await
+                .map_err(|e| e.to_string())?;
+            return Ok(output_path.to_string_lossy().to_string());
+        }
+        // If matches a chapter ID:
+        if let Some(ch) = sermon.chapters.iter().find(|c| c.id == h_id) {
+            let output_path = pipeline::render_clip_range_to_disk(
+                &sermon,
+                ch.start_time,
+                ch.end_time,
+                Some(&ch.title),
+                &output_dir,
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+            return Ok(output_path.to_string_lossy().to_string());
+        }
+    }
+
+    // 2. If start_time and end_time were provided:
+    if let (Some(start), Some(end)) = (start_time, end_time) {
+        let output_path = pipeline::render_clip_range_to_disk(
+            &sermon,
+            start,
+            end,
+            clip_title.as_deref(),
+            &output_dir,
+        )
         .await
         .map_err(|e| e.to_string())?;
+        return Ok(output_path.to_string_lossy().to_string());
+    }
 
-    Ok(output_path.to_string_lossy().to_string())
+    // 3. If there is at least one highlight in the sermon:
+    if let Some(first_hl) = sermon.highlights.first() {
+        let output_path = pipeline::render_clip_to_disk(&sermon, first_hl.id, &output_dir)
+            .await
+            .map_err(|e| e.to_string())?;
+        return Ok(output_path.to_string_lossy().to_string());
+    }
+
+    Err("No valid clip timestamp range or highlight found to render".to_string())
 }
 
 #[tauri::command]
@@ -249,7 +283,6 @@ async fn render_clip_range(
 /// Get all user settings as a serializable map.
 #[tauri::command]
 async fn get_settings(state: State<'_, AppState>) -> Result<AppSettings, String> {
-    let assemblyai_api_key = state.db.get_setting("assemblyai_api_key").await.ok().flatten().unwrap_or_default();
     let groq_api_key = state.db.get_setting("groq_api_key").await.ok().flatten().unwrap_or_default();
     let output_dir = state
         .db
@@ -267,26 +300,33 @@ async fn get_settings(state: State<'_, AppState>) -> Result<AppSettings, String>
     let offline_mode = state.db.get_setting("offline_mode").await.ok().flatten().unwrap_or_default() == "true";
     let offline_model = state.db.get_setting("offline_model").await.ok().flatten().unwrap_or_else(|| "base".to_string());
     let custom_vocab = state.db.get_setting("custom_vocabulary").await.ok().flatten().unwrap_or_default();
+    let transcription_backend = state
+        .db
+        .get_setting("transcription_backend")
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| "groq".to_string());
 
     Ok(AppSettings {
-        assemblyai_api_key,
         groq_api_key,
         output_dir,
         offline_mode,
         offline_model,
         custom_vocabulary: custom_vocab,
+        transcription_backend,
     })
 }
 
 /// Save user settings to the local database.
 #[tauri::command]
 async fn save_settings(settings: AppSettings, state: State<'_, AppState>) -> Result<(), String> {
-    state.db.set_setting("assemblyai_api_key", &settings.assemblyai_api_key).await.map_err(|e| e.to_string())?;
     state.db.set_setting("groq_api_key", &settings.groq_api_key).await.map_err(|e| e.to_string())?;
     state.db.set_setting("output_dir", &settings.output_dir).await.map_err(|e| e.to_string())?;
     state.db.set_setting("offline_mode", if settings.offline_mode { "true" } else { "false" }).await.map_err(|e| e.to_string())?;
     state.db.set_setting("offline_model", &settings.offline_model).await.map_err(|e| e.to_string())?;
     state.db.set_setting("custom_vocabulary", &settings.custom_vocabulary).await.map_err(|e| e.to_string())?;
+    state.db.set_setting("transcription_backend", &settings.transcription_backend).await.map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -426,12 +466,17 @@ async fn get_hardware_info() -> HardwareInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettings {
-    pub assemblyai_api_key: String,
     pub groq_api_key: String,
     pub output_dir: String,
     pub offline_mode: bool,
     pub offline_model: String,   // "tiny" | "base"
     pub custom_vocabulary: String,
+    #[serde(default = "default_backend_name")]
+    pub transcription_backend: String,
+}
+
+fn default_backend_name() -> String {
+    "groq".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -17,12 +17,12 @@ export default function Settings() {
   const { theme, setTheme } = useTheme();
   const [activeTab, setActiveTab] = useState("general");
   const [settings, setSettings] = useState({
-    assemblyai_api_key: "",
     groq_api_key: "",
     output_dir: "",
     offline_mode: false,
     offline_model: "base",
     custom_vocabulary: "",
+    transcription_backend: "groq",
   });
   const [deps, setDeps] = useState(null);
   const [offlineStatus, setOfflineStatus] = useState(null);
@@ -199,43 +199,16 @@ export default function Settings() {
                 </div>
               </div>
 
-              {/* AssemblyAI API Key (Primary) */}
+              {/* Groq API Key (Primary) */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <label className="font-semibold text-primary block">
-                    AssemblyAI API Key (Primary — Auto-Chapters)
+                    Groq API Key (Fast Whisper & GPT-OSS Analysis)
                   </label>
                   <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-accent text-accent-fg">
-                    Recommended
+                    Active
                   </span>
                 </div>
-                <input
-                  type="password"
-                  value={settings.assemblyai_api_key}
-                  onChange={(e) =>
-                    setSettings({ ...settings, assemblyai_api_key: e.target.value })
-                  }
-                  placeholder="AssemblyAI API Key"
-                  className="field-input font-mono"
-                />
-                <p className="text-[11px] text-muted">
-                  Enables primary transcription + automatic topic chapter segmentation with headlines & summaries. Free keys available at{" "}
-                  <a
-                    href="https://www.assemblyai.com/dashboard/signup"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-accent underline"
-                  >
-                    assemblyai.com
-                  </a>.
-                </p>
-              </div>
-
-              {/* Cloud Speech API Key (Alternative) */}
-              <div className="space-y-1.5">
-                <label className="font-semibold text-primary block">
-                  Groq API Key (Alternative Fast Whisper)
-                </label>
                 <input
                   type="password"
                   value={settings.groq_api_key}
@@ -246,7 +219,7 @@ export default function Settings() {
                   className="field-input font-mono"
                 />
                 <p className="text-[11px] text-muted">
-                  Alternative high-speed Whisper cloud transcription. You can get a free key from{" "}
+                  High-speed cloud transcription using Whisper Large v3 Turbo + intelligent pastoral chapters and clip moment detection via GPT-OSS. Free keys available at{" "}
                   <a
                     href="https://console.groq.com"
                     target="_blank"

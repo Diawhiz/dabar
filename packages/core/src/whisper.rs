@@ -4,22 +4,16 @@ use anyhow::{Context, Result};
 use reqwest::multipart::{Form, Part};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use uuid::Uuid;
 
 const GROQ_TRANSCRIPTIONS_URL: &str = "https://api.groq.com/openai/v1/audio/transcriptions";
 const WHISPER_MODEL: &str = "whisper-large-v3-turbo";
 
-const ASSEMBLYAI_UPLOAD_URL: &str = "https://api.assemblyai.com/v2/upload";
-const ASSEMBLYAI_TRANSCRIPT_URL: &str = "https://api.assemblyai.com/v2/transcript";
-
 /// Selects the transcription engine.
 ///
-/// - `AssemblyAI`: cloud API — automated speech-to-text and topic-based Auto-Chapters.
-/// - `Groq`: cloud API — fast speech-to-text via Groq Whisper.
+/// - `Groq`: cloud API — fast speech-to-text via Groq Whisper Large v3 Turbo.
 /// - `Local`: offline whisper.cpp via the `model_path` GGML model file.
 #[derive(Debug, Clone)]
 pub enum TranscriptionBackend {
-    AssemblyAI { api_key: String },
     Groq { api_key: String },
     Local { model_path: PathBuf },
 }
@@ -32,12 +26,13 @@ pub struct TranscriptionResult {
 }
 
 // Groq has a hard 25 MB payload limit.
-// We trigger chunking fallback if compressed audio exceeds 24 MB.
+// We trigger chunking fallback if compressed audio exceeds 24 MB or duration exceeds 20 minutes (1200s).
 const GROQ_MAX_FILE_BYTES: u64 = 25 * 1024 * 1024; // 25 MB
 const CHUNK_TRIGGER_BYTES: u64 = 24 * 1024 * 1024; // 24 MB
+const CHUNK_TRIGGER_DURATION_SECS: f32 = 1200.0; // 20 minutes
 
-// 30 minutes chunk duration with 5 seconds overlap
-const CHUNK_DURATION_SECS: f32 = 1800.0;
+// 15 minutes chunk duration with 5 seconds overlap
+const CHUNK_DURATION_SECS: f32 = 900.0;
 const CHUNK_OVERLAP_SECS: f32 = 5.0;
 
 #[derive(Debug, Deserialize)]
@@ -53,73 +48,35 @@ struct GroqSegment {
     text: String,
 }
 
-// ── AssemblyAI Schema ────────────────────────────────────────────────────────
-
-#[derive(Debug, Deserialize)]
-struct AssemblyAIUploadResponse {
-    upload_url: String,
-}
-
-#[derive(Debug, Serialize)]
-struct AssemblyAITranscriptRequest {
-    audio_url: String,
-    auto_chapters: bool,
-    punctuate: bool,
-    format_text: bool,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Deserialize)]
-struct AssemblyAITranscriptCreated {
-    id: String,
-    status: String,
-    error: Option<String>,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Deserialize)]
-struct AssemblyAIPollResponse {
-    id: String,
-    status: String,
-    error: Option<String>,
-    text: Option<String>,
-    words: Option<Vec<AssemblyAIWord>>,
-    chapters: Option<Vec<AssemblyAIChapter>>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct AssemblyAIWord {
-    pub text: String,
-    pub start: u64, // ms
-    pub end: u64,   // ms
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct AssemblyAIChapter {
-    pub gist: Option<String>,
-    pub headline: Option<String>,
-    pub summary: Option<String>,
-    pub start: u64, // ms
-    pub end: u64,   // ms
+/// Builds domain-tailored prompt to steer Whisper toward Nigerian-accented English,
+/// Christian preaching vocabulary, and custom church terminology.
+pub fn build_whisper_prompt(custom_vocab: Option<&str>) -> String {
+    let mut prompt = "Sermon transcript in Nigerian English, Christian preaching, Bible exposition, scripture readings, Yoruba interjections (Hallelujah, Amen, Pastor, Apostle, Jesus Christ, Holy Spirit, Jehovah, Lord God, Bible).".to_string();
+    if let Some(vocab) = custom_vocab {
+        let clean = vocab.trim();
+        if !clean.is_empty() {
+            prompt.push_str(" Church Vocabulary: ");
+            prompt.push_str(clean);
+        }
+    }
+    prompt
 }
 
 /// Transcribes an audio file using the specified backend.
 ///
-/// - Preprocesses audio to the correct format for the chosen backend.
+/// - Preprocesses audio to high-clarity mono 16kHz 64kbps MP3.
 /// - Splits large files into chunks automatically if using Groq.
-/// - Performs async upload and auto-chaptering if using AssemblyAI.
+/// - Injects domain-specific initial prompt and custom vocabulary for maximum accuracy.
 /// - Calls `progress_callback` with a float 0.0–1.0 to report transcription progress.
 pub async fn transcribe_audio(
     backend: &TranscriptionBackend,
     raw_audio_path: &Path,
+    custom_vocab: Option<&str>,
     progress_callback: Option<Box<dyn Fn(f32) + Send>>,
 ) -> Result<TranscriptionResult> {
     match backend {
-        TranscriptionBackend::AssemblyAI { api_key } => {
-            transcribe_audio_assemblyai(api_key, raw_audio_path, progress_callback).await
-        }
         TranscriptionBackend::Groq { api_key } => {
-            let segments = transcribe_audio_groq(api_key, raw_audio_path, progress_callback).await?;
+            let segments = transcribe_audio_groq(api_key, raw_audio_path, custom_vocab, progress_callback).await?;
             Ok(TranscriptionResult {
                 segments,
                 chapters: Vec::new(),
@@ -135,291 +92,12 @@ pub async fn transcribe_audio(
     }
 }
 
-// ── AssemblyAI Implementation ───────────────────────────────────────────────
-
-/// Transcribes and extracts Auto-Chapters using AssemblyAI.
-async fn upload_with_retry(
-    client: &reqwest::Client,
-    api_key: &str,
-    audio_bytes: Vec<u8>,
-) -> Result<reqwest::Response> {
-    let max_attempts = 3;
-    let mut last_err = None;
-
-    for attempt in 1..=max_attempts {
-        tracing::info!("AssemblyAI upload attempt {attempt}/{max_attempts}...");
-        match client
-            .post(ASSEMBLYAI_UPLOAD_URL)
-            .header("Authorization", api_key)
-            .header("Content-Type", "application/octet-stream")
-            .body(audio_bytes.clone())
-            .send()
-            .await
-        {
-            Ok(resp) => return Ok(resp),
-            Err(e) => {
-                tracing::warn!("AssemblyAI upload attempt {attempt} failed: {e}. {}",
-                    if attempt < max_attempts { "Retrying..." } else { "Giving up." });
-                last_err = Some(e);
-                if attempt < max_attempts {
-                    tokio::time::sleep(std::time::Duration::from_secs(3 * attempt)).await;
-                }
-            }
-        }
-    }
-
-    Err(last_err.unwrap()).context("uploading audio to AssemblyAI (all attempts exhausted)")
-}
-
-async fn transcribe_audio_assemblyai(
-    api_key: &str,
-    raw_audio_path: &Path,
-    progress_callback: Option<Box<dyn Fn(f32) + Send>>,
-) -> Result<TranscriptionResult> {
-    let api_key = api_key.trim();
-    if api_key.is_empty() {
-        anyhow::bail!("AssemblyAI API key is missing. Please configure it in Settings.");
-    }
-
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(600))
-        .build()
-        .context("building reqwest client")?;
-
-    if let Some(ref cb) = progress_callback {
-        cb(0.05);
-    }
-
-    // Compress to mono 16kHz 32kbps before upload — raw YouTube-sourced audio (up to 128kbps)
-    // can be 4-6x larger and risks the upload exceeding the client timeout on slower connections.
-    let temp_dir = std::env::temp_dir().join(format!("dabar_assemblyai_{}", uuid::Uuid::new_v4()));
-    tokio::fs::create_dir_all(&temp_dir)
-        .await
-        .with_context(|| format!("creating temp directory {}", temp_dir.display()))?;
-    let preprocessed_path = temp_dir.join("preprocessed_mono16k.mp3");
-    ffmpeg::preprocess_audio_for_whisper(raw_audio_path, &preprocessed_path).await?;
-
-    // Step 1: Upload audio file
-    tracing::info!("Uploading sermon audio to AssemblyAI: {}", preprocessed_path.display());
-    let audio_bytes = tokio::fs::read(&preprocessed_path)
-        .await
-        .with_context(|| format!("reading preprocessed audio file {}", preprocessed_path.display()))?;
-    tracing::info!("Preprocessed audio size for AssemblyAI upload: {:.2} MB", audio_bytes.len() as f64 / 1_048_576.0);
-
-    let upload_resp = upload_with_retry(&client, api_key, audio_bytes).await?;
-    let _ = tokio::fs::remove_dir_all(&temp_dir).await;
-
-    if !upload_resp.status().is_success() {
-        let status = upload_resp.status();
-        let body = upload_resp.text().await.unwrap_or_default();
-        if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
-            anyhow::bail!("AssemblyAI Authentication failed (HTTP {status}): Check your AssemblyAI API key in Settings.");
-        }
-        anyhow::bail!("AssemblyAI audio upload failed (HTTP {status}): {body}");
-    }
-
-    let upload_data: AssemblyAIUploadResponse = upload_resp
-        .json()
-        .await
-        .context("parsing AssemblyAI upload response")?;
-
-    if let Some(ref cb) = progress_callback {
-        cb(0.20);
-    }
-
-    // Step 2: Submit transcription with Auto-Chapters
-    tracing::info!("Submitting transcription request with Auto-Chapters to AssemblyAI...");
-    let request_body = AssemblyAITranscriptRequest {
-        audio_url: upload_data.upload_url,
-        auto_chapters: true,
-        punctuate: true,
-        format_text: true,
-    };
-
-    let submit_resp = client
-        .post(ASSEMBLYAI_TRANSCRIPT_URL)
-        .header("Authorization", api_key)
-        .header("Content-Type", "application/json")
-        .json(&request_body)
-        .send()
-        .await
-        .context("submitting transcript request to AssemblyAI")?;
-
-    if !submit_resp.status().is_success() {
-        let status = submit_resp.status();
-        let body = submit_resp.text().await.unwrap_or_default();
-        anyhow::bail!("AssemblyAI transcript creation failed (HTTP {status}): {body}");
-    }
-
-    let created_data: AssemblyAITranscriptCreated = submit_resp
-        .json()
-        .await
-        .context("parsing AssemblyAI transcript creation response")?;
-
-    let transcript_id = created_data.id;
-    let poll_url = format!("{ASSEMBLYAI_TRANSCRIPT_URL}/{transcript_id}");
-    tracing::info!("AssemblyAI transcription job started: ID {transcript_id}");
-
-    // Step 3: Polling loop
-    let mut progress_pct: f32 = 0.25;
-    let mut attempts = 0;
-    let max_attempts = 300; // ~15 minutes max polling
-
-    let poll_result: AssemblyAIPollResponse = loop {
-        attempts += 1;
-        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-
-        let poll_resp = client
-            .get(&poll_url)
-            .header("Authorization", api_key)
-            .send()
-            .await;
-
-        let poll_resp = match poll_resp {
-            Ok(r) => r,
-            Err(e) => {
-                tracing::warn!("AssemblyAI poll network warning: {e}. Retrying...");
-                continue;
-            }
-        };
-
-        if !poll_resp.status().is_success() {
-            let status = poll_resp.status();
-            tracing::warn!("AssemblyAI poll returned HTTP {status}. Retrying...");
-            continue;
-        }
-
-        let poll_data: AssemblyAIPollResponse = match poll_resp.json().await {
-            Ok(d) => d,
-            Err(e) => {
-                tracing::warn!("AssemblyAI poll JSON parsing warning: {e}. Retrying...");
-                continue;
-            }
-        };
-
-        match poll_data.status.as_str() {
-            "completed" => {
-                if let Some(ref cb) = progress_callback {
-                    cb(1.0);
-                }
-                break poll_data;
-            }
-            "error" => {
-                let err_msg = poll_data
-                    .error
-                    .unwrap_or_else(|| "Unknown AssemblyAI transcription error".to_string());
-                anyhow::bail!("AssemblyAI transcription error: {err_msg}");
-            }
-            _ => {
-                // Status is "queued" or "processing"
-                progress_pct = (progress_pct + 0.02).min(0.95);
-                if let Some(ref cb) = progress_callback {
-                    cb(progress_pct);
-                }
-            }
-        }
-
-        if attempts >= max_attempts {
-            anyhow::bail!("AssemblyAI transcription timed out after 15 minutes.");
-        }
-    };
-
-    // Step 4: Map AssemblyAI response to TranscriptSegments and Chapters
-    let segments = if let Some(words) = poll_result.words {
-        words_to_segments(&words)
-    } else if let Some(text) = poll_result.text {
-        vec![TranscriptSegment {
-            start: 0.0,
-            end: 0.0,
-            text,
-        }]
-    } else {
-        Vec::new()
-    };
-
-    let chapters = if let Some(raw_chapters) = poll_result.chapters {
-        raw_chapters
-            .into_iter()
-            .map(|c| {
-                let title = c
-                    .headline
-                    .filter(|h| !h.trim().is_empty())
-                    .or(c.gist)
-                    .unwrap_or_else(|| "Key Topic".to_string());
-                let summary = c.summary.unwrap_or_default();
-                Chapter {
-                    id: Uuid::new_v4(),
-                    title,
-                    summary,
-                    start_time: (c.start as f32) / 1000.0,
-                    end_time: (c.end as f32) / 1000.0,
-                }
-            })
-            .collect()
-    } else {
-        Vec::new()
-    };
-
-    tracing::info!(
-        "AssemblyAI transcription completed successfully: {} segments, {} chapters",
-        segments.len(),
-        chapters.len()
-    );
-
-    Ok(TranscriptionResult { segments, chapters })
-}
-
-/// Converts timestamped words into natural paragraph/sentence segments.
-pub fn words_to_segments(words: &[AssemblyAIWord]) -> Vec<TranscriptSegment> {
-    if words.is_empty() {
-        return Vec::new();
-    }
-    let mut segments = Vec::new();
-    let mut current_words: Vec<String> = Vec::new();
-    let mut seg_start = (words[0].start as f32) / 1000.0;
-    let mut seg_end = (words[0].end as f32) / 1000.0;
-
-    for w in words {
-        let text = w.text.trim().to_string();
-        if text.is_empty() {
-            continue;
-        }
-        if current_words.is_empty() {
-            seg_start = (w.start as f32) / 1000.0;
-        }
-        seg_end = (w.end as f32) / 1000.0;
-        current_words.push(text.clone());
-
-        let ends_sentence = text.ends_with('.') || text.ends_with('?') || text.ends_with('!');
-        let duration = seg_end - seg_start;
-        let word_count = current_words.len();
-
-        if ends_sentence || word_count >= 20 || (word_count >= 10 && duration >= 5.0) {
-            segments.push(TranscriptSegment {
-                start: seg_start,
-                end: seg_end,
-                text: current_words.join(" "),
-            });
-            current_words.clear();
-        }
-    }
-
-    if !current_words.is_empty() {
-        segments.push(TranscriptSegment {
-            start: seg_start,
-            end: seg_end,
-            text: current_words.join(" "),
-        });
-    }
-
-    segments
-}
-
 // ── Groq Whisper Implementation ─────────────────────────────────────────────
 
 async fn transcribe_audio_groq(
     api_key: &str,
     raw_audio_path: &Path,
+    custom_vocab: Option<&str>,
     progress_callback: Option<Box<dyn Fn(f32) + Send>>,
 ) -> Result<Vec<TranscriptSegment>> {
     let temp_dir = std::env::temp_dir().join(format!("dabar_whisper_{}", uuid::Uuid::new_v4()));
@@ -431,7 +109,7 @@ async fn transcribe_audio_groq(
         cb(0.05);
     }
 
-    let result = transcribe_audio_internal(api_key, raw_audio_path, &temp_dir, progress_callback).await;
+    let result = transcribe_audio_internal(api_key, raw_audio_path, &temp_dir, custom_vocab, progress_callback).await;
     let _ = tokio::fs::remove_dir_all(&temp_dir).await;
     result
 }
@@ -449,7 +127,7 @@ async fn transcribe_audio_local(
         );
     }
     anyhow::bail!(
-        "Offline transcription is not yet enabled in this build. Please configure an AssemblyAI API key in Settings."
+        "Offline transcription is not yet enabled in this build. Please configure your Groq API key in Settings."
     )
 }
 
@@ -457,19 +135,20 @@ async fn transcribe_audio_internal(
     api_key: &str,
     raw_audio_path: &Path,
     temp_dir: &Path,
+    custom_vocab: Option<&str>,
     progress_callback: Option<Box<dyn Fn(f32) + Send>>,
 ) -> Result<Vec<TranscriptSegment>> {
     let preprocessed_path = temp_dir.join("preprocessed_mono16k.mp3");
 
     tracing::info!(
-        "Preprocessing audio for Whisper (mono, 16kHz, 32kbps MP3): {}",
+        "Preprocessing audio for Whisper (mono, 16kHz, 64kbps MP3): {}",
         raw_audio_path.display()
     );
 
     ffmpeg::preprocess_audio_for_whisper(raw_audio_path, &preprocessed_path).await?;
 
     if let Some(ref cb) = progress_callback {
-        cb(0.35);
+        cb(0.15);
     }
 
     let metadata = tokio::fs::metadata(&preprocessed_path)
@@ -478,30 +157,38 @@ async fn transcribe_audio_internal(
 
     let file_size = metadata.len();
     let size_mb = (file_size as f64) / (1024.0 * 1024.0);
+    let duration = ffmpeg::get_media_duration(&preprocessed_path).await.unwrap_or(0.0);
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(300))
         .build()
         .context("building reqwest client")?;
 
-    if file_size <= CHUNK_TRIGGER_BYTES {
+    let needs_chunking = file_size > CHUNK_TRIGGER_BYTES || duration >= CHUNK_TRIGGER_DURATION_SECS;
+
+    if !needs_chunking {
         tracing::info!(
-            "Preprocessed audio fits in single request ({size_mb:.2} MB <= 24.00 MB limit margin)"
+            "Preprocessed audio fits in single request ({size_mb:.2} MB, duration: {duration:.1}s)"
         );
-        let res = transcribe_single_audio_file(&client, api_key, &preprocessed_path, 0.0).await;
+        let res = transcribe_single_audio_file(&client, api_key, &preprocessed_path, 0.0, custom_vocab).await;
         if let Some(ref cb) = progress_callback {
             cb(1.0);
         }
         res
     } else {
-        tracing::warn!(
-            "Preprocessed audio ({size_mb:.2} MB) exceeds safe margin (24.00 MB). Initiating chunked transcription fallback..."
+        tracing::info!(
+            "Preprocessed audio ({size_mb:.2} MB, duration: {duration:.1}s) triggers chunked transcription. Initiating parallel chunked flow..."
         );
-        let res = transcribe_chunked_audio(&client, api_key, &preprocessed_path, temp_dir).await;
-        if let Some(ref cb) = progress_callback {
-            cb(1.0);
-        }
-        res
+        transcribe_chunked_audio(
+            &client,
+            api_key,
+            &preprocessed_path,
+            temp_dir,
+            duration,
+            custom_vocab,
+            progress_callback,
+        )
+        .await
     }
 }
 
@@ -510,6 +197,7 @@ async fn transcribe_single_audio_file(
     api_key: &str,
     audio_path: &Path,
     time_offset: f32,
+    custom_vocab: Option<&str>,
 ) -> Result<Vec<TranscriptSegment>> {
     let bytes = tokio::fs::read(audio_path)
         .await
@@ -537,12 +225,17 @@ async fn transcribe_single_audio_file(
         );
     }
 
+    let prompt = build_whisper_prompt(custom_vocab);
+
     let mut attempts = 0;
     let transcription: GroqTranscription = loop {
         attempts += 1;
         let file_part = Part::bytes(bytes.clone()).file_name(filename.clone());
         let form = Form::new()
             .text("model", WHISPER_MODEL)
+            .text("language", "en")
+            .text("temperature", "0.0")
+            .text("prompt", prompt.clone())
             .text("response_format", "verbose_json")
             .part("file", file_part);
 
@@ -632,21 +325,32 @@ async fn transcribe_chunked_audio(
     api_key: &str,
     audio_path: &Path,
     chunk_dir: &Path,
+    total_duration: f32,
+    custom_vocab: Option<&str>,
+    progress_callback: Option<Box<dyn Fn(f32) + Send>>,
 ) -> Result<Vec<TranscriptSegment>> {
-    let total_duration = ffmpeg::get_media_duration(audio_path).await?;
+    let duration = if total_duration > 0.0 {
+        total_duration
+    } else {
+        ffmpeg::get_media_duration(audio_path).await?
+    };
+
     tracing::info!(
         "Splitting audio of total duration {:.2}s into ~{:.0}s chunks with {:.0}s overlap",
-        total_duration,
+        duration,
         CHUNK_DURATION_SECS,
         CHUNK_OVERLAP_SECS
     );
 
-    let mut chunk_specs: Vec<(usize, f32, std::path::PathBuf)> = Vec::new();
     let mut current_start: f32 = 0.0;
     let mut chunk_index: usize = 0;
+    let mut join_set = tokio::task::JoinSet::new();
+    let mut total_chunks = 0;
+    let vocab_owned = custom_vocab.map(|s| s.to_string());
 
-    while current_start < total_duration {
-        let duration_to_extract = (total_duration - current_start).min(CHUNK_DURATION_SECS);
+    // Overlap audio chunk extraction with immediate network dispatch
+    while current_start < duration {
+        let duration_to_extract = (duration - current_start).min(CHUNK_DURATION_SECS);
         let chunk_file = chunk_dir.join(format!("chunk_{chunk_index:03}.mp3"));
 
         tracing::info!(
@@ -662,37 +366,71 @@ async fn transcribe_chunked_audio(
         .await
         .with_context(|| format!("extracting audio chunk #{chunk_index}"))?;
 
-        chunk_specs.push((chunk_index, current_start, chunk_file));
+        let client_clone = client.clone();
+        let api_key_clone = api_key.to_string();
+        let file_path = chunk_file;
+        let start_time = current_start;
+        let idx = chunk_index;
+        let vocab_clone = vocab_owned.clone();
+
+        join_set.spawn(async move {
+            let res = transcribe_single_audio_file(
+                &client_clone,
+                &api_key_clone,
+                &file_path,
+                0.0,
+                vocab_clone.as_deref(),
+            )
+            .await;
+            (idx, start_time, res)
+        });
 
         let advance = CHUNK_DURATION_SECS - CHUNK_OVERLAP_SECS;
         current_start += advance;
         chunk_index += 1;
+        total_chunks += 1;
     }
 
-    let mut join_set = tokio::task::JoinSet::new();
-    for (idx, start_time, file_path) in chunk_specs {
-        let client_clone = client.clone();
-        let api_key_clone = api_key.to_string();
-        join_set.spawn(async move {
-            let res = transcribe_single_audio_file(&client_clone, &api_key_clone, &file_path, 0.0).await;
-            (idx, start_time, res)
-        });
+    if let Some(ref cb) = progress_callback {
+        cb(0.25);
     }
 
     let mut chunk_results: Vec<(f32, Vec<TranscriptSegment>)> = Vec::new();
+    let mut completed_chunks = 0;
+
     while let Some(res) = join_set.join_next().await {
         let (_idx, start_time, result) = res.context("joining chunk transcription task")?;
         let segments = result?;
         chunk_results.push((start_time, segments));
+        completed_chunks += 1;
+
+        if let Some(ref cb) = progress_callback {
+            if total_chunks > 0 {
+                let pct = 0.25 + 0.65 * (completed_chunks as f32 / total_chunks as f32);
+                cb(pct.min(0.92));
+            }
+        }
+    }
+
+    if let Some(ref cb) = progress_callback {
+        cb(0.95);
     }
 
     chunk_results.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-    Ok(stitch_transcript_chunks(chunk_results))
+    let stitched = stitch_transcript_chunks(chunk_results);
+
+    if let Some(ref cb) = progress_callback {
+        cb(1.0);
+    }
+
+    Ok(stitched)
 }
 
 pub fn stitch_transcript_chunks(
-    chunk_results: Vec<(f32, Vec<TranscriptSegment>)>,
+    mut chunk_results: Vec<(f32, Vec<TranscriptSegment>)>,
 ) -> Vec<TranscriptSegment> {
+    chunk_results.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+
     let mut stitched: Vec<TranscriptSegment> = Vec::new();
     let mut last_end: f32 = 0.0;
 
@@ -704,9 +442,11 @@ pub fn stitch_transcript_chunks(
             seg.end = abs_end;
 
             if !stitched.is_empty() {
+                // If segment completely falls inside previously covered time span, skip duplicate
                 if abs_end <= last_end + 0.3 {
                     continue;
                 }
+                // If segment crosses the boundary, clamp start to last_end to prevent overlap
                 if abs_start < last_end {
                     seg.start = last_end;
                 }
@@ -727,36 +467,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_words_to_segments() {
-        let words = vec![
-            AssemblyAIWord {
-                text: "Grace".into(),
-                start: 0,
-                end: 500,
-            },
-            AssemblyAIWord {
-                text: "and".into(),
-                start: 550,
-                end: 800,
-            },
-            AssemblyAIWord {
-                text: "peace.".into(),
-                start: 850,
-                end: 1200,
-            },
-            AssemblyAIWord {
-                text: "Welcome".into(),
-                start: 1500,
-                end: 2000,
-            },
-        ];
-
-        let segs = words_to_segments(&words);
-        assert_eq!(segs.len(), 2);
-        assert_eq!(segs[0].text, "Grace and peace.");
-        assert_eq!(segs[0].start, 0.0);
-        assert_eq!(segs[0].end, 1.2);
-        assert_eq!(segs[1].text, "Welcome");
+    fn test_build_whisper_prompt() {
+        let prompt = build_whisper_prompt(Some("Olorun, Oluwa, Pastor Emmanuel"));
+        assert!(prompt.contains("Nigerian English"));
+        assert!(prompt.contains("Pastor Emmanuel"));
     }
 
     #[test]
@@ -778,5 +492,84 @@ mod tests {
         assert_eq!(stitched.len(), 2);
         assert_eq!(stitched[0].start, 0.0);
         assert_eq!(stitched[1].end, 10.0);
+    }
+
+    #[test]
+    fn test_stitch_multiple_overlapping_chunks() {
+        let chunk0 = vec![
+            TranscriptSegment {
+                start: 0.0,
+                end: 5.0,
+                text: "In the beginning".into(),
+            },
+            TranscriptSegment {
+                start: 5.0,
+                end: 10.0,
+                text: "God created the heavens".into(),
+            },
+        ];
+
+        // Chunk 1 starts at 8.0s (2.0s overlap with Chunk 0's 8.0-10.0 range)
+        let chunk1 = vec![
+            // Duplicate segment from overlap (abs: 8.0 -> 9.8s <= 10.0s + 0.3s)
+            TranscriptSegment {
+                start: 0.0,
+                end: 1.8,
+                text: "created the heavens".into(),
+            },
+            // Overlap boundary segment (abs: 9.8 -> 14.0s) -> clamped to start at 10.0s
+            TranscriptSegment {
+                start: 1.8,
+                end: 6.0,
+                text: "and the earth.".into(),
+            },
+            // Subsequent normal segment (abs: 14.0 -> 20.0s)
+            TranscriptSegment {
+                start: 6.0,
+                end: 12.0,
+                text: "Now the earth was formless and empty.".into(),
+            },
+        ];
+
+        let stitched = stitch_transcript_chunks(vec![(0.0, chunk0), (8.0, chunk1)]);
+        assert_eq!(stitched.len(), 4);
+        assert_eq!(stitched[0].text, "In the beginning");
+        assert_eq!(stitched[0].start, 0.0);
+        assert_eq!(stitched[0].end, 5.0);
+
+        assert_eq!(stitched[1].text, "God created the heavens");
+        assert_eq!(stitched[1].start, 5.0);
+        assert_eq!(stitched[1].end, 10.0);
+
+        // Clamped start
+        assert_eq!(stitched[2].text, "and the earth.");
+        assert_eq!(stitched[2].start, 10.0);
+        assert_eq!(stitched[2].end, 14.0);
+
+        assert_eq!(stitched[3].text, "Now the earth was formless and empty.");
+        assert_eq!(stitched[3].start, 14.0);
+        assert_eq!(stitched[3].end, 20.0);
+    }
+
+    #[test]
+    fn test_stitch_out_of_order_chunks() {
+        let chunk0 = vec![TranscriptSegment {
+            start: 0.0,
+            end: 5.0,
+            text: "Part 1".into(),
+        }];
+        let chunk1 = vec![TranscriptSegment {
+            start: 0.0,
+            end: 5.0,
+            text: "Part 2".into(),
+        }];
+
+        // Passed out of chronological order
+        let stitched = stitch_transcript_chunks(vec![(10.0, chunk1), (0.0, chunk0)]);
+        assert_eq!(stitched.len(), 2);
+        assert_eq!(stitched[0].text, "Part 1");
+        assert_eq!(stitched[0].start, 0.0);
+        assert_eq!(stitched[1].text, "Part 2");
+        assert_eq!(stitched[1].start, 10.0);
     }
 }

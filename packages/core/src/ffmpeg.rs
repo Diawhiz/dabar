@@ -2,6 +2,29 @@ use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use tokio::process::Command;
 
+pub async fn has_video_stream(input_source: &str) -> bool {
+    let output = get_binary_command("ffprobe")
+        .arg("-v")
+        .arg("error")
+        .arg("-select_streams")
+        .arg("v:0")
+        .arg("-show_entries")
+        .arg("stream=codec_type")
+        .arg("-of")
+        .arg("csv=p=0")
+        .arg(input_source)
+        .output()
+        .await;
+
+    match output {
+        Ok(out) => {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            stdout.trim() == "video"
+        }
+        Err(_) => false,
+    }
+}
+
 pub async fn extract_vertical_clip(
     input_source: &str,
     output_path: &Path,
@@ -15,30 +38,69 @@ pub async fn extract_vertical_clip(
     }
 
     let duration = end_time - start_time;
-    let output = get_binary_command("ffmpeg")
-        .arg("-y")
+    let has_video = has_video_stream(input_source).await;
+
+    let mut cmd = get_binary_command("ffmpeg");
+    cmd.arg("-y")
         .arg("-ss")
         .arg(format!("{start_time:.3}"))
         .arg("-i")
         .arg(input_source)
         .arg("-t")
         .arg(format!("{duration:.3}"))
-        .arg("-vf")
-        .arg("split[original][blurred];[blurred]scale=1080:1920,gblur=sigma=20[bg];[original]scale=1080:-2[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2")
-        .arg("-c:v")
-        .arg("libx264")
-        .arg("-crf")
-        .arg("22")
-        .arg("-maxrate")
-        .arg("6000k")
-        .arg("-bufsize")
-        .arg("12000k")
-        .arg("-preset")
-        .arg("veryfast")
-        .arg("-c:a")
-        .arg("aac")
-        .arg("-b:a")
-        .arg("128k")
+        .arg("-avoid_negative_ts")
+        .arg("make_zero");
+
+    if has_video {
+        // High-definition 9:16 vertical video:
+        // Background: scales to 1080x1920 keeping original aspect ratio and crops excess, with smooth boxblur
+        // Foreground: fits cleanly within 1080x1920 with crisp original aspect ratio (never stretched or squished)
+        // Output: libx264 with yuv420p for 100% universal mobile and desktop playback
+        cmd.arg("-filter_complex")
+            .arg("[0:v]split[fg_in][bg_in];[bg_in]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=20:5[bg];[fg_in]scale=1080:1920:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2[v]")
+            .arg("-map")
+            .arg("[v]")
+            .arg("-map")
+            .arg("0:a?")
+            .arg("-c:v")
+            .arg("libx264")
+            .arg("-pix_fmt")
+            .arg("yuv420p")
+            .arg("-crf")
+            .arg("20")
+            .arg("-preset")
+            .arg("veryfast")
+            .arg("-c:a")
+            .arg("aac")
+            .arg("-b:a")
+            .arg("192k");
+    } else {
+        // Audio-only source: render clean 1080x1920 vertical video card with waveform visualizer
+        let filter_str = format!(
+            "color=c=0x0f172a:s=1080x1920:d={duration:.3}:r=30[bg];[0:a]showwaves=s=960x380:mode=cline:colors=0xd97706[wave];[bg][wave]overlay=(W-w)/2:(H-h)/2:shortest=1[v]"
+        );
+        cmd.arg("-filter_complex")
+            .arg(&filter_str)
+            .arg("-map")
+            .arg("[v]")
+            .arg("-map")
+            .arg("0:a")
+            .arg("-c:v")
+            .arg("libx264")
+            .arg("-pix_fmt")
+            .arg("yuv420p")
+            .arg("-crf")
+            .arg("20")
+            .arg("-preset")
+            .arg("veryfast")
+            .arg("-c:a")
+            .arg("aac")
+            .arg("-b:a")
+            .arg("192k")
+            .arg("-shortest");
+    }
+
+    let output = cmd
         .arg(output_path)
         .output()
         .await
@@ -110,9 +172,9 @@ pub async fn preprocess_audio_for_whisper(
         .arg("-c:a")
         .arg("libmp3lame")
         .arg("-b:a")
-        .arg("32k")
+        .arg("64k")
         .arg("-compression_level")
-        .arg("0")
+        .arg("2")
         .arg(output_path)
         .output()
         .await
@@ -150,9 +212,9 @@ pub async fn extract_audio_chunk(
         .arg("-c:a")
         .arg("libmp3lame")
         .arg("-b:a")
-        .arg("32k")
+        .arg("64k")
         .arg("-compression_level")
-        .arg("0")
+        .arg("2")
         .arg(output_path)
         .output()
         .await
@@ -227,10 +289,12 @@ pub async fn check_ffmpeg_installed() -> Result<String> {
 }
 
 fn get_binary_command(name: &str) -> Command {
-    if name == "ffmpeg" {
-        if let Ok(custom_path) = std::env::var("FFMPEG_PATH") {
-            if !custom_path.trim().is_empty() {
-                return Command::new(custom_path.trim());
+    let env_key = format!("{}_PATH", name.to_uppercase().replace('-', "_"));
+    if let Ok(custom_path) = std::env::var(&env_key) {
+        if !custom_path.trim().is_empty() {
+            let p = PathBuf::from(custom_path.trim());
+            if p.exists() {
+                return Command::new(p);
             }
         }
     }
@@ -241,9 +305,32 @@ fn get_binary_command(name: &str) -> Command {
         name.to_string()
     };
 
-    // Walk up ancestor directories (cwd, cwd/.., cwd/../.., ...) to find
-    // bin/<exe> at the workspace root regardless of which subdirectory
-    // cargo run was invoked from (e.g. apps/server/ -> dabar/bin/).
+    // 1. Check AppData / LocalAppData / UserProfile .dabar/bin
+    if let Ok(appdata) = std::env::var("APPDATA") {
+        let candidate = PathBuf::from(&appdata).join("dabar").join("bin").join(&exe_name);
+        if candidate.exists() {
+            return Command::new(candidate);
+        }
+    }
+    if let Ok(localappdata) = std::env::var("LOCALAPPDATA") {
+        let candidate = PathBuf::from(&localappdata).join("dabar").join("bin").join(&exe_name);
+        if candidate.exists() {
+            return Command::new(candidate);
+        }
+    }
+    if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
+        let home_p = PathBuf::from(&home);
+        let cand1 = home_p.join(".dabar").join("bin").join(&exe_name);
+        if cand1.exists() {
+            return Command::new(cand1);
+        }
+        let cand2 = home_p.join(".local").join("bin").join(&exe_name);
+        if cand2.exists() {
+            return Command::new(cand2);
+        }
+    }
+
+    // 2. Walk up ancestor directories (cwd, cwd/.., cwd/../.., ...) to find bin/<exe>
     if let Ok(cwd) = std::env::current_dir() {
         let mut dir: Option<&Path> = Some(cwd.as_path());
         while let Some(ancestor) = dir {
@@ -252,7 +339,6 @@ fn get_binary_command(name: &str) -> Command {
             if candidate.exists() {
                 return Command::new(candidate);
             }
-            // Check subfolders inside bin/ (e.g. bin/ffmpeg-master.../bin/ffmpeg.exe)
             if let Ok(mut entries) = std::fs::read_dir(&bin_dir) {
                 while let Some(Ok(entry)) = entries.next() {
                     let path = entry.path();
@@ -269,13 +355,6 @@ fn get_binary_command(name: &str) -> Command {
                 }
             }
             dir = ancestor.parent();
-        }
-    }
-
-    if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
-        let candidate = PathBuf::from(&home).join(".local/bin").join(&exe_name);
-        if candidate.exists() {
-            return Command::new(candidate);
         }
     }
 

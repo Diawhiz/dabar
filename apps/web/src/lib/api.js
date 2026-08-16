@@ -97,12 +97,19 @@ export async function createSermon(source) {
 /**
  * Render a vertical clip to disk and return the output file path.
  */
-export async function renderClip(sermonId, highlightId) {
+export async function renderClip(sermonId, clipId, startTime, endTime, clipTitle) {
   const core = await getTauriCore();
   if (core) {
-    return await core.invoke("render_clip", { sermonId, highlightId });
+    return await core.invoke("render_clip", {
+      sermonId,
+      highlightId: typeof clipId === "string" ? clipId : null,
+      clipId: typeof clipId === "string" ? clipId : null,
+      startTime: typeof startTime === "number" ? Number(startTime) : null,
+      endTime: typeof endTime === "number" ? Number(endTime) : null,
+      clipTitle: clipTitle || null,
+    });
   }
-  return "C:\\Users\\Mock\\Videos\\Dabar\\mock_clip.mp4";
+  return "C:\\Users\\User\\Videos\\Dabar\\dabar_clip.mp4";
 }
 
 /**
@@ -214,12 +221,12 @@ export async function getSettings() {
   return local
     ? JSON.parse(local)
     : {
-        assemblyai_api_key: "",
         groq_api_key: "",
         output_dir: "Videos/Dabar",
         offline_mode: false,
         offline_model: "base",
         custom_vocabulary: "",
+        transcription_backend: "groq",
       };
 }
 

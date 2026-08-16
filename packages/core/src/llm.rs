@@ -10,8 +10,8 @@ pub const FALLBACK_MOMENT_MODEL: &str = "openai/gpt-oss-20b";
 const LEGACY_FALLBACK_MODEL_1: &str = "llama-3.3-70b-versatile";
 const LEGACY_FALLBACK_MODEL_2: &str = "llama-3.1-8b-instant";
 
-const WINDOW_SEGMENTS_SIZE: usize = 250;
-const WINDOW_OVERLAP_SIZE: usize = 20;
+const WINDOW_SEGMENTS_SIZE: usize = 90;
+const WINDOW_OVERLAP_SIZE: usize = 12;
 
 #[derive(Debug, Deserialize)]
 struct ChatResponse {
@@ -423,12 +423,16 @@ Guidelines:
                     let err_body = resp.text().await.unwrap_or_default();
                     tracing::warn!("Groq LLM error with model {model} (HTTP {status}): {err_body}");
                     last_error = Some(anyhow::anyhow!("Groq LLM returned {status}: {err_body}"));
-                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                        tokio::time::sleep(std::time::Duration::from_millis(2500)).await;
+                    } else {
+                        tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+                    }
                 }
                 Err(err) => {
                     tracing::warn!("Groq LLM network error with model {model}: {err}");
                     last_error = Some(err.into());
-                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    tokio::time::sleep(std::time::Duration::from_millis(600)).await;
                 }
             }
         }

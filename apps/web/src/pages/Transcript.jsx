@@ -1,9 +1,27 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
-import { listSermons, getSermon, getAssetUrl } from "../lib/api.js";
+import {
+  listSermons,
+  getSermon,
+  getAssetUrl,
+  renderClipRange,
+  openInExplorer,
+} from "../lib/api.js";
 import { cleanSermonTitle, formatSeconds } from "../lib/formatters.js";
 import ManuscriptView from "../components/ManuscriptView.jsx";
 import Btn from "../components/Btn.jsx";
+
+function formatSrtTimestamp(seconds) {
+  const s = Math.max(0, seconds || 0);
+  const hrs = Math.floor(s / 3600);
+  const mins = Math.floor((s % 3600) / 60);
+  const secs = Math.floor(s % 60);
+  const millis = Math.floor((s % 1) * 1000);
+  return `${String(hrs).padStart(2, "0")}:${String(mins).padStart(
+    2,
+    "0"
+  )}:${String(secs).padStart(2, "0")},${String(millis).padStart(3, "0")}`;
+}
 
 export default function Transcript() {
   const { sermonId } = useParams();
@@ -19,6 +37,18 @@ export default function Transcript() {
   const [playbackTime, setPlaybackTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+
+  // ── Manual Clip Selection & Export State ──────────────────────────────────
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [clipRange, setClipRange] = useState({ start: null, end: null });
+  const [clipTitle, setClipTitle] = useState("");
+  const [isRenderingClip, setIsRenderingClip] = useState(false);
+  const [clipRenderError, setClipRenderError] = useState(null);
+  const [clipExportSuccess, setClipExportSuccess] = useState(null);
+  const [isPreviewingRange, setIsPreviewingRange] = useState(false);
+  const [previewEnd, setPreviewEnd] = useState(null);
+  const [showDownloadMenu, setShowDownloadMenu] = useState(false);
+
   const audioRef = useRef(null);
 
   useEffect(() => {
@@ -55,7 +85,9 @@ export default function Transcript() {
           });
         }
 
-        const rawSegs = Array.isArray(data.transcript_segments) ? data.transcript_segments : [];
+        const rawSegs = Array.isArray(data.transcript_segments)
+          ? data.transcript_segments
+          : [];
         if (rawSegs.length > 0) {
           const items = rawSegs.map((seg, idx) => {
             return {
@@ -92,6 +124,16 @@ export default function Transcript() {
   }, [searchParams, mediaAssetUrl]);
 
   const cleanTitle = cleanSermonTitle(sermon?.title);
+
+  // Update default clip title when range changes
+  useEffect(() => {
+    if (clipRange.start !== null && clipRange.end !== null) {
+      const defaultName = `${cleanTitle} (${formatSeconds(
+        clipRange.start
+      )} - ${formatSeconds(clipRange.end)})`;
+      setClipTitle(defaultName);
+    }
+  }, [clipRange.start, clipRange.end, cleanTitle]);
 
   // Filter transcript segments matching search
   const filteredSegments = useMemo(() => {
@@ -156,6 +198,141 @@ export default function Transcript() {
     }
   }
 
+  // ── Range Selection & Export Handlers ────────────────────────────────────
+
+  function handleSetRangeStart(time) {
+    setSelectionMode(true);
+    setClipRenderError(null);
+    setClipExportSuccess(null);
+    setClipRange((prev) => {
+      const newStart = Math.max(0, time);
+      let newEnd = prev.end;
+      if (newEnd !== null && newEnd <= newStart) {
+        newEnd = newStart + 30;
+      }
+      return { start: newStart, end: newEnd };
+    });
+  }
+
+  function handleSetRangeEnd(time) {
+    setSelectionMode(true);
+    setClipRenderError(null);
+    setClipExportSuccess(null);
+    setClipRange((prev) => {
+      const newEnd = Math.max(0, time);
+      let newStart = prev.start !== null ? prev.start : 0;
+      if (newStart >= newEnd) {
+        newStart = Math.max(0, newEnd - 30);
+      }
+      return { start: newStart, end: newEnd };
+    });
+  }
+
+  function handleClearClipRange() {
+    setClipRange({ start: null, end: null });
+    setClipTitle("");
+    setSelectionMode(false);
+    setIsPreviewingRange(false);
+    setPreviewEnd(null);
+    setClipRenderError(null);
+  }
+
+  function handlePreviewRange() {
+    if (!audioRef.current || clipRange.start === null || clipRange.end === null)
+      return;
+
+    const start = clipRange.start;
+    const end = clipRange.end;
+
+    if (end <= start) {
+      setClipRenderError("Clip end timestamp must be greater than start timestamp.");
+      return;
+    }
+
+    setClipRenderError(null);
+    setIsPreviewingRange(true);
+    setPreviewEnd(end);
+    audioRef.current.currentTime = start;
+    audioRef.current.play().catch((err) => {
+      console.warn("Preview audio playback failed:", err);
+      setClipRenderError("Audio preview playback failed.");
+    });
+  }
+
+  async function handleExportClipRange() {
+    if (!sermon?.id || clipRange.start === null || clipRange.end === null) return;
+    if (clipRange.end <= clipRange.start) {
+      setClipRenderError("Invalid clip range: end time must be greater than start time.");
+      return;
+    }
+
+    setIsRenderingClip(true);
+    setClipRenderError(null);
+    setClipExportSuccess(null);
+
+    try {
+      const outputPath = await renderClipRange(
+        sermon.id,
+        clipRange.start,
+        clipRange.end,
+        clipTitle.trim() || undefined
+      );
+
+      setClipExportSuccess({
+        title: clipTitle.trim() || "Manual Clip",
+        path: outputPath,
+      });
+    } catch (err) {
+      console.error("Clip render failed:", err);
+      setClipRenderError(
+        err.message || String(err) || "Failed to render video clip with FFmpeg."
+      );
+    } finally {
+      setIsRenderingClip(false);
+    }
+  }
+
+  // ── Download Transcript Handlers ────────────────────────────────────────
+
+  function handleDownloadTranscript(format = "txt") {
+    if (!segments.length) return;
+    setShowDownloadMenu(false);
+
+    let content = "";
+    const safeTitle = cleanTitle.replace(/[^a-zA-Z0-9_-]/g, "_");
+    let filename = `${safeTitle}_transcript`;
+
+    if (format === "srt") {
+      filename += ".srt";
+      content = segments
+        .map((seg, i) => {
+          const startSrt = formatSrtTimestamp(seg.start);
+          const endSrt = formatSrtTimestamp(seg.end);
+          return `${i + 1}\n${startSrt} --> ${endSrt}\n${seg.text.trim()}\n`;
+        })
+        .join("\n");
+    } else {
+      filename += ".txt";
+      const header = `${cleanTitle}\n${
+        sermon?.speaker ? `Speaker: ${sermon.speaker}\n` : ""
+      }${new Date().toLocaleDateString()}\n----------------------------------------\n\n`;
+      const body = segments
+        .map((seg) => `[${formatSeconds(seg.start)}] ${seg.text.trim()}`)
+        .join("\n");
+      content = header + body;
+    }
+
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
   const durationSec =
     duration > 0
       ? duration
@@ -163,6 +340,11 @@ export default function Transcript() {
       ? segments[segments.length - 1].end
       : 0;
   const durationStr = durationSec > 0 ? formatSeconds(durationSec) : null;
+
+  const clipDurationSec =
+    clipRange.start !== null && clipRange.end !== null
+      ? Math.max(0, clipRange.end - clipRange.start)
+      : null;
 
   const statusStr = (sermon?.status || "").toLowerCase();
   const isProcessing =
@@ -174,23 +356,39 @@ export default function Transcript() {
   const isFailed = statusStr.includes("fail") || statusStr.includes("error");
 
   return (
-    <div className="flex flex-col min-h-screen pb-24">
+    <div className="flex flex-col min-h-screen pb-28">
       {/* Real HTML5 Audio Element for Webview Playback */}
       <audio
         ref={audioRef}
         src={mediaAssetUrl || ""}
         preload="auto"
         style={{ display: "none" }}
-        onTimeUpdate={(e) => setPlaybackTime(e.target.currentTime)}
+        onTimeUpdate={(e) => {
+          const t = e.target.currentTime;
+          setPlaybackTime(t);
+
+          // Auto-pause at clip end when previewing range
+          if (isPreviewingRange && previewEnd !== null && t >= previewEnd) {
+            if (audioRef.current) audioRef.current.pause();
+            setIsPreviewingRange(false);
+          }
+        }}
         onLoadedMetadata={(e) => setDuration(e.target.duration || 0)}
         onPlay={() => setIsPlaying(true)}
-        onPause={() => setIsPlaying(false)}
-        onEnded={() => setIsPlaying(false)}
+        onPause={() => {
+          setIsPlaying(false);
+          setIsPreviewingRange(false);
+        }}
+        onEnded={() => {
+          setIsPlaying(false);
+          setIsPreviewingRange(false);
+        }}
         onError={() => {
           if (mediaAssetUrl) {
             setAudioError("Couldn't load audio for this sermon.");
           }
           setIsPlaying(false);
+          setIsPreviewingRange(false);
         }}
       />
 
@@ -223,7 +421,67 @@ export default function Transcript() {
           </h1>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 relative">
+          {/* Clip Range Selection Toggle */}
+          <Btn
+            variant={selectionMode ? "primary" : "secondary"}
+            onClick={() => {
+              if (selectionMode) {
+                handleClearClipRange();
+              } else {
+                setSelectionMode(true);
+                if (clipRange.start === null) {
+                  setClipRange({
+                    start: Math.floor(playbackTime),
+                    end: Math.floor(playbackTime + 30),
+                  });
+                }
+              }
+            }}
+          >
+            <i className="bx bx-cut text-sm" />
+            <span>{selectionMode ? "Close Clip Selector" : "Select Clip"}</span>
+          </Btn>
+
+          {/* Download Transcript Dropdown */}
+          <div className="relative">
+            <Btn
+              variant="secondary"
+              onClick={() => setShowDownloadMenu((prev) => !prev)}
+            >
+              <i className="bx bx-download text-sm text-accent" />
+              <span>Download</span>
+              <i className="bx bx-chevron-down text-xs text-muted" />
+            </Btn>
+
+            {showDownloadMenu && (
+              <div className="absolute right-0 top-full mt-1 w-48 bg-surface border border-border rounded-md shadow-xl py-1 z-50 text-xs">
+                <button
+                  type="button"
+                  onClick={() => handleDownloadTranscript("txt")}
+                  className="w-full px-3 py-2 text-left text-primary hover:bg-surface-hover flex items-center gap-2"
+                >
+                  <i className="bx bx-file-blank text-base text-accent" />
+                  <div>
+                    <p className="font-semibold">Text File (.txt)</p>
+                    <p className="text-[10px] text-muted">Timestamped text</p>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDownloadTranscript("srt")}
+                  className="w-full px-3 py-2 text-left text-primary hover:bg-surface-hover flex items-center gap-2 border-t border-border/40"
+                >
+                  <i className="bx bx-captions text-base text-accent" />
+                  <div>
+                    <p className="font-semibold">Subtitles (.srt)</p>
+                    <p className="text-[10px] text-muted">For video editors</p>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
+
           <Btn
             variant="secondary"
             onClick={() => navigate(`/clips/${sermonId || sermon?.id}`)}
@@ -250,6 +508,156 @@ export default function Transcript() {
         </div>
       )}
 
+      {/* ── Clip Render Success Notice ────────────────────────────── */}
+      {clipExportSuccess && (
+        <div className="mx-6 mt-3 p-3 rounded-lg border border-success/30 bg-success-muted flex items-center justify-between gap-4 text-xs">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <i className="bx bxs-check-circle text-success text-base shrink-0" />
+            <div className="truncate">
+              <p className="font-semibold text-primary">
+                "{clipExportSuccess.title}" rendered successfully
+              </p>
+              <p className="text-[11px] text-secondary font-mono truncate max-w-lg">
+                {clipExportSuccess.path}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => openInExplorer(clipExportSuccess.path)}
+              className="px-2.5 py-1 rounded bg-surface border border-border text-primary hover:border-border-strong text-xs font-medium"
+            >
+              Show in Folder
+            </button>
+            <button
+              onClick={() => setClipExportSuccess(null)}
+              className="text-muted hover:text-primary p-1"
+              aria-label="Dismiss notification"
+            >
+              <i className="bx bx-x text-base" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Clip Render Error Notice ──────────────────────────────── */}
+      {clipRenderError && (
+        <div className="mx-6 mt-3 p-3 rounded-lg border border-danger/30 bg-danger-muted flex items-center justify-between gap-4 text-xs">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <i className="bx bx-error-circle text-danger text-base shrink-0" />
+            <div>
+              <p className="font-semibold text-danger">Clip Export Failed</p>
+              <p className="text-[11px] text-secondary mt-0.5 max-w-lg">
+                {clipRenderError}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setClipRenderError(null)}
+            className="text-muted hover:text-primary p-1"
+            aria-label="Dismiss error"
+          >
+            <i className="bx bx-x text-base" />
+          </button>
+        </div>
+      )}
+
+      {/* ── Floating Clip Range Panel (When in Selection Mode) ────── */}
+      {selectionMode && (
+        <div className="mx-6 mt-3 p-4 rounded-lg border border-accent/40 bg-surface shadow-md space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-accent flex items-center gap-1">
+                <i className="bx bx-cut text-sm" />
+                Custom Clip Range
+              </span>
+              <span className="font-mono text-secondary">
+                {clipRange.start !== null
+                  ? formatSeconds(clipRange.start)
+                  : "00:00"}{" "}
+                –{" "}
+                {clipRange.end !== null
+                  ? formatSeconds(clipRange.end)
+                  : "00:00"}
+              </span>
+              {clipDurationSec !== null && (
+                <span className="px-1.5 py-0.5 rounded bg-accent-muted text-accent font-mono text-[10px] font-semibold">
+                  {Math.floor(clipDurationSec)}s duration
+                </span>
+              )}
+            </div>
+
+            <div className="text-[11px] text-muted">
+              Click <span className="font-mono text-secondary">Set Start</span> /{" "}
+              <span className="font-mono text-secondary">Set End</span> on any
+              manuscript line
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-center">
+            {/* Title Input */}
+            <div className="sm:col-span-2">
+              <input
+                type="text"
+                value={clipTitle}
+                onChange={(e) => setClipTitle(e.target.value)}
+                placeholder="Clip title (e.g. Powerful illustration on faith)"
+                className="w-full bg-base border border-border rounded px-3 py-1.5 text-xs text-primary placeholder:text-muted outline-none focus:border-accent"
+              />
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center gap-2 justify-end">
+              <Btn
+                size="sm"
+                variant="secondary"
+                onClick={handlePreviewRange}
+                disabled={
+                  clipRange.start === null ||
+                  clipRange.end === null ||
+                  isRenderingClip
+                }
+              >
+                <i
+                  className={`bx ${
+                    isPreviewingRange ? "bx-pause" : "bx-play"
+                  } text-sm`}
+                />
+                <span>{isPreviewingRange ? "Stop" : "Preview"}</span>
+              </Btn>
+
+              <Btn
+                size="sm"
+                onClick={handleExportClipRange}
+                disabled={
+                  clipRange.start === null ||
+                  clipRange.end === null ||
+                  isRenderingClip
+                }
+              >
+                <i
+                  className={`bx ${
+                    isRenderingClip ? "bx-loader-alt bx-spin" : "bx-video"
+                  } text-sm`}
+                />
+                <span>
+                  {isRenderingClip ? "Rendering…" : "Export as Video"}
+                </span>
+              </Btn>
+
+              <button
+                type="button"
+                onClick={handleClearClipRange}
+                className="text-xs text-muted hover:text-primary p-1.5 rounded hover:bg-surface-hover"
+                title="Cancel selection"
+              >
+                <i className="bx bx-x text-base" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Chapter Pills Navigation Bar ──────────────────────────── */}
       {chapters.length > 0 && (
         <div className="px-6 py-2 border-b border-border bg-surface/60 overflow-x-auto flex items-center gap-2 no-scrollbar">
@@ -270,7 +678,11 @@ export default function Transcript() {
                 title={ch.summary || ch.title}
               >
                 <span>{ch.title || `Chapter ${idx + 1}`}</span>
-                <span className={`text-[10px] ${isThisActive ? "opacity-90" : "text-muted"}`}>
+                <span
+                  className={`text-[10px] ${
+                    isThisActive ? "opacity-90" : "text-muted"
+                  }`}
+                >
                   {formatSeconds(ch.start_time)}
                 </span>
               </button>
@@ -297,7 +709,8 @@ export default function Transcript() {
               onClick={() => setSearchTerm("")}
               className="text-xs text-secondary hover:text-primary font-mono"
             >
-              Clear ({filteredSegments.length} segments, {matchingChapters.length} chapters)
+              Clear ({filteredSegments.length} segments,{" "}
+              {matchingChapters.length} chapters)
             </button>
           )}
         </div>
@@ -319,7 +732,8 @@ export default function Transcript() {
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-semibold text-primary">{ch.title}</span>
                   <span className="font-mono text-[10px] text-accent">
-                    {formatSeconds(ch.start_time)} – {formatSeconds(ch.end_time)}
+                    {formatSeconds(ch.start_time)} –{" "}
+                    {formatSeconds(ch.end_time)}
                   </span>
                 </div>
                 {ch.summary && (
@@ -345,6 +759,10 @@ export default function Transcript() {
             segments={filteredSegments}
             currentTime={playbackTime}
             isPlaying={isPlaying}
+            clipRange={clipRange}
+            selectionMode={selectionMode}
+            onSetRangeStart={handleSetRangeStart}
+            onSetRangeEnd={handleSetRangeEnd}
             onSeek={handleSeek}
             onTogglePlay={handleTogglePlay}
             onUpdateSegmentText={handleUpdateSegmentText}
@@ -422,11 +840,15 @@ export default function Transcript() {
             className="w-6 h-6 rounded-full bg-accent text-accent-fg flex items-center justify-center hover:opacity-90 transition-opacity"
             aria-label={isPlaying ? "Pause audio" : "Play audio"}
           >
-            <i className={`bx ${isPlaying ? "bx-pause" : "bx-play"} text-base`} />
+            <i
+              className={`bx ${isPlaying ? "bx-pause" : "bx-play"} text-base`}
+            />
           </button>
 
           <div className="flex items-center gap-1 font-mono text-[11px]">
-            <span className="font-bold text-primary">{formatSeconds(playbackTime)}</span>
+            <span className="font-bold text-primary">
+              {formatSeconds(playbackTime)}
+            </span>
             {durationStr && (
               <>
                 <span className="text-muted">/</span>
@@ -439,7 +861,10 @@ export default function Transcript() {
             className="w-28 sm:w-48 h-1 bg-surface-hover rounded-full overflow-hidden cursor-pointer"
             onClick={(e) => {
               const rect = e.currentTarget.getBoundingClientRect();
-              const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+              const ratio = Math.max(
+                0,
+                Math.min(1, (e.clientX - rect.left) / rect.width)
+              );
               const total = durationSec > 0 ? durationSec : 2700;
               handleSeek(ratio * total);
             }}

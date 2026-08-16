@@ -203,6 +203,49 @@ async fn render_clip(
     Ok(output_path.to_string_lossy().to_string())
 }
 
+#[tauri::command]
+async fn render_clip_range(
+    sermon_id: String,
+    start_time: f32,
+    end_time: f32,
+    clip_title: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let sermon_id = Uuid::parse_str(&sermon_id).map_err(|e| e.to_string())?;
+
+    let sermon = state
+        .db
+        .get_sermon(sermon_id)
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Sermon not found: {sermon_id}"))?;
+
+    let output_dir = state
+        .db
+        .get_setting("output_dir")
+        .await
+        .ok()
+        .flatten()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            dirs::video_dir()
+                .unwrap_or_else(|| state.app_data_dir.clone())
+                .join("Dabar")
+        });
+
+    let output_path = pipeline::render_clip_range_to_disk(
+        &sermon,
+        start_time,
+        end_time,
+        clip_title.as_deref(),
+        &output_dir,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(output_path.to_string_lossy().to_string())
+}
+
 /// Get all user settings as a serializable map.
 #[tauri::command]
 async fn get_settings(state: State<'_, AppState>) -> Result<AppSettings, String> {
@@ -459,6 +502,7 @@ pub fn run() {
             get_sermon,
             start_pipeline,
             render_clip,
+            render_clip_range,
             get_settings,
             save_settings,
             check_dependencies,

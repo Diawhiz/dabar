@@ -183,17 +183,26 @@ export default function Dashboard() {
                                 type="button"
                                 onClick={() => navigate(`/transcript/${sermon.id}`)}
                                 className="px-2 py-1 rounded bg-surface-hover hover:bg-surface-active text-xs text-primary border border-border transition-colors"
-                                title="Open Manuscript"
+                                title="Open Full Manuscript"
                               >
                                 Manuscript
                               </button>
                               <button
                                 type="button"
-                                onClick={() => navigate(`/clips/${sermon.id}`)}
-                                className="px-2 py-1 rounded bg-accent text-accent-fg hover:opacity-90 text-xs font-medium transition-opacity"
-                                title="Open Chapters Studio"
+                                onClick={() => navigate(`/chapters/${sermon.id}`)}
+                                className="px-2 py-1 rounded bg-surface-hover hover:bg-surface-active text-xs text-primary border border-border transition-colors"
+                                title="Open Chapters"
                               >
-                                Chapters {chaptersCount > 0 ? `(${chaptersCount})` : ""}
+                                Chapters
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => navigate(`/clips/${sermon.id}`)}
+                                className="px-2.5 py-1 rounded bg-accent text-accent-fg hover:opacity-90 text-xs font-semibold transition-opacity flex items-center gap-1"
+                                title="Open Video Clips Studio & Export"
+                              >
+                                <i className="bx bx-film text-xs" />
+                                <span>Clips & Video</span>
                               </button>
                             </>
                           ) : (

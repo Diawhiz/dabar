@@ -486,8 +486,8 @@ export default function Transcript() {
             variant="secondary"
             onClick={() => navigate(`/clips/${sermonId || sermon?.id}`)}
           >
-            <i className="bx bx-book-bookmark text-sm text-accent" />
-            <span>Chapters ({chapters.length})</span>
+            <i className="bx bx-film text-sm text-accent" />
+            <span>Clips & Video Studio</span>
           </Btn>
         </div>
       </header>

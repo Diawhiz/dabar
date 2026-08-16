@@ -5,25 +5,25 @@ export default function Shell() {
   const { theme, toggleTheme } = useTheme();
 
   return (
-    <div className="app-shell bg-base text-primary">
+    <div className="app-shell bg-base text-primary sanctuary-bg">
       {/* ── Left Sidebar Navigation ─────────────────────────────────── */}
       <aside className="sidebar">
         {/* Brand Header */}
         <div className="sidebar-brand">
-          <div className="w-6 h-6 rounded bg-accent text-white flex items-center justify-center font-mono font-bold text-xs">
-            ד
+          <div className="sidebar-seal shadow-md">
+            <span>ד</span>
           </div>
-          <div className="flex flex-col">
-            <span className="font-sans text-xs font-bold tracking-tight text-primary leading-none">
+          <div className="flex flex-col min-w-0">
+            <span className="font-editorial text-base font-bold tracking-tight text-primary leading-none">
               DABAR
             </span>
-            <span className="font-mono text-[9px] text-secondary leading-tight mt-0.5">
-              studio
+            <span className="font-mono-code text-[9.5px] text-accent font-semibold tracking-wider uppercase mt-1">
+              Pulpit Studio
             </span>
           </div>
         </div>
 
-        {/* Navigation Items — Every icon paired with a visible label */}
+        {/* Navigation Items */}
         <nav className="sidebar-nav" aria-label="Main Navigation">
           <NavLink
             to="/dashboard"
@@ -33,8 +33,8 @@ export default function Shell() {
           >
             {({ isActive }) => (
               <>
-                <i className={`bx ${isActive ? "bxs-folder-open text-accent" : "bx-folder"} text-base`} />
-                <span>Sermons</span>
+                <i className={`bx ${isActive ? "bxs-film text-accent" : "bx-film"} text-base`} />
+                <span>Sermon Library</span>
               </>
             )}
           </NavLink>
@@ -48,7 +48,7 @@ export default function Shell() {
             {({ isActive }) => (
               <>
                 <i className={`bx ${isActive ? "bxs-plus-circle text-accent" : "bx-plus-circle"} text-base`} />
-                <span>Add Sermon</span>
+                <span>New Sermon</span>
               </>
             )}
           </NavLink>
@@ -62,14 +62,30 @@ export default function Shell() {
             {({ isActive }) => (
               <>
                 <i className={`bx ${isActive ? "bxs-cog text-accent" : "bx-cog"} text-base`} />
-                <span>Settings</span>
+                <span>Studio Settings</span>
               </>
             )}
           </NavLink>
         </nav>
 
-        {/* Sidebar Footer: Theme toggle + version */}
+        {/* Engine Status & Footer */}
         <div className="sidebar-footer">
+          {/* Active AI Status Pill */}
+          <div className="mx-1 mb-2 px-2.5 py-2 rounded-md bg-surface-hover/70 border border-border flex items-center gap-2">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-success"></span>
+            </span>
+            <div className="flex flex-col min-w-0">
+              <span className="text-[10px] font-semibold text-primary truncate leading-tight">
+                Groq Whisper v3
+              </span>
+              <span className="text-[9px] text-accent truncate leading-tight font-mono-code">
+                GPT-OSS Analysis
+              </span>
+            </div>
+          </div>
+
           <button
             type="button"
             onClick={toggleTheme}
@@ -77,10 +93,10 @@ export default function Shell() {
             aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
           >
             <i className={`bx ${theme === "dark" ? "bx-sun text-accent" : "bx-moon text-accent"} text-base`} />
-            <span>{theme === "dark" ? "Light Mode" : "Dark Mode"}</span>
+            <span>{theme === "dark" ? "Light Linen" : "Sanctuary Dark"}</span>
           </button>
 
-          <div className="px-2.5 py-1 text-[10px] text-muted font-mono flex items-center justify-between">
+          <div className="px-2.5 py-1 text-[10px] text-muted font-mono-code flex items-center justify-between">
             <span>Dabar Desktop</span>
             <span>v0.2.0</span>
           </div>

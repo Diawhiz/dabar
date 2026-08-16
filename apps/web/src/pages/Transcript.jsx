@@ -416,7 +416,7 @@ export default function Transcript() {
               </>
             )}
           </div>
-          <h1 className="text-base font-semibold text-primary truncate">
+          <h1 className="font-editorial text-2xl font-bold text-primary truncate">
             {cleanTitle}
           </h1>
         </div>

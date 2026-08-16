@@ -5,8 +5,9 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ["Inter", "system-ui", "-apple-system", "sans-serif"],
-        mono: ['"IBM Plex Mono"', "Menlo", "Monaco", "Consolas", "monospace"],
+        sans: ['"Plus Jakarta Sans"', "Inter", "system-ui", "-apple-system", "sans-serif"],
+        editorial: ['"Newsreader"', "Georgia", "serif"],
+        mono: ['"JetBrains Mono"', '"IBM Plex Mono"', "Menlo", "Monaco", "Consolas", "monospace"],
       },
       colors: {
         base: "var(--bg-base)",
@@ -19,7 +20,10 @@ export default {
         secondary: "var(--text-secondary)",
         muted: "var(--text-muted)",
         accent: "var(--accent)",
+        "accent-hover": "var(--accent-hover)",
         "accent-muted": "var(--accent-muted)",
+        "accent-glow": "var(--accent-glow)",
+        "accent-fg": "var(--accent-fg)",
         success: "var(--success)",
         warning: "var(--warning)",
         danger: "var(--danger)",
@@ -28,7 +32,7 @@ export default {
         "2xs": ["0.65rem", { lineHeight: "1rem" }],
       },
       spacing: {
-        sidebar: "200px",
+        sidebar: "220px",
       },
     },
   },

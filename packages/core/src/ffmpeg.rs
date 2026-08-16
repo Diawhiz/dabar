@@ -24,7 +24,7 @@ pub async fn extract_vertical_clip(
         .arg("-t")
         .arg(format!("{duration:.3}"))
         .arg("-vf")
-        .arg("split[original][blurred];[blurred]scale=1080:1920,gblur=sigma=20[bg];[original]scale=1080:-2[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2")
+        .arg("split[original][blurred];[blurred]scale=1080:1920,boxblur=luma_radius=20:luma_power=2[bg];[original]scale=1080:-2[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2")
         .arg("-c:v")
         .arg("libx264")
         .arg("-crf")

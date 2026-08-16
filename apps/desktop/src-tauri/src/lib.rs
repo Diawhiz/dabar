@@ -97,6 +97,14 @@ async fn start_pipeline(
         .unwrap_or_default()
         == "true";
 
+    let backend_choice = state
+        .db
+        .get_setting("transcription_backend")
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| "groq".to_string());
+
     let transcription_backend = if offline_mode {
         let model_path = {
             let model_name = state
@@ -110,6 +118,14 @@ async fn start_pipeline(
             state.app_data_dir.join("whisper-models").join(filename)
         };
         dabar_core::whisper::TranscriptionBackend::Local { model_path }
+    } else if backend_choice == "assemblyai" && !assemblyai_api_key.trim().is_empty() {
+        dabar_core::whisper::TranscriptionBackend::AssemblyAI {
+            api_key: assemblyai_api_key.clone(),
+        }
+    } else if !groq_api_key.trim().is_empty() {
+        dabar_core::whisper::TranscriptionBackend::Groq {
+            api_key: groq_api_key.clone(),
+        }
     } else if !assemblyai_api_key.trim().is_empty() {
         dabar_core::whisper::TranscriptionBackend::AssemblyAI {
             api_key: assemblyai_api_key.clone(),
@@ -267,6 +283,13 @@ async fn get_settings(state: State<'_, AppState>) -> Result<AppSettings, String>
     let offline_mode = state.db.get_setting("offline_mode").await.ok().flatten().unwrap_or_default() == "true";
     let offline_model = state.db.get_setting("offline_model").await.ok().flatten().unwrap_or_else(|| "base".to_string());
     let custom_vocab = state.db.get_setting("custom_vocabulary").await.ok().flatten().unwrap_or_default();
+    let transcription_backend = state
+        .db
+        .get_setting("transcription_backend")
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| "groq".to_string());
 
     Ok(AppSettings {
         assemblyai_api_key,
@@ -275,6 +298,7 @@ async fn get_settings(state: State<'_, AppState>) -> Result<AppSettings, String>
         offline_mode,
         offline_model,
         custom_vocabulary: custom_vocab,
+        transcription_backend,
     })
 }
 
@@ -287,6 +311,7 @@ async fn save_settings(settings: AppSettings, state: State<'_, AppState>) -> Res
     state.db.set_setting("offline_mode", if settings.offline_mode { "true" } else { "false" }).await.map_err(|e| e.to_string())?;
     state.db.set_setting("offline_model", &settings.offline_model).await.map_err(|e| e.to_string())?;
     state.db.set_setting("custom_vocabulary", &settings.custom_vocabulary).await.map_err(|e| e.to_string())?;
+    state.db.set_setting("transcription_backend", &settings.transcription_backend).await.map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -432,6 +457,12 @@ pub struct AppSettings {
     pub offline_mode: bool,
     pub offline_model: String,   // "tiny" | "base"
     pub custom_vocabulary: String,
+    #[serde(default = "default_backend_name")]
+    pub transcription_backend: String, // "groq" | "assemblyai"
+}
+
+fn default_backend_name() -> String {
+    "groq".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -171,7 +171,7 @@ pub async fn run_pipeline(
     // ── Stage 2: Transcription & Chapter Segmentation ───────────────────────
 
     db.update_status(sermon_id, SermonStatus::Transcribing).await?;
-    emit(&app, sermon_id, "transcribing", 5, "Preparing audio for transcription & chaptering…");
+    emit(&app, sermon_id, "transcribing", 5, "Preparing audio for transcription…");
 
     let transcription_res = dabar_core::whisper::transcribe_audio(
         &transcription_backend,
@@ -180,7 +180,7 @@ pub async fn run_pipeline(
             let app_clone = app.clone();
             move |progress_pct: f32| {
                 let pct = (progress_pct * 100.0) as u8;
-                emit(&app_clone, sermon_id, "transcribing", pct.min(95), "Transcribing & segmenting chapters…");
+                emit(&app_clone, sermon_id, "transcribing", pct.min(95), "Transcribing sermon audio…");
             }
         })),
     )
@@ -196,7 +196,7 @@ pub async fn run_pipeline(
         anyhow::bail!("Transcription produced no text. The audio may be silent or unsupported.");
     }
 
-    emit(&app, sermon_id, "transcribing", 100, "Transcription & chaptering complete.");
+    emit(&app, sermon_id, "transcribing", 100, "Transcription complete.");
 
     // ── Stage 3: Highlight / Chapter Summary Status ──────────────────────────
 
@@ -261,7 +261,7 @@ pub async fn run_pipeline(
             (
                 Vec::new(),
                 Some("no_api_key".to_string()),
-                Some("Configure an AssemblyAI or Groq key in Settings.".to_string()),
+                Some("Configure a Groq API key in Settings.".to_string()),
                 None,
                 Some(0),
             )

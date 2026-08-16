@@ -16,55 +16,74 @@ Dabar is a sermon audio processing and illumination app with a **Rust / Tauri v2
             ┌───────────────┴───────────────┐
             ▼                               ▼
 ┌───────────────────────┐       ┌───────────────────────┐
-│ Primary Pipeline      │       │ Fallback Pipeline     │
-│ AssemblyAI            │       │ Groq Whisper +        │
-│ Speech-to-Text +      │       │ Chunked LLM Chaptering│
-│ Auto-Chapters         │       │ (or Offline GGML)     │
+│ Primary Pipeline      │       │ Optional / Legacy     │
+│ Groq Whisper          │       │ AssemblyAI            │
+│ (whisper-large-v3-    │       │ Auto-Chapters         │
+│  turbo) + Groq LLM    │       │ (or Offline GGML)     │
+│ Highlight Detection   │       │                       │
 └───────────────────────┘       └───────────────────────┘
 ```
 
 ---
 
-## 1. Primary Pipeline: AssemblyAI Auto-Chapters
+## 1. Primary Pipeline: Groq Whisper + LLM Moment Detection
 
-Instead of brittle single-shot LLM prompts attempting to extract 30–90s clips from hour-long sermons, Dabar leverages **AssemblyAI Auto-Chapters** for combined high-accuracy transcription and topic-based sermon chapter segmentation.
+Dabar defaults to **Groq Whisper (`whisper-large-v3-turbo`)** combined with **Groq LLM pastoral moment detection (`llama-3.3-70b-versatile`)**.
+
+### Why Groq is Primary:
+- **Speech Recognition Accuracy**: Whisper Large v3 Turbo exhibits superior phonetic recognition and context handling on Nigerian-accented English, West African cadences, and bilingual code-switching with Yoruba (e.g. liturgical interjections, songs, cultural expressions).
+- **Speed & Wall-Clock Efficiency**: Parallel chunked cloud transcription completes in ~5–10 seconds for a full 60–90 minute sermon, eliminating AssemblyAI's server-side queueing and 15-minute polling loop bottleneck.
+- **Accurate Pastoral Highlights**: LLM highlight detection analyzes timestamped transcript segments to identify high-impact, standalone 30–90 second teaching moments with verified theological depth and duration bounds.
 
 ### Step-by-Step Execution:
 1. **Audio Ingestion**:
-   - Downloads source audio from YouTube or Google Drive (via `yt-dlp`), or ingests local MP3/WAV/M4A files.
+   - Downloads source audio from YouTube or Google Drive (via `yt-dlp`), or ingests local audio/video files (`mp3`, `wav`, `m4a`, `mp4`, `mov`, `mkv`).
    - Copies audio to persistent local storage: `%APPDATA%\com.dabar.app\audio\{sermon_id}.mp3`.
-   - Emits live download progress to the frontend.
+   - Emits live download progress to the frontend over Tauri IPC.
 
-2. **Upload to AssemblyAI**:
-   - `POST https://api.assemblyai.com/v2/upload` with raw audio stream/bytes.
-   - Returns a secure `upload_url`.
+2. **FFmpeg Preprocessing**:
+   - Audio is transcoded to 16kHz mono 32kbps MP3 (`preprocess_audio_for_whisper`).
+   - Slashes payload size to ~14.4MB per hour of audio, guaranteeing compatibility with Groq's 25MB request limit.
 
-3. **Transcription & Auto-Chaptering Job**:
-   - `POST https://api.assemblyai.com/v2/transcript` with configuration:
-     ```json
-     {
-       "audio_url": "<upload_url>",
-       "auto_chapters": true,
-       "punctuate": true,
-       "format_text": true
-     }
-     ```
-   - Returns a unique transcript ID and queues the job.
+3. **Transcription (`whisper-large-v3-turbo`)**:
+   - For long sermons (or files exceeding size limits), audio is sliced into overlapping chunks and transcribed concurrently using `tokio::task::JoinSet`.
+   - Overlap trimming (`stitch_transcript_chunks`) reconstructs seamless sentence-level `TranscriptSegment`s with absolute timeline alignment.
 
-4. **Resilient Polling & Parsing**:
-   - Polls `GET https://api.assemblyai.com/v2/transcript/{id}` every 3 seconds.
-   - Granular progress reporting (25% -> 95%) emitted over Tauri IPC.
-   - When status reaches `"completed"`, parses:
-     - `words` -> transformed into sentence-level `TranscriptSegment`s (`start`, `end`, `text`).
-     - `chapters` -> transformed into `Chapter` structs (`id`, `title`, `summary`, `start_time`, `end_time`).
+4. **Highlight Detection (`llama-3.3-70b-versatile`)**:
+   - Formats timestamped transcript segments into an inline prompt: `[HH:MM:SS] Segment text...`.
+   - Prompts the LLM under pastoral editorial guidelines for 30–90 second clips.
+   - Validates timestamps, ensures duration bounds (25s–120s with 90s clamping), and produces structured `Highlight` records.
 
 5. **Persistence**:
-   - Saves sermon metadata, chapter list, and transcript segments in local SQLite database inside an atomic transaction.
-   - Emits completion event.
+   - Saves sermon metadata, highlights, and transcript segments to the local SQLite database in an atomic transaction.
+   - Cleans up temporary files and emits completion event.
 
 ---
 
-## 2. Data Model
+## 2. Optional / Legacy Pipeline: AssemblyAI Auto-Chapters
+
+For users preferring automated topic-based auto-chapters over LLM highlight extraction, AssemblyAI remains available as an opt-in alternative in Settings:
+- Uploads compressed audio to AssemblyAI (`https://api.assemblyai.com/v2/upload`).
+- Submits auto-chapters transcription job and polls until complete.
+- Transforms response words into `TranscriptSegment`s and topic blocks into `Chapter` structs.
+
+---
+
+## 3. Data Model
+
+### Highlight (`packages/core/src/models.rs`)
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Highlight {
+    pub id: Uuid,
+    pub title: String,
+    pub start_time: f32, // in seconds
+    pub end_time: f32,   // in seconds
+    pub score: f32,
+    pub reason: String,
+    pub suggested_hook_text: String,
+}
+```
 
 ### Chapter (`packages/core/src/models.rs`)
 ```rust
@@ -78,8 +97,34 @@ pub struct Chapter {
 }
 ```
 
-### SQLite Schema (`chapters` table)
+### SQLite Schema (`sermons`, `highlights`, `chapters`, `transcript_segments`)
 ```sql
+CREATE TABLE IF NOT EXISTS sermons (
+    id                TEXT PRIMARY KEY,
+    title             TEXT NOT NULL,
+    source_url        TEXT NOT NULL,
+    source_type       TEXT NOT NULL DEFAULT 'youtube',
+    status            TEXT NOT NULL DEFAULT 'queued',
+    created_at        TEXT NOT NULL,
+    error_message     TEXT,
+    audio_path        TEXT,
+    highlight_status  TEXT,
+    highlight_error   TEXT,
+    total_candidates  INTEGER,
+    passed_candidates INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS highlights (
+    id                  TEXT PRIMARY KEY,
+    sermon_id           TEXT NOT NULL REFERENCES sermons(id) ON DELETE CASCADE,
+    title               TEXT NOT NULL,
+    start_time          REAL NOT NULL,
+    end_time            REAL NOT NULL,
+    score               REAL NOT NULL,
+    reason              TEXT NOT NULL DEFAULT '',
+    suggested_hook_text TEXT NOT NULL DEFAULT ''
+);
+
 CREATE TABLE IF NOT EXISTS chapters (
     id          TEXT PRIMARY KEY,
     sermon_id   TEXT NOT NULL REFERENCES sermons(id) ON DELETE CASCADE,
@@ -89,34 +134,28 @@ CREATE TABLE IF NOT EXISTS chapters (
     end_time    REAL NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_chapters_sermon_id ON chapters(sermon_id, start_time);
+CREATE TABLE IF NOT EXISTS transcript_segments (
+    id         TEXT PRIMARY KEY,
+    sermon_id  TEXT NOT NULL REFERENCES sermons(id) ON DELETE CASCADE,
+    start_time REAL NOT NULL,
+    end_time   REAL NOT NULL,
+    text       TEXT NOT NULL,
+    ordinal    INTEGER NOT NULL
+);
 ```
 
 ---
 
-## 3. Real Audio Playback & Synchronization
+## 4. Real Audio Playback & Synchronization
 
 - **Asset Protocol**: Local audio files are streamed directly to the frontend webview via Tauri's custom asset protocol (`convertFileSrc(audio_path)`).
 - **Synchronized Seeking**:
-  - Clicking any Chapter card seeks the audio player to `chapter.start_time` and plays.
-  - Clicking any manuscript timestamp seeks audio to that second.
+  - Clicking any Highlight or Chapter card seeks the audio player to `start_time` and plays.
+  - Clicking any manuscript timestamp seeks audio to that exact second.
   - URL timestamp parameters (`/transcript/:id?t=120`) jump directly to that chapter or timestamp.
 
 ---
 
-## 4. Client-Side Instant Search
+## 5. Optimized Clip Rendering Engine
 
-Dabar performs instant full-text search without external search indexes:
-- **Search Scope**: Chapter titles, chapter summaries, and manuscript text segments.
-- **Visual Feedback**:
-  - Matches in chapters are displayed in quick-jump cards.
-  - Matches in manuscript filter segments and display exact occurrence counts.
-
----
-
-## 5. Fallback Roadmap: Groq Whisper & Offline Whisper
-
-When an AssemblyAI API key is not configured:
-1. **Groq Whisper**: Audio is preprocessed to 16kHz mono MP3, split into <=24MB chunks with 5-second overlap if needed, and transcribed.
-2. **Chunked Chaptering (Future Fallback)**: Multi-pass map-reduce LLM chaptering to prevent token rate limits (TPM).
-3. **Offline Mode**: GGML whisper.cpp models for zero-cloud environments.
+- **High-Performance Background Blur**: Vertical video clip export (`extract_vertical_clip` in `ffmpeg.rs`) uses `boxblur=luma_radius=20:luma_power=2` instead of CPU-heavy `gblur`. This provides smooth background aesthetics at a fraction of the CPU rendering time on low-power devices and integrated GPUs.

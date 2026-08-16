@@ -23,6 +23,7 @@ export default function Settings() {
     offline_mode: false,
     offline_model: "base",
     custom_vocabulary: "",
+    transcription_backend: "groq",
   });
   const [deps, setDeps] = useState(null);
   const [offlineStatus, setOfflineStatus] = useState(null);
@@ -199,14 +200,46 @@ export default function Settings() {
                 </div>
               </div>
 
-              {/* AssemblyAI API Key (Primary) */}
+              {/* Groq API Key (Primary) */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <label className="font-semibold text-primary block">
-                    AssemblyAI API Key (Primary — Auto-Chapters)
+                    Groq API Key (Primary — Fast Whisper & Moments)
                   </label>
                   <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-accent text-accent-fg">
                     Recommended
+                  </span>
+                </div>
+                <input
+                  type="password"
+                  value={settings.groq_api_key}
+                  onChange={(e) =>
+                    setSettings({ ...settings, groq_api_key: e.target.value })
+                  }
+                  placeholder="gsk_..."
+                  className="field-input font-mono"
+                />
+                <p className="text-[11px] text-muted">
+                  High-speed cloud transcription using Whisper Large v3 Turbo + intelligent pastoral highlight detection. Optimized for African preaching accents and code-switching. Free keys available at{" "}
+                  <a
+                    href="https://console.groq.com"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-accent underline"
+                  >
+                    console.groq.com
+                  </a>.
+                </p>
+              </div>
+
+              {/* AssemblyAI API Key (Optional / Legacy) */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="font-semibold text-primary block">
+                    AssemblyAI API Key (Optional / Legacy — Auto-Chapters)
+                  </label>
+                  <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-surface-hover text-muted">
+                    Optional
                   </span>
                 </div>
                 <input
@@ -219,7 +252,7 @@ export default function Settings() {
                   className="field-input font-mono"
                 />
                 <p className="text-[11px] text-muted">
-                  Enables primary transcription + automatic topic chapter segmentation with headlines & summaries. Free keys available at{" "}
+                  Optional legacy speech-to-text with automated topic chaptering. Free keys available at{" "}
                   <a
                     href="https://www.assemblyai.com/dashboard/signup"
                     target="_blank"
@@ -227,33 +260,6 @@ export default function Settings() {
                     className="text-accent underline"
                   >
                     assemblyai.com
-                  </a>.
-                </p>
-              </div>
-
-              {/* Cloud Speech API Key (Alternative) */}
-              <div className="space-y-1.5">
-                <label className="font-semibold text-primary block">
-                  Groq API Key (Alternative Fast Whisper)
-                </label>
-                <input
-                  type="password"
-                  value={settings.groq_api_key}
-                  onChange={(e) =>
-                    setSettings({ ...settings, groq_api_key: e.target.value })
-                  }
-                  placeholder="gsk_..."
-                  className="field-input font-mono"
-                />
-                <p className="text-[11px] text-muted">
-                  Alternative high-speed Whisper cloud transcription. You can get a free key from{" "}
-                  <a
-                    href="https://console.groq.com"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-accent underline"
-                  >
-                    console.groq.com
                   </a>.
                 </p>
               </div>

@@ -220,6 +220,7 @@ export async function getSettings() {
         offline_mode: false,
         offline_model: "base",
         custom_vocabulary: "",
+        transcription_backend: "groq",
       };
 }
 

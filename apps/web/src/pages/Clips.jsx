@@ -292,7 +292,7 @@ export default function Clips() {
                 No Chapters Available Yet
               </p>
               <p className="text-xs text-secondary mt-1 leading-relaxed">
-                Configure your AssemblyAI API key in Settings to automatically generate topic chapters and summaries for your sermons.
+                Configure your Groq API key in Settings to automatically generate topic chapters, sermon summaries, and video clips.
               </p>
             </div>
             <div className="flex items-center justify-center gap-2 pt-2">

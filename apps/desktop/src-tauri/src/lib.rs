@@ -70,15 +70,6 @@ async fn start_pipeline(
     state.db.insert_sermon(&sermon).await.map_err(|e| e.to_string())?;
 
     // Read settings for API keys and transcription backend choice
-    let assemblyai_api_key = state
-        .db
-        .get_setting("assemblyai_api_key")
-        .await
-        .ok()
-        .flatten()
-        .or_else(|| std::env::var("ASSEMBLYAI_API_KEY").ok())
-        .unwrap_or_default();
-
     let groq_api_key = state
         .db
         .get_setting("groq_api_key")
@@ -97,14 +88,6 @@ async fn start_pipeline(
         .unwrap_or_default()
         == "true";
 
-    let backend_choice = state
-        .db
-        .get_setting("transcription_backend")
-        .await
-        .ok()
-        .flatten()
-        .unwrap_or_else(|| "groq".to_string());
-
     let transcription_backend = if offline_mode {
         let model_path = {
             let model_name = state
@@ -118,18 +101,6 @@ async fn start_pipeline(
             state.app_data_dir.join("whisper-models").join(filename)
         };
         dabar_core::whisper::TranscriptionBackend::Local { model_path }
-    } else if backend_choice == "assemblyai" && !assemblyai_api_key.trim().is_empty() {
-        dabar_core::whisper::TranscriptionBackend::AssemblyAI {
-            api_key: assemblyai_api_key.clone(),
-        }
-    } else if !groq_api_key.trim().is_empty() {
-        dabar_core::whisper::TranscriptionBackend::Groq {
-            api_key: groq_api_key.clone(),
-        }
-    } else if !assemblyai_api_key.trim().is_empty() {
-        dabar_core::whisper::TranscriptionBackend::AssemblyAI {
-            api_key: assemblyai_api_key.clone(),
-        }
     } else {
         dabar_core::whisper::TranscriptionBackend::Groq {
             api_key: groq_api_key.clone(),
@@ -265,7 +236,6 @@ async fn render_clip_range(
 /// Get all user settings as a serializable map.
 #[tauri::command]
 async fn get_settings(state: State<'_, AppState>) -> Result<AppSettings, String> {
-    let assemblyai_api_key = state.db.get_setting("assemblyai_api_key").await.ok().flatten().unwrap_or_default();
     let groq_api_key = state.db.get_setting("groq_api_key").await.ok().flatten().unwrap_or_default();
     let output_dir = state
         .db
@@ -292,7 +262,6 @@ async fn get_settings(state: State<'_, AppState>) -> Result<AppSettings, String>
         .unwrap_or_else(|| "groq".to_string());
 
     Ok(AppSettings {
-        assemblyai_api_key,
         groq_api_key,
         output_dir,
         offline_mode,
@@ -305,7 +274,6 @@ async fn get_settings(state: State<'_, AppState>) -> Result<AppSettings, String>
 /// Save user settings to the local database.
 #[tauri::command]
 async fn save_settings(settings: AppSettings, state: State<'_, AppState>) -> Result<(), String> {
-    state.db.set_setting("assemblyai_api_key", &settings.assemblyai_api_key).await.map_err(|e| e.to_string())?;
     state.db.set_setting("groq_api_key", &settings.groq_api_key).await.map_err(|e| e.to_string())?;
     state.db.set_setting("output_dir", &settings.output_dir).await.map_err(|e| e.to_string())?;
     state.db.set_setting("offline_mode", if settings.offline_mode { "true" } else { "false" }).await.map_err(|e| e.to_string())?;
@@ -451,14 +419,13 @@ async fn get_hardware_info() -> HardwareInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettings {
-    pub assemblyai_api_key: String,
     pub groq_api_key: String,
     pub output_dir: String,
     pub offline_mode: bool,
     pub offline_model: String,   // "tiny" | "base"
     pub custom_vocabulary: String,
     #[serde(default = "default_backend_name")]
-    pub transcription_backend: String, // "groq" | "assemblyai"
+    pub transcription_backend: String,
 }
 
 fn default_backend_name() -> String {

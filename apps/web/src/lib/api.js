@@ -214,7 +214,6 @@ export async function getSettings() {
   return local
     ? JSON.parse(local)
     : {
-        assemblyai_api_key: "",
         groq_api_key: "",
         output_dir: "Videos/Dabar",
         offline_mode: false,

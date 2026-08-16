@@ -4,22 +4,16 @@ use anyhow::{Context, Result};
 use reqwest::multipart::{Form, Part};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use uuid::Uuid;
 
 const GROQ_TRANSCRIPTIONS_URL: &str = "https://api.groq.com/openai/v1/audio/transcriptions";
 const WHISPER_MODEL: &str = "whisper-large-v3-turbo";
 
-const ASSEMBLYAI_UPLOAD_URL: &str = "https://api.assemblyai.com/v2/upload";
-const ASSEMBLYAI_TRANSCRIPT_URL: &str = "https://api.assemblyai.com/v2/transcript";
-
 /// Selects the transcription engine.
 ///
-/// - `AssemblyAI`: cloud API — automated speech-to-text and topic-based Auto-Chapters.
-/// - `Groq`: cloud API — fast speech-to-text via Groq Whisper.
+/// - `Groq`: cloud API — fast speech-to-text via Groq Whisper Large v3 Turbo.
 /// - `Local`: offline whisper.cpp via the `model_path` GGML model file.
 #[derive(Debug, Clone)]
 pub enum TranscriptionBackend {
-    AssemblyAI { api_key: String },
     Groq { api_key: String },
     Local { model_path: PathBuf },
 }
@@ -54,73 +48,35 @@ struct GroqSegment {
     text: String,
 }
 
-// ── AssemblyAI Schema ────────────────────────────────────────────────────────
-
-#[derive(Debug, Deserialize)]
-struct AssemblyAIUploadResponse {
-    upload_url: String,
-}
-
-#[derive(Debug, Serialize)]
-struct AssemblyAITranscriptRequest {
-    audio_url: String,
-    auto_chapters: bool,
-    punctuate: bool,
-    format_text: bool,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Deserialize)]
-struct AssemblyAITranscriptCreated {
-    id: String,
-    status: String,
-    error: Option<String>,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Deserialize)]
-struct AssemblyAIPollResponse {
-    id: String,
-    status: String,
-    error: Option<String>,
-    text: Option<String>,
-    words: Option<Vec<AssemblyAIWord>>,
-    chapters: Option<Vec<AssemblyAIChapter>>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct AssemblyAIWord {
-    pub text: String,
-    pub start: u64, // ms
-    pub end: u64,   // ms
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct AssemblyAIChapter {
-    pub gist: Option<String>,
-    pub headline: Option<String>,
-    pub summary: Option<String>,
-    pub start: u64, // ms
-    pub end: u64,   // ms
+/// Builds domain-tailored prompt to steer Whisper toward Nigerian-accented English,
+/// Christian preaching vocabulary, and custom church terminology.
+pub fn build_whisper_prompt(custom_vocab: Option<&str>) -> String {
+    let mut prompt = "Sermon transcript in Nigerian English, Christian preaching, Bible exposition, scripture readings, Yoruba interjections (Hallelujah, Amen, Pastor, Apostle, Jesus Christ, Holy Spirit, Jehovah, Lord God, Bible).".to_string();
+    if let Some(vocab) = custom_vocab {
+        let clean = vocab.trim();
+        if !clean.is_empty() {
+            prompt.push_str(" Church Vocabulary: ");
+            prompt.push_str(clean);
+        }
+    }
+    prompt
 }
 
 /// Transcribes an audio file using the specified backend.
 ///
-/// - Preprocesses audio to the correct format for the chosen backend.
+/// - Preprocesses audio to high-clarity mono 16kHz 64kbps MP3.
 /// - Splits large files into chunks automatically if using Groq.
-/// - Performs async upload and auto-chaptering if using AssemblyAI.
+/// - Injects domain-specific initial prompt and custom vocabulary for maximum accuracy.
 /// - Calls `progress_callback` with a float 0.0–1.0 to report transcription progress.
 pub async fn transcribe_audio(
     backend: &TranscriptionBackend,
     raw_audio_path: &Path,
+    custom_vocab: Option<&str>,
     progress_callback: Option<Box<dyn Fn(f32) + Send>>,
 ) -> Result<TranscriptionResult> {
     match backend {
-        TranscriptionBackend::AssemblyAI { api_key } => {
-            transcribe_audio_assemblyai(api_key, raw_audio_path, progress_callback).await
-        }
         TranscriptionBackend::Groq { api_key } => {
-            let segments = transcribe_audio_groq(api_key, raw_audio_path, progress_callback).await?;
+            let segments = transcribe_audio_groq(api_key, raw_audio_path, custom_vocab, progress_callback).await?;
             Ok(TranscriptionResult {
                 segments,
                 chapters: Vec::new(),
@@ -136,291 +92,12 @@ pub async fn transcribe_audio(
     }
 }
 
-// ── AssemblyAI Implementation ───────────────────────────────────────────────
-
-/// Transcribes and extracts Auto-Chapters using AssemblyAI.
-async fn upload_with_retry(
-    client: &reqwest::Client,
-    api_key: &str,
-    audio_bytes: Vec<u8>,
-) -> Result<reqwest::Response> {
-    let max_attempts = 3;
-    let mut last_err = None;
-
-    for attempt in 1..=max_attempts {
-        tracing::info!("AssemblyAI upload attempt {attempt}/{max_attempts}...");
-        match client
-            .post(ASSEMBLYAI_UPLOAD_URL)
-            .header("Authorization", api_key)
-            .header("Content-Type", "application/octet-stream")
-            .body(audio_bytes.clone())
-            .send()
-            .await
-        {
-            Ok(resp) => return Ok(resp),
-            Err(e) => {
-                tracing::warn!("AssemblyAI upload attempt {attempt} failed: {e}. {}",
-                    if attempt < max_attempts { "Retrying..." } else { "Giving up." });
-                last_err = Some(e);
-                if attempt < max_attempts {
-                    tokio::time::sleep(std::time::Duration::from_secs(3 * attempt)).await;
-                }
-            }
-        }
-    }
-
-    Err(last_err.unwrap()).context("uploading audio to AssemblyAI (all attempts exhausted)")
-}
-
-async fn transcribe_audio_assemblyai(
-    api_key: &str,
-    raw_audio_path: &Path,
-    progress_callback: Option<Box<dyn Fn(f32) + Send>>,
-) -> Result<TranscriptionResult> {
-    let api_key = api_key.trim();
-    if api_key.is_empty() {
-        anyhow::bail!("AssemblyAI API key is missing. Please configure it in Settings.");
-    }
-
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(600))
-        .build()
-        .context("building reqwest client")?;
-
-    if let Some(ref cb) = progress_callback {
-        cb(0.05);
-    }
-
-    // Compress to mono 16kHz 32kbps before upload — raw YouTube-sourced audio (up to 128kbps)
-    // can be 4-6x larger and risks the upload exceeding the client timeout on slower connections.
-    let temp_dir = std::env::temp_dir().join(format!("dabar_assemblyai_{}", uuid::Uuid::new_v4()));
-    tokio::fs::create_dir_all(&temp_dir)
-        .await
-        .with_context(|| format!("creating temp directory {}", temp_dir.display()))?;
-    let preprocessed_path = temp_dir.join("preprocessed_mono16k.mp3");
-    ffmpeg::preprocess_audio_for_whisper(raw_audio_path, &preprocessed_path).await?;
-
-    // Step 1: Upload audio file
-    tracing::info!("Uploading sermon audio to AssemblyAI: {}", preprocessed_path.display());
-    let audio_bytes = tokio::fs::read(&preprocessed_path)
-        .await
-        .with_context(|| format!("reading preprocessed audio file {}", preprocessed_path.display()))?;
-    tracing::info!("Preprocessed audio size for AssemblyAI upload: {:.2} MB", audio_bytes.len() as f64 / 1_048_576.0);
-
-    let upload_resp = upload_with_retry(&client, api_key, audio_bytes).await?;
-    let _ = tokio::fs::remove_dir_all(&temp_dir).await;
-
-    if !upload_resp.status().is_success() {
-        let status = upload_resp.status();
-        let body = upload_resp.text().await.unwrap_or_default();
-        if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
-            anyhow::bail!("AssemblyAI Authentication failed (HTTP {status}): Check your AssemblyAI API key in Settings.");
-        }
-        anyhow::bail!("AssemblyAI audio upload failed (HTTP {status}): {body}");
-    }
-
-    let upload_data: AssemblyAIUploadResponse = upload_resp
-        .json()
-        .await
-        .context("parsing AssemblyAI upload response")?;
-
-    if let Some(ref cb) = progress_callback {
-        cb(0.20);
-    }
-
-    // Step 2: Submit transcription with Auto-Chapters
-    tracing::info!("Submitting transcription request with Auto-Chapters to AssemblyAI...");
-    let request_body = AssemblyAITranscriptRequest {
-        audio_url: upload_data.upload_url,
-        auto_chapters: true,
-        punctuate: true,
-        format_text: true,
-    };
-
-    let submit_resp = client
-        .post(ASSEMBLYAI_TRANSCRIPT_URL)
-        .header("Authorization", api_key)
-        .header("Content-Type", "application/json")
-        .json(&request_body)
-        .send()
-        .await
-        .context("submitting transcript request to AssemblyAI")?;
-
-    if !submit_resp.status().is_success() {
-        let status = submit_resp.status();
-        let body = submit_resp.text().await.unwrap_or_default();
-        anyhow::bail!("AssemblyAI transcript creation failed (HTTP {status}): {body}");
-    }
-
-    let created_data: AssemblyAITranscriptCreated = submit_resp
-        .json()
-        .await
-        .context("parsing AssemblyAI transcript creation response")?;
-
-    let transcript_id = created_data.id;
-    let poll_url = format!("{ASSEMBLYAI_TRANSCRIPT_URL}/{transcript_id}");
-    tracing::info!("AssemblyAI transcription job started: ID {transcript_id}");
-
-    // Step 3: Polling loop
-    let mut progress_pct: f32 = 0.25;
-    let mut attempts = 0;
-    let max_attempts = 300; // ~15 minutes max polling
-
-    let poll_result: AssemblyAIPollResponse = loop {
-        attempts += 1;
-        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-
-        let poll_resp = client
-            .get(&poll_url)
-            .header("Authorization", api_key)
-            .send()
-            .await;
-
-        let poll_resp = match poll_resp {
-            Ok(r) => r,
-            Err(e) => {
-                tracing::warn!("AssemblyAI poll network warning: {e}. Retrying...");
-                continue;
-            }
-        };
-
-        if !poll_resp.status().is_success() {
-            let status = poll_resp.status();
-            tracing::warn!("AssemblyAI poll returned HTTP {status}. Retrying...");
-            continue;
-        }
-
-        let poll_data: AssemblyAIPollResponse = match poll_resp.json().await {
-            Ok(d) => d,
-            Err(e) => {
-                tracing::warn!("AssemblyAI poll JSON parsing warning: {e}. Retrying...");
-                continue;
-            }
-        };
-
-        match poll_data.status.as_str() {
-            "completed" => {
-                if let Some(ref cb) = progress_callback {
-                    cb(1.0);
-                }
-                break poll_data;
-            }
-            "error" => {
-                let err_msg = poll_data
-                    .error
-                    .unwrap_or_else(|| "Unknown AssemblyAI transcription error".to_string());
-                anyhow::bail!("AssemblyAI transcription error: {err_msg}");
-            }
-            _ => {
-                // Status is "queued" or "processing"
-                progress_pct = (progress_pct + 0.02).min(0.95);
-                if let Some(ref cb) = progress_callback {
-                    cb(progress_pct);
-                }
-            }
-        }
-
-        if attempts >= max_attempts {
-            anyhow::bail!("AssemblyAI transcription timed out after 15 minutes.");
-        }
-    };
-
-    // Step 4: Map AssemblyAI response to TranscriptSegments and Chapters
-    let segments = if let Some(words) = poll_result.words {
-        words_to_segments(&words)
-    } else if let Some(text) = poll_result.text {
-        vec![TranscriptSegment {
-            start: 0.0,
-            end: 0.0,
-            text,
-        }]
-    } else {
-        Vec::new()
-    };
-
-    let chapters = if let Some(raw_chapters) = poll_result.chapters {
-        raw_chapters
-            .into_iter()
-            .map(|c| {
-                let title = c
-                    .headline
-                    .filter(|h| !h.trim().is_empty())
-                    .or(c.gist)
-                    .unwrap_or_else(|| "Key Topic".to_string());
-                let summary = c.summary.unwrap_or_default();
-                Chapter {
-                    id: Uuid::new_v4(),
-                    title,
-                    summary,
-                    start_time: (c.start as f32) / 1000.0,
-                    end_time: (c.end as f32) / 1000.0,
-                }
-            })
-            .collect()
-    } else {
-        Vec::new()
-    };
-
-    tracing::info!(
-        "AssemblyAI transcription completed successfully: {} segments, {} chapters",
-        segments.len(),
-        chapters.len()
-    );
-
-    Ok(TranscriptionResult { segments, chapters })
-}
-
-/// Converts timestamped words into natural paragraph/sentence segments.
-pub fn words_to_segments(words: &[AssemblyAIWord]) -> Vec<TranscriptSegment> {
-    if words.is_empty() {
-        return Vec::new();
-    }
-    let mut segments = Vec::new();
-    let mut current_words: Vec<String> = Vec::new();
-    let mut seg_start = (words[0].start as f32) / 1000.0;
-    let mut seg_end = (words[0].end as f32) / 1000.0;
-
-    for w in words {
-        let text = w.text.trim().to_string();
-        if text.is_empty() {
-            continue;
-        }
-        if current_words.is_empty() {
-            seg_start = (w.start as f32) / 1000.0;
-        }
-        seg_end = (w.end as f32) / 1000.0;
-        current_words.push(text.clone());
-
-        let ends_sentence = text.ends_with('.') || text.ends_with('?') || text.ends_with('!');
-        let duration = seg_end - seg_start;
-        let word_count = current_words.len();
-
-        if ends_sentence || word_count >= 20 || (word_count >= 10 && duration >= 5.0) {
-            segments.push(TranscriptSegment {
-                start: seg_start,
-                end: seg_end,
-                text: current_words.join(" "),
-            });
-            current_words.clear();
-        }
-    }
-
-    if !current_words.is_empty() {
-        segments.push(TranscriptSegment {
-            start: seg_start,
-            end: seg_end,
-            text: current_words.join(" "),
-        });
-    }
-
-    segments
-}
-
 // ── Groq Whisper Implementation ─────────────────────────────────────────────
 
 async fn transcribe_audio_groq(
     api_key: &str,
     raw_audio_path: &Path,
+    custom_vocab: Option<&str>,
     progress_callback: Option<Box<dyn Fn(f32) + Send>>,
 ) -> Result<Vec<TranscriptSegment>> {
     let temp_dir = std::env::temp_dir().join(format!("dabar_whisper_{}", uuid::Uuid::new_v4()));
@@ -432,7 +109,7 @@ async fn transcribe_audio_groq(
         cb(0.05);
     }
 
-    let result = transcribe_audio_internal(api_key, raw_audio_path, &temp_dir, progress_callback).await;
+    let result = transcribe_audio_internal(api_key, raw_audio_path, &temp_dir, custom_vocab, progress_callback).await;
     let _ = tokio::fs::remove_dir_all(&temp_dir).await;
     result
 }
@@ -450,7 +127,7 @@ async fn transcribe_audio_local(
         );
     }
     anyhow::bail!(
-        "Offline transcription is not yet enabled in this build. Please configure an AssemblyAI API key in Settings."
+        "Offline transcription is not yet enabled in this build. Please configure your Groq API key in Settings."
     )
 }
 
@@ -458,12 +135,13 @@ async fn transcribe_audio_internal(
     api_key: &str,
     raw_audio_path: &Path,
     temp_dir: &Path,
+    custom_vocab: Option<&str>,
     progress_callback: Option<Box<dyn Fn(f32) + Send>>,
 ) -> Result<Vec<TranscriptSegment>> {
     let preprocessed_path = temp_dir.join("preprocessed_mono16k.mp3");
 
     tracing::info!(
-        "Preprocessing audio for Whisper (mono, 16kHz, 32kbps MP3): {}",
+        "Preprocessing audio for Whisper (mono, 16kHz, 64kbps MP3): {}",
         raw_audio_path.display()
     );
 
@@ -492,7 +170,7 @@ async fn transcribe_audio_internal(
         tracing::info!(
             "Preprocessed audio fits in single request ({size_mb:.2} MB, duration: {duration:.1}s)"
         );
-        let res = transcribe_single_audio_file(&client, api_key, &preprocessed_path, 0.0).await;
+        let res = transcribe_single_audio_file(&client, api_key, &preprocessed_path, 0.0, custom_vocab).await;
         if let Some(ref cb) = progress_callback {
             cb(1.0);
         }
@@ -507,6 +185,7 @@ async fn transcribe_audio_internal(
             &preprocessed_path,
             temp_dir,
             duration,
+            custom_vocab,
             progress_callback,
         )
         .await
@@ -518,6 +197,7 @@ async fn transcribe_single_audio_file(
     api_key: &str,
     audio_path: &Path,
     time_offset: f32,
+    custom_vocab: Option<&str>,
 ) -> Result<Vec<TranscriptSegment>> {
     let bytes = tokio::fs::read(audio_path)
         .await
@@ -545,12 +225,17 @@ async fn transcribe_single_audio_file(
         );
     }
 
+    let prompt = build_whisper_prompt(custom_vocab);
+
     let mut attempts = 0;
     let transcription: GroqTranscription = loop {
         attempts += 1;
         let file_part = Part::bytes(bytes.clone()).file_name(filename.clone());
         let form = Form::new()
             .text("model", WHISPER_MODEL)
+            .text("language", "en")
+            .text("temperature", "0.0")
+            .text("prompt", prompt.clone())
             .text("response_format", "verbose_json")
             .part("file", file_part);
 
@@ -641,6 +326,7 @@ async fn transcribe_chunked_audio(
     audio_path: &Path,
     chunk_dir: &Path,
     total_duration: f32,
+    custom_vocab: Option<&str>,
     progress_callback: Option<Box<dyn Fn(f32) + Send>>,
 ) -> Result<Vec<TranscriptSegment>> {
     let duration = if total_duration > 0.0 {
@@ -660,6 +346,7 @@ async fn transcribe_chunked_audio(
     let mut chunk_index: usize = 0;
     let mut join_set = tokio::task::JoinSet::new();
     let mut total_chunks = 0;
+    let vocab_owned = custom_vocab.map(|s| s.to_string());
 
     // Overlap audio chunk extraction with immediate network dispatch
     while current_start < duration {
@@ -684,9 +371,17 @@ async fn transcribe_chunked_audio(
         let file_path = chunk_file;
         let start_time = current_start;
         let idx = chunk_index;
+        let vocab_clone = vocab_owned.clone();
 
         join_set.spawn(async move {
-            let res = transcribe_single_audio_file(&client_clone, &api_key_clone, &file_path, 0.0).await;
+            let res = transcribe_single_audio_file(
+                &client_clone,
+                &api_key_clone,
+                &file_path,
+                0.0,
+                vocab_clone.as_deref(),
+            )
+            .await;
             (idx, start_time, res)
         });
 
@@ -772,36 +467,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_words_to_segments() {
-        let words = vec![
-            AssemblyAIWord {
-                text: "Grace".into(),
-                start: 0,
-                end: 500,
-            },
-            AssemblyAIWord {
-                text: "and".into(),
-                start: 550,
-                end: 800,
-            },
-            AssemblyAIWord {
-                text: "peace.".into(),
-                start: 850,
-                end: 1200,
-            },
-            AssemblyAIWord {
-                text: "Welcome".into(),
-                start: 1500,
-                end: 2000,
-            },
-        ];
-
-        let segs = words_to_segments(&words);
-        assert_eq!(segs.len(), 2);
-        assert_eq!(segs[0].text, "Grace and peace.");
-        assert_eq!(segs[0].start, 0.0);
-        assert_eq!(segs[0].end, 1.2);
-        assert_eq!(segs[1].text, "Welcome");
+    fn test_build_whisper_prompt() {
+        let prompt = build_whisper_prompt(Some("Olorun, Oluwa, Pastor Emmanuel"));
+        assert!(prompt.contains("Nigerian English"));
+        assert!(prompt.contains("Pastor Emmanuel"));
     }
 
     #[test]

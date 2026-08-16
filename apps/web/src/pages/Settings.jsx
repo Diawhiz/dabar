@@ -17,7 +17,6 @@ export default function Settings() {
   const { theme, setTheme } = useTheme();
   const [activeTab, setActiveTab] = useState("general");
   const [settings, setSettings] = useState({
-    assemblyai_api_key: "",
     groq_api_key: "",
     output_dir: "",
     offline_mode: false,
@@ -204,10 +203,10 @@ export default function Settings() {
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <label className="font-semibold text-primary block">
-                    Groq API Key (Primary — Fast Whisper & Moments)
+                    Groq API Key (Fast Whisper & GPT-OSS Analysis)
                   </label>
                   <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-accent text-accent-fg">
-                    Recommended
+                    Active
                   </span>
                 </div>
                 <input
@@ -220,7 +219,7 @@ export default function Settings() {
                   className="field-input font-mono"
                 />
                 <p className="text-[11px] text-muted">
-                  High-speed cloud transcription using Whisper Large v3 Turbo + intelligent pastoral highlight detection. Optimized for African preaching accents and code-switching. Free keys available at{" "}
+                  High-speed cloud transcription using Whisper Large v3 Turbo + intelligent pastoral chapters and clip moment detection via GPT-OSS. Free keys available at{" "}
                   <a
                     href="https://console.groq.com"
                     target="_blank"
@@ -228,38 +227,6 @@ export default function Settings() {
                     className="text-accent underline"
                   >
                     console.groq.com
-                  </a>.
-                </p>
-              </div>
-
-              {/* AssemblyAI API Key (Optional / Legacy) */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label className="font-semibold text-primary block">
-                    AssemblyAI API Key (Optional / Legacy — Auto-Chapters)
-                  </label>
-                  <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-surface-hover text-muted">
-                    Optional
-                  </span>
-                </div>
-                <input
-                  type="password"
-                  value={settings.assemblyai_api_key}
-                  onChange={(e) =>
-                    setSettings({ ...settings, assemblyai_api_key: e.target.value })
-                  }
-                  placeholder="AssemblyAI API Key"
-                  className="field-input font-mono"
-                />
-                <p className="text-[11px] text-muted">
-                  Optional legacy speech-to-text with automated topic chaptering. Free keys available at{" "}
-                  <a
-                    href="https://www.assemblyai.com/dashboard/signup"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-accent underline"
-                  >
-                    assemblyai.com
                   </a>.
                 </p>
               </div>

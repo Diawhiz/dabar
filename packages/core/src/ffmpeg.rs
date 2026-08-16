@@ -2,6 +2,29 @@ use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use tokio::process::Command;
 
+pub async fn has_video_stream(input_source: &str) -> bool {
+    let output = get_binary_command("ffprobe")
+        .arg("-v")
+        .arg("error")
+        .arg("-select_streams")
+        .arg("v:0")
+        .arg("-show_entries")
+        .arg("stream=codec_type")
+        .arg("-of")
+        .arg("csv=p=0")
+        .arg(input_source)
+        .output()
+        .await;
+
+    match output {
+        Ok(out) => {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            stdout.trim() == "video"
+        }
+        Err(_) => false,
+    }
+}
+
 pub async fn extract_vertical_clip(
     input_source: &str,
     output_path: &Path,
@@ -15,30 +38,68 @@ pub async fn extract_vertical_clip(
     }
 
     let duration = end_time - start_time;
-    let output = get_binary_command("ffmpeg")
-        .arg("-y")
+    let has_video = has_video_stream(input_source).await;
+
+    let mut cmd = get_binary_command("ffmpeg");
+    cmd.arg("-y")
         .arg("-ss")
         .arg(format!("{start_time:.3}"))
         .arg("-i")
         .arg(input_source)
         .arg("-t")
-        .arg(format!("{duration:.3}"))
-        .arg("-vf")
-        .arg("split[original][blurred];[blurred]scale=1080:1920,boxblur=luma_radius=20:luma_power=2[bg];[original]scale=1080:-2[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2")
-        .arg("-c:v")
-        .arg("libx264")
-        .arg("-crf")
-        .arg("22")
-        .arg("-maxrate")
-        .arg("6000k")
-        .arg("-bufsize")
-        .arg("12000k")
-        .arg("-preset")
-        .arg("veryfast")
-        .arg("-c:a")
-        .arg("aac")
-        .arg("-b:a")
-        .arg("128k")
+        .arg(format!("{duration:.3}"));
+
+    if has_video {
+        // High-definition 9:16 vertical video:
+        // Background: scales to 1080x1920 keeping original aspect ratio and crops excess, with smooth boxblur
+        // Foreground: fits cleanly within 1080x1920 with crisp original aspect ratio (never stretched or squished)
+        // Output: libx264 with yuv420p for 100% universal mobile and desktop playback
+        cmd.arg("-filter_complex")
+            .arg("[0:v]split[fg_in][bg_in];[bg_in]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=luma_radius=25:luma_power=2[bg];[fg_in]scale=1080:1920:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2[v]")
+            .arg("-map")
+            .arg("[v]")
+            .arg("-map")
+            .arg("0:a?")
+            .arg("-c:v")
+            .arg("libx264")
+            .arg("-pix_fmt")
+            .arg("yuv420p")
+            .arg("-crf")
+            .arg("20")
+            .arg("-maxrate")
+            .arg("6000k")
+            .arg("-bufsize")
+            .arg("12000k")
+            .arg("-preset")
+            .arg("veryfast")
+            .arg("-c:a")
+            .arg("aac")
+            .arg("-b:a")
+            .arg("192k");
+    } else {
+        // Audio-only source: render clean 1080x1920 vertical video card with waveform visualizer
+        cmd.arg("-filter_complex")
+            .arg("color=c=#0f172a:s=1080x1920:r=30[bg];[0:a]showwaves=s=920x360:mode=cline:colors=0xd97706[wave];[bg][wave]overlay=(W-w)/2:(H-h)/2[v]")
+            .arg("-map")
+            .arg("[v]")
+            .arg("-map")
+            .arg("0:a")
+            .arg("-c:v")
+            .arg("libx264")
+            .arg("-pix_fmt")
+            .arg("yuv420p")
+            .arg("-crf")
+            .arg("20")
+            .arg("-preset")
+            .arg("veryfast")
+            .arg("-c:a")
+            .arg("aac")
+            .arg("-b:a")
+            .arg("192k")
+            .arg("-shortest");
+    }
+
+    let output = cmd
         .arg(output_path)
         .output()
         .await
@@ -110,9 +171,9 @@ pub async fn preprocess_audio_for_whisper(
         .arg("-c:a")
         .arg("libmp3lame")
         .arg("-b:a")
-        .arg("32k")
+        .arg("64k")
         .arg("-compression_level")
-        .arg("0")
+        .arg("2")
         .arg(output_path)
         .output()
         .await
@@ -150,9 +211,9 @@ pub async fn extract_audio_chunk(
         .arg("-c:a")
         .arg("libmp3lame")
         .arg("-b:a")
-        .arg("32k")
+        .arg("64k")
         .arg("-compression_level")
-        .arg("0")
+        .arg("2")
         .arg(output_path)
         .output()
         .await

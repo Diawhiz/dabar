@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { listSermons, getSermon, renderClip, openInExplorer } from "../lib/api.js";
+import { listSermons, getSermon, renderClip, openInExplorer, getAssetUrl } from "../lib/api.js";
 import ClipCard from "../components/ClipCard.jsx";
 import ExportModal from "../components/ExportModal.jsx";
 import ManuscriptView from "../components/ManuscriptView.jsx";
@@ -27,6 +27,7 @@ export default function ClipReview() {
   const [segments, setSegments] = useState([]);
   const [highlights, setHighlights] = useState([]);
   const [sermonUrl, setSermonUrl] = useState("");
+  const [mediaAssetUrl, setMediaAssetUrl] = useState(null);
   const [sermonTitle, setSermonTitle] = useState("");
   const [sermonDuration, setSermonDuration] = useState("");
   const [scriptureRefs, setScriptureRefs] = useState([]);
@@ -73,6 +74,15 @@ export default function ClipReview() {
         setSermonTitle(displayTitle);
         setSermonUrl(sermon.youtube_url || "");
         setScriptureRefs(sermon.scripture_references || []);
+
+        const sourcePath = sermon.audio_path || sermon.youtube_url || "";
+        if (sourcePath && !sourcePath.startsWith("http://") && !sourcePath.startsWith("https://")) {
+          getAssetUrl(sourcePath).then((assetUrl) => {
+            if (mounted) setMediaAssetUrl(assetUrl);
+          });
+        } else if (sourcePath.startsWith("http://") || sourcePath.startsWith("https://")) {
+          setMediaAssetUrl(sourcePath);
+        }
 
         const hlList = Array.isArray(sermon.highlights) ? sermon.highlights : [];
         const rawSegs = Array.isArray(sermon.transcript_segments) ? sermon.transcript_segments : [];
@@ -330,33 +340,86 @@ export default function ClipReview() {
             </section>
           )}
 
-          {/* Inline Video Player Preview */}
-          {activeSegment && videoId && (
-            <div className="rounded-2xl border border-border bg-base-dark p-4 shadow-xl animate-fade-in font-sans">
-              <div className="flex items-center justify-between mb-3">
+          {/* Universal Video/Audio Moment Preview Player */}
+          {activeSegment && (
+            <div className="rounded-2xl border border-border bg-base-dark p-5 shadow-xl animate-fade-in font-sans text-white">
+              <div className="flex items-center justify-between mb-3 border-b border-border-dark pb-3">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-amber uppercase tracking-wider">Previewing Moment</span>
-                  <span className="text-xs text-[#FAF6EF] font-medium truncate max-w-sm">
-                    {activeSegment.highlight_title || activeSegment.title || "Selected Clip"}
+                  <span className="text-xs font-bold text-amber uppercase tracking-wider px-2 py-0.5 rounded bg-amber/10 border border-amber/20">
+                    Previewing Clip
+                  </span>
+                  <span className="text-sm font-semibold text-white truncate max-w-sm">
+                    {activeSegment.highlight_title || activeSegment.title || "Selected Moment"}
+                  </span>
+                  <span className="text-xs text-muted font-mono">
+                    ({formatSeconds(activeSegment.start)} – {formatSeconds(activeSegment.end)})
                   </span>
                 </div>
-                <button
-                  onClick={() => setActiveSegment(null)}
-                  className="text-muted hover:text-white text-xs flex items-center gap-1"
-                >
-                  <i className="bx bx-x text-lg" />
-                  Close
-                </button>
+                <div className="flex items-center gap-2">
+                  <Btn
+                    size="sm"
+                    onClick={() => setExportModalClip(activeSegment)}
+                  >
+                    <i className="bx bx-download text-sm" />
+                    <span>Download This Clip</span>
+                  </Btn>
+                  <button
+                    onClick={() => setActiveSegment(null)}
+                    className="text-muted hover:text-white text-xs p-1 rounded hover:bg-surface-dark transition-colors"
+                    aria-label="Close clip preview"
+                  >
+                    <i className="bx bx-x text-xl" />
+                  </button>
+                </div>
               </div>
-              <div className="aspect-video w-full rounded-xl overflow-hidden border border-border-dark">
-                <iframe
-                  src={`https://www.youtube.com/embed/${videoId}?start=${Math.floor(activeSegment.start)}&end=${Math.ceil(activeSegment.end)}&autoplay=1&rel=0`}
-                  title="Clip player"
-                  className="h-full w-full"
-                  allow="autoplay; encrypted-media"
-                  allowFullScreen
-                />
-              </div>
+
+              {videoId ? (
+                <div className="aspect-video w-full rounded-xl overflow-hidden border border-border-dark bg-black">
+                  <iframe
+                    src={`https://www.youtube.com/embed/${videoId}?start=${Math.floor(activeSegment.start)}&end=${Math.ceil(activeSegment.end)}&autoplay=1&rel=0`}
+                    title="Clip preview player"
+                    className="h-full w-full"
+                    allow="autoplay; encrypted-media"
+                    allowFullScreen
+                  />
+                </div>
+              ) : mediaAssetUrl ? (
+                <div className="w-full rounded-xl overflow-hidden border border-border-dark bg-black/90 p-4 space-y-3">
+                  <video
+                    controls
+                    autoPlay
+                    src={mediaAssetUrl}
+                    className="w-full max-h-80 rounded-lg mx-auto bg-black"
+                    onLoadedMetadata={(e) => {
+                      e.target.currentTime = activeSegment.start || 0;
+                    }}
+                    onTimeUpdate={(e) => {
+                      if (activeSegment.end && e.target.currentTime >= activeSegment.end) {
+                        e.target.pause();
+                        e.target.currentTime = activeSegment.start || 0;
+                      }
+                    }}
+                  />
+                  <div className="flex items-center justify-between text-xs text-muted">
+                    <p className="italic">
+                      "{activeSegment.why || activeSegment.text || "Preaching clip moment"}"
+                    </p>
+                    <span className="font-mono text-amber shrink-0">
+                      Duration: {Math.round((activeSegment.end || 0) - (activeSegment.start || 0))}s
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-10 space-y-2 border border-dashed border-border-dark rounded-xl bg-surface-dark/40">
+                  <i className="bx bx-film text-3xl text-amber" />
+                  <p className="text-sm font-medium text-white">
+                    {activeSegment.highlight_title || activeSegment.title}
+                  </p>
+                  <p className="text-xs text-muted max-w-md mx-auto">
+                    {activeSegment.why || "High-impact sermon teaching clip."}
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -444,6 +507,7 @@ export default function ClipReview() {
           clip={exportModalClip}
           sermonTitle={sermonTitle}
           videoId={videoId}
+          mediaAssetUrl={mediaAssetUrl}
           onClose={() => setExportModalClip(null)}
           onConfirmExport={handleConfirmExport}
           isRendering={renderingClipId === exportModalClip.id}

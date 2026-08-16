@@ -183,15 +183,27 @@ pub async fn run_pipeline(
     db.update_status(sermon_id, SermonStatus::Transcribing).await?;
     emit(&app, sermon_id, "transcribing", 5, "Preparing audio for transcription…");
 
+    let custom_vocab = db
+        .get_setting("custom_vocabulary")
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+
     let transcription_res = dabar_core::whisper::transcribe_audio(
         &transcription_backend,
         &audio_path,
+        if custom_vocab.trim().is_empty() {
+            None
+        } else {
+            Some(custom_vocab.trim())
+        },
         Some(Box::new({
             let app_clone = app.clone();
             move |progress_pct: f32| {
                 let pct = (progress_pct * 100.0) as u8;
                 let detail = if pct < 20 {
-                    "Preprocessing sermon audio…"
+                    "Preprocessing sermon audio (64kbps mono)…"
                 } else if pct < 95 {
                     "Transcribing sermon audio via Groq Whisper…"
                 } else {
@@ -206,8 +218,10 @@ pub async fn run_pipeline(
     // Clean up temporary work directory if applicable
     let _ = tokio::fs::remove_dir_all(&temp_dir).await;
 
-    let segments = transcription_res.segments;
-    let chapters = dabar_core::llm::validate_chapters(transcription_res.chapters);
+    let mut segments = transcription_res.segments;
+    if !custom_vocab.trim().is_empty() {
+        dabar_core::structuring::apply_custom_vocabulary(&mut segments, &custom_vocab);
+    }
 
     if segments.is_empty() {
         anyhow::bail!("Transcription produced no text. The audio may be silent or unsupported.");
@@ -216,56 +230,48 @@ pub async fn run_pipeline(
     db.save_checkpoint(sermon_id, "transcribing", &audio_path.to_string_lossy()).await?;
     emit(&app, sermon_id, "transcribing", 100, "Transcription complete.");
 
-    // ── Stage 3: Highlight / Chapter Summary Status ──────────────────────────
+    // ── Stage 3: Highlight & Chapter Analysis ─────────────────────────────────
 
-    let (highlights, highlight_status, highlight_error, total_candidates, passed_candidates) =
-        if !chapters.is_empty() {
-            emit(
-                &app,
-                sermon_id,
-                "detecting",
-                100,
-                &format!("Structured into {} sermon chapters.", chapters.len()),
-            );
-            (
-                Vec::new(),
-                Some("success".to_string()),
-                None,
-                Some(chapters.len() as u32),
-                Some(chapters.len() as u32),
-            )
-        } else if !api_key.trim().is_empty() {
+    let (highlights, chapters, highlight_status, highlight_error, total_candidates, passed_candidates) =
+        if !api_key.trim().is_empty() {
             db.update_status(sermon_id, SermonStatus::Detecting).await?;
-            emit(&app, sermon_id, "detecting", 10, "Analysing sermon transcript for key moments…");
+            emit(&app, sermon_id, "detecting", 10, "Analysing sermon transcript for chapters and key moments…");
 
-            match dabar_core::llm::detect_sermon_highlights_report(api_key.trim(), &segments).await {
-                Ok(report) => {
+            match dabar_core::llm::detect_sermon_analysis_report(api_key.trim(), &segments).await {
+                Ok(analysis) => {
+                    let total_passed = analysis.highlights_report.total_passed;
+                    let chapter_count = analysis.chapters.len();
                     emit(
                         &app,
                         sermon_id,
                         "detecting",
                         100,
-                        &format!("Identified {} key moments.", report.total_passed),
+                        &format!(
+                            "Generated {} topic chapters and {} key moments.",
+                            chapter_count, total_passed
+                        ),
                     );
-                    let status_str = match report.status {
+                    let status_str = match analysis.highlights_report.status {
                         dabar_core::llm::HighlightDetectionStatus::Success => "success",
                         dabar_core::llm::HighlightDetectionStatus::NoCandidatesProposed => "no_candidates",
                         dabar_core::llm::HighlightDetectionStatus::AllCandidatesFiltered => "all_filtered",
                         dabar_core::llm::HighlightDetectionStatus::Failed => "failed",
                     };
                     (
-                        report.highlights,
+                        analysis.highlights_report.highlights,
+                        analysis.chapters,
                         Some(status_str.to_string()),
-                        report.error_message,
-                        Some(report.total_proposed as u32),
-                        Some(report.total_passed as u32),
+                        analysis.highlights_report.error_message,
+                        Some(analysis.highlights_report.total_proposed as u32),
+                        Some(total_passed as u32),
                     )
                 }
                 Err(err) => {
                     let err_msg = err.to_string();
-                    tracing::error!("Highlight detection failed for sermon {sermon_id}: {err_msg}");
-                    emit(&app, sermon_id, "detecting", 100, "Highlight analysis finished with warnings.");
+                    tracing::error!("LLM analysis failed for sermon {sermon_id}: {err_msg}");
+                    emit(&app, sermon_id, "detecting", 100, "Analysis completed with warnings.");
                     (
+                        Vec::new(),
                         Vec::new(),
                         Some("failed".to_string()),
                         Some(err_msg),
@@ -275,11 +281,12 @@ pub async fn run_pipeline(
                 }
             }
         } else {
-            tracing::info!("No API key configured for highlight detection on {sermon_id}");
+            tracing::info!("No API key configured for LLM analysis on {sermon_id}");
             (
                 Vec::new(),
+                Vec::new(),
                 Some("no_api_key".to_string()),
-                Some("Configure a Groq API key in Settings.".to_string()),
+                Some("Configure your Groq API key in Settings.".to_string()),
                 None,
                 Some(0),
             )

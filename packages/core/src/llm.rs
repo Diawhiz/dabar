@@ -5,8 +5,13 @@ use serde_json::json;
 use uuid::Uuid;
 
 const GROQ_CHAT_URL: &str = "https://api.groq.com/openai/v1/chat/completions";
-pub const DEFAULT_MOMENT_MODEL: &str = "llama-3.3-70b-versatile";
-pub const FALLBACK_MOMENT_MODEL: &str = "llama-3.1-8b-instant";
+pub const DEFAULT_MOMENT_MODEL: &str = "openai/gpt-oss-120b";
+pub const FALLBACK_MOMENT_MODEL: &str = "openai/gpt-oss-20b";
+const LEGACY_FALLBACK_MODEL_1: &str = "llama-3.3-70b-versatile";
+const LEGACY_FALLBACK_MODEL_2: &str = "llama-3.1-8b-instant";
+
+const WINDOW_SEGMENTS_SIZE: usize = 250;
+const WINDOW_OVERLAP_SIZE: usize = 20;
 
 #[derive(Debug, Deserialize)]
 struct ChatResponse {
@@ -49,6 +54,12 @@ pub struct HighlightDetectionReport {
     pub discarded: Vec<DiscardedCandidate>,
     pub status: HighlightDetectionStatus,
     pub error_message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SermonAnalysisResult {
+    pub chapters: Vec<Chapter>,
+    pub highlights_report: HighlightDetectionReport,
 }
 
 /// Formats time given in floating-point seconds into an `[HH:MM:SS]` string.
@@ -109,6 +120,55 @@ pub fn parse_timestamp_value(val: &serde_json::Value) -> Option<f32> {
         };
     }
     None
+}
+
+/// Parses topic chapters from LLM response.
+pub fn parse_chapters_from_json(json_value: &serde_json::Value) -> Vec<Chapter> {
+    let chapters_array = match json_value.get("chapters").and_then(|v| v.as_array()) {
+        Some(arr) => arr,
+        None => return Vec::new(),
+    };
+
+    let mut result = Vec::new();
+    for item in chapters_array {
+        let title = item
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Sermon Chapter")
+            .trim()
+            .to_string();
+
+        let summary = item
+            .get("summary")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+
+        let start_time = item
+            .get("start_time")
+            .or_else(|| item.get("start_timestamp"))
+            .and_then(parse_timestamp_value);
+
+        let end_time = item
+            .get("end_time")
+            .or_else(|| item.get("end_timestamp"))
+            .and_then(parse_timestamp_value);
+
+        if let (Some(start), Some(end)) = (start_time, end_time) {
+            if end > start {
+                result.push(Chapter {
+                    id: Uuid::new_v4(),
+                    title,
+                    summary,
+                    start_time: start,
+                    end_time: end,
+                });
+            }
+        }
+    }
+
+    validate_chapters(result)
 }
 
 /// Parses raw JSON response from the LLM, validates timestamps and duration constraints,
@@ -177,7 +237,7 @@ pub fn parse_and_validate_highlights_detailed(
         let reason = item
             .get("reason")
             .and_then(|v| v.as_str())
-            .unwrap_or("High-impact preaching moment with strong audience engagement potential.")
+            .unwrap_or("High-impact preaching moment with strong spiritual encouragement.")
             .trim()
             .to_string();
 
@@ -211,8 +271,7 @@ pub fn parse_and_validate_highlights_detailed(
             continue;
         }
 
-        // Rule 2: Duration check with flexible tolerance
-        // Target: 30-90s. Accept moments from 25.0s to 120.0s (clamping to max 90.0s if 91-120s).
+        // Rule 2: Duration check with flexible tolerance (25s to 120s)
         let raw_duration = end_time - start_time;
         if raw_duration < 25.0 {
             let reason_msg = format!(
@@ -244,7 +303,6 @@ pub fn parse_and_validate_highlights_detailed(
             continue;
         }
 
-        // If clip is slightly over 90s, clamp end_time to start_time + 90.0 to stay within vertical reel limits
         let final_end_time = if raw_duration > 90.0 {
             start_time + 90.0
         } else {
@@ -271,68 +329,52 @@ pub fn parse_and_validate_highlights(json_value: &serde_json::Value) -> Vec<High
     valid
 }
 
-/// Detects sermon highlights and returns a comprehensive `HighlightDetectionReport`
-/// with proposed vs validated counts and any rejection diagnostics.
-pub async fn detect_sermon_highlights_report(
+async fn execute_llm_analysis_request(
+    client: &reqwest::Client,
     api_key: &str,
-    segments: &[TranscriptSegment],
-) -> Result<HighlightDetectionReport> {
-    if segments.is_empty() {
-        tracing::warn!("detect_sermon_highlights called with empty transcript segments");
-        return Ok(HighlightDetectionReport {
-            highlights: Vec::new(),
-            total_proposed: 0,
-            total_passed: 0,
-            discarded: Vec::new(),
-            status: HighlightDetectionStatus::NoCandidatesProposed,
-            error_message: Some("Transcript contains no segments to analyze.".to_string()),
-        });
-    }
+    formatted_transcript: &str,
+) -> Result<serde_json::Value> {
+    let system_prompt = r#"You are an experienced pastoral editor, theologian, and media director.
+Analyze the timestamped sermon transcript and produce structured output containing BOTH topic chapters and high-impact pastoral video clips.
 
-    let formatted_transcript = format_segments_to_prompt(segments);
-    let estimated_tokens = (formatted_transcript.len() / 4).max(1);
-    tracing::info!(
-        "Highlight detection: analyzing sermon transcript with {} segments, {} characters (~{} estimated tokens)",
-        segments.len(),
-        formatted_transcript.len(),
-        estimated_tokens
-    );
+Return JSON in this exact structure:
+{
+  "chapters": [
+    {
+      "title": "Topic Chapter Title (3-7 words)",
+      "summary": "1-2 sentence overview of this teaching section",
+      "start_timestamp": 0.0,
+      "end_timestamp": 320.0
+    }
+  ],
+  "clips": [
+    {
+      "title": "Compelling Pastoral Title (3-7 words)",
+      "start_timestamp": 45.0,
+      "end_timestamp": 90.0,
+      "reason": "Spiritual insight and conviction why this moment impacts listeners",
+      "suggested_hook_text": "Key core truth or scripture quote"
+    }
+  ]
+}
+
+Guidelines:
+1. Chapters: 3 to 8 logical teaching topic chapters spanning the transcript chronologically.
+2. Clips: 2 to 6 high-impact clips, each strictly between 30 and 90 seconds in duration.
+3. Prioritize clear Gospel truths, scriptural insight, personal testimony, and practical life application."#;
 
     let user_prompt = format!(
-        "Analyze the following timestamped sermon transcript and extract high-impact clip moments:\n\n{}",
+        "Analyze the following timestamped sermon transcript:\n\n{}",
         formatted_transcript
     );
 
-    let system_prompt = r#"You are an experienced pastoral editor and ministry media director.
-Your task is to analyze timestamped sermon transcripts and extract the most spiritually impactful, meaningful teaching moments for church members and seekers.
-
-Guidelines for selected moments:
-1. Target Duration: Each clip MUST be between 30 and 90 seconds in duration (start_timestamp to end_timestamp).
-2. Theological Clarity & Depth: Prioritize moments of clear biblical exposition, Gospel truths, conviction, and practical spiritual application.
-3. Emotional Weight & Testimony: Identify genuine moments of personal vulnerability, answered prayers, encouragement in trials, or passionate declarations of God's faithfulness.
-4. Coherence: Ensure the clip captures a complete spiritual thought, illustration, or call to action with a natural beginning and resolution. Avoid clipping mid-sentence or chopping context.
-5. Tone: Focus on genuine ministry impact and heart resonance — NOT clickbait, viral trends, or artificial drama.
-
-Return JSON output with a "clips" array containing clip objects:
-{
-  "clips": [
-    {
-      "title": "Clear Pastoral Title (3-7 words)",
-      "start_timestamp": 45.0,
-      "end_timestamp": 90.0,
-      "reason": "Spiritual insight and reason why this moment brings encouragement or clarity to listeners",
-      "suggested_hook_text": "Key takeaway or core truth summary"
-    }
-  ]
-}"#;
-
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(120))
-        .build()
-        .context("building reqwest client")?;
-
     let configured_model = std::env::var("GROQ_MODEL").unwrap_or_else(|_| DEFAULT_MOMENT_MODEL.to_string());
-    let models_to_try = [configured_model.as_str(), FALLBACK_MOMENT_MODEL];
+    let models_to_try = [
+        configured_model.as_str(),
+        FALLBACK_MOMENT_MODEL,
+        LEGACY_FALLBACK_MODEL_1,
+        LEGACY_FALLBACK_MODEL_2,
+    ];
 
     let mut last_error: Option<anyhow::Error> = None;
 
@@ -348,95 +390,178 @@ Return JSON output with a "clips" array containing clip objects:
 
         for attempt in 1..=2 {
             tracing::info!(
-                "Executing LLM highlight detection (model: {model}, attempt {attempt}/2)..."
+                "Executing LLM analysis (model: {model}, attempt {attempt}/2)..."
             );
 
-            let res = async {
-                let response = client
-                    .post(GROQ_CHAT_URL)
-                    .bearer_auth(api_key)
-                    .json(&payload)
-                    .send()
-                    .await
-                    .context("sending Groq LLM request")?;
+            let response = client
+                .post(GROQ_CHAT_URL)
+                .bearer_auth(api_key)
+                .json(&payload)
+                .send()
+                .await;
 
-                let status = response.status();
-                if !status.is_success() {
-                    let err_body = response.text().await.unwrap_or_default();
-                    anyhow::bail!("Groq LLM returned error status {status}: {err_body}");
+            match response {
+                Ok(resp) if resp.status().is_success() => {
+                    let chat_resp = resp
+                        .json::<ChatResponse>()
+                        .await
+                        .context("parsing Groq LLM response JSON")?;
+
+                    let content = chat_resp
+                        .choices
+                        .first()
+                        .map(|c| c.message.content.as_str())
+                        .context("Groq LLM response contained no choice messages")?;
+
+                    let parsed_json: serde_json::Value =
+                        serde_json::from_str(content).context("parsing LLM message content as JSON")?;
+
+                    return Ok(parsed_json);
                 }
-
-                let chat_resp = response
-                    .json::<ChatResponse>()
-                    .await
-                    .context("parsing Groq LLM response JSON")?;
-
-                let content = chat_resp
-                    .choices
-                    .first()
-                    .map(|choice| choice.message.content.as_str())
-                    .context("Groq LLM response contained no choice messages")?;
-
-                let parsed_json: serde_json::Value =
-                    serde_json::from_str(content).context("parsing LLM message content as JSON")?;
-
-                Ok::<serde_json::Value, anyhow::Error>(parsed_json)
-            }
-            .await;
-
-            match res {
-                Ok(json_val) => {
-                    let (valid_highlights, discarded, total_proposed) =
-                        parse_and_validate_highlights_detailed(&json_val);
-
-                    tracing::info!(
-                        "Highlight detection succeeded: {total_proposed} proposed, {} passed validation, {} discarded",
-                        valid_highlights.len(),
-                        discarded.len()
-                    );
-
-                    let status = if !valid_highlights.is_empty() {
-                        HighlightDetectionStatus::Success
-                    } else if total_proposed == 0 {
-                        HighlightDetectionStatus::NoCandidatesProposed
-                    } else {
-                        HighlightDetectionStatus::AllCandidatesFiltered
-                    };
-
-                    return Ok(HighlightDetectionReport {
-                        total_proposed,
-                        total_passed: valid_highlights.len(),
-                        discarded,
-                        status,
-                        error_message: None,
-                        highlights: valid_highlights,
-                    });
+                Ok(resp) => {
+                    let status = resp.status();
+                    let err_body = resp.text().await.unwrap_or_default();
+                    tracing::warn!("Groq LLM error with model {model} (HTTP {status}): {err_body}");
+                    last_error = Some(anyhow::anyhow!("Groq LLM returned {status}: {err_body}"));
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                 }
                 Err(err) => {
-                    tracing::warn!(
-                        "LLM highlight detection failed with model {model} (attempt {attempt}): {err}"
-                    );
-                    last_error = Some(err);
-                    if attempt < 2 {
-                        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                    }
+                    tracing::warn!("Groq LLM network error with model {model}: {err}");
+                    last_error = Some(err.into());
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                 }
             }
         }
     }
 
-    let final_err_msg = last_error
+    let err_msg = last_error
         .map(|e| e.to_string())
-        .unwrap_or_else(|| "Unknown Groq LLM API failure".to_string());
+        .unwrap_or_else(|| "All Groq LLM models failed".to_string());
+    anyhow::bail!("{err_msg}")
+}
 
-    tracing::error!("LLM highlight detection failed on all attempts: {final_err_msg}");
+/// Detects sermon chapters and highlight moments with windowed chunking for zero TPM limits.
+pub async fn detect_sermon_analysis_report(
+    api_key: &str,
+    segments: &[TranscriptSegment],
+) -> Result<SermonAnalysisResult> {
+    if segments.is_empty() {
+        return Ok(SermonAnalysisResult {
+            chapters: Vec::new(),
+            highlights_report: HighlightDetectionReport {
+                highlights: Vec::new(),
+                total_proposed: 0,
+                total_passed: 0,
+                discarded: Vec::new(),
+                status: HighlightDetectionStatus::NoCandidatesProposed,
+                error_message: Some("Transcript contains no segments to analyze.".to_string()),
+            },
+        });
+    }
 
-    // Return the failure explicitly
-    anyhow::bail!("{final_err_msg}")
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .context("building reqwest client")?;
+
+    let mut all_chapters: Vec<Chapter> = Vec::new();
+    let mut all_highlights: Vec<Highlight> = Vec::new();
+    let mut all_discarded: Vec<DiscardedCandidate> = Vec::new();
+    let mut total_proposed: usize = 0;
+
+    // If transcript is large, process in sequential semantic windows to guarantee requests stay under TPM limits
+    if segments.len() <= WINDOW_SEGMENTS_SIZE {
+        let prompt_text = format_segments_to_prompt(segments);
+        let json_val = execute_llm_analysis_request(&client, api_key, &prompt_text).await?;
+
+        let chapters = parse_chapters_from_json(&json_val);
+        let (highlights, discarded, proposed) = parse_and_validate_highlights_detailed(&json_val);
+
+        all_chapters.extend(chapters);
+        all_highlights.extend(highlights);
+        all_discarded.extend(discarded);
+        total_proposed += proposed;
+    } else {
+        tracing::info!(
+            "Large transcript ({} segments) detected. Processing in windowed chunks to avoid Groq TPM limits...",
+            segments.len()
+        );
+
+        let mut start_idx = 0;
+        while start_idx < segments.len() {
+            let end_idx = (start_idx + WINDOW_SEGMENTS_SIZE).min(segments.len());
+            let window_slice = &segments[start_idx..end_idx];
+            let prompt_text = format_segments_to_prompt(window_slice);
+
+            tracing::info!(
+                "Analyzing window segments {}..{} of {}...",
+                start_idx,
+                end_idx,
+                segments.len()
+            );
+
+            if let Ok(json_val) = execute_llm_analysis_request(&client, api_key, &prompt_text).await {
+                let chapters = parse_chapters_from_json(&json_val);
+                let (highlights, discarded, proposed) = parse_and_validate_highlights_detailed(&json_val);
+
+                all_chapters.extend(chapters);
+                all_highlights.extend(highlights);
+                all_discarded.extend(discarded);
+                total_proposed += proposed;
+            }
+
+            if end_idx >= segments.len() {
+                break;
+            }
+            start_idx += WINDOW_SEGMENTS_SIZE - WINDOW_OVERLAP_SIZE;
+            tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+        }
+    }
+
+    // Deduplicate and sort highlights
+    all_highlights.sort_by(|a, b| a.start_time.partial_cmp(&b.start_time).unwrap_or(std::cmp::Ordering::Equal));
+    let mut deduplicated_highlights: Vec<Highlight> = Vec::new();
+    let mut last_end = 0.0;
+    for hl in all_highlights {
+        if deduplicated_highlights.is_empty() || hl.start_time >= last_end - 5.0 {
+            last_end = hl.end_time;
+            deduplicated_highlights.push(hl);
+        }
+    }
+
+    let validated_chapters = validate_chapters(all_chapters);
+    let total_passed = deduplicated_highlights.len();
+    let status = if total_passed > 0 || !validated_chapters.is_empty() {
+        HighlightDetectionStatus::Success
+    } else if total_proposed == 0 {
+        HighlightDetectionStatus::NoCandidatesProposed
+    } else {
+        HighlightDetectionStatus::AllCandidatesFiltered
+    };
+
+    Ok(SermonAnalysisResult {
+        chapters: validated_chapters,
+        highlights_report: HighlightDetectionReport {
+            total_proposed,
+            total_passed,
+            discarded: all_discarded,
+            status,
+            error_message: None,
+            highlights: deduplicated_highlights,
+        },
+    })
+}
+
+/// Detects sermon highlights and returns a comprehensive `HighlightDetectionReport`.
+pub async fn detect_sermon_highlights_report(
+    api_key: &str,
+    segments: &[TranscriptSegment],
+) -> Result<HighlightDetectionReport> {
+    let result = detect_sermon_analysis_report(api_key, segments).await?;
+    Ok(result.highlights_report)
 }
 
 /// Detects sermon highlights and returns a `Vec<Highlight>`.
-/// Propagates errors on API/network failure instead of silently dropping them.
 pub async fn detect_sermon_highlights(
     api_key: &str,
     segments: &[TranscriptSegment],

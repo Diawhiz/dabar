@@ -88,7 +88,7 @@ async fn start_pipeline(
         .unwrap_or_default()
         == "true";
 
-    let transcription_backend = if offline_mode {
+    let transcription_backend = if offline_mode || groq_api_key.trim().is_empty() {
         let model_path = {
             let model_name = state
                 .db
@@ -96,7 +96,7 @@ async fn start_pipeline(
                 .await
                 .ok()
                 .flatten()
-                .unwrap_or_else(|| "base".to_string());
+                .unwrap_or_else(|| "tiny".to_string());
             let filename = format!("ggml-{model_name}.bin");
             state.app_data_dir.join("whisper-models").join(filename)
         };

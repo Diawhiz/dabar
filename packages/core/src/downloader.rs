@@ -382,8 +382,13 @@ fn apply_yt_dlp_common_args(cmd: &mut Command) {
     cmd.arg("--no-playlist")
         .arg("--no-check-certificates")
         .arg("--no-cache-dir")
+        // Skip iOS client — it requires a GVS PO Token and generates noisy warnings
         .arg("--extractor-args")
-        .arg("youtube:player_client=android,web,ios");
+        .arg("youtube:player_client=android,web")
+        // Automatically retry on transient network/CDN failures
+        .arg("--retries").arg("10")
+        .arg("--fragment-retries").arg("10")
+        .arg("--retry-sleep").arg("5");
 
     // Optional cookies support
     if let Ok(cookies_path) = std::env::var("YT_DLP_COOKIES_PATH") {
@@ -416,6 +421,7 @@ fn apply_yt_dlp_common_args(cmd: &mut Command) {
         cmd.arg("--js-runtimes").arg("node");
     }
 }
+
 
 fn which_node_exists() -> bool {
     if let Ok(cwd) = std::env::current_dir() {

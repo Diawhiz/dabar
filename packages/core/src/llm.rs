@@ -10,6 +10,213 @@ pub const FALLBACK_MOMENT_MODEL: &str = "openai/gpt-oss-20b";
 const LEGACY_FALLBACK_MODEL_1: &str = "llama-3.3-70b-versatile";
 const LEGACY_FALLBACK_MODEL_2: &str = "llama-3.1-8b-instant";
 
+/// Selects the LLM backend for highlight/chapter detection.
+#[derive(Debug, Clone)]
+pub enum LlmBackend {
+    /// Groq cloud API (fast, requires API key)
+    Groq { api_key: String },
+    /// Local Ollama REST API (offline, requires Ollama running at the given URL)
+    Ollama { base_url: String, model: String },
+}
+
+impl Default for LlmBackend {
+    fn default() -> Self {
+        LlmBackend::Groq { api_key: String::new() }
+    }
+}
+
+pub async fn check_ollama(base_url: &str) -> bool {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .unwrap_or_default();
+    
+    let url = format!("{}/api/tags", base_url.trim_end_matches('/'));
+    client.get(&url).send().await.is_ok()
+}
+
+async fn execute_analysis_with_backend(
+    client: &reqwest::Client,
+    backend: &LlmBackend,
+    prompt_text: &str,
+) -> Result<serde_json::Value> {
+    match backend {
+        LlmBackend::Groq { api_key } => {
+            execute_llm_analysis_request(client, api_key, prompt_text).await
+        }
+        LlmBackend::Ollama { base_url, model } => {
+            let system_prompt = r#"You are an experienced pastoral editor, theologian, and media director.
+Analyze the timestamped sermon transcript and produce structured output containing BOTH topic chapters and high-impact pastoral video clips.
+
+Return JSON in this exact structure:
+{
+  "chapters": [
+    {
+      "title": "Topic Chapter Title (3-7 words)",
+      "summary": "1-2 sentence overview of this teaching section",
+      "start_timestamp": 0.0,
+      "end_timestamp": 320.0
+    }
+  ],
+  "clips": [
+    {
+      "title": "Compelling Pastoral Title (3-7 words)",
+      "start_timestamp": 45.0,
+      "end_timestamp": 90.0,
+      "reason": "Spiritual insight and conviction why this moment impacts listeners",
+      "suggested_hook_text": "Key core truth or scripture quote"
+    }
+  ]
+}
+
+Guidelines:
+1. Chapters: 3 to 8 logical teaching topic chapters spanning the transcript chronologically.
+2. Clips: 2 to 6 high-impact clips, each strictly between 30 and 90 seconds in duration.
+3. Prioritize clear Gospel truths, scriptural insight, personal testimony, and practical life application."#;
+
+            let user_prompt = format!(
+                "Analyze the following timestamped sermon transcript:\n\n{}",
+                prompt_text
+            );
+            
+            let payload = json!({
+                "model": model,
+                "format": "json",
+                "stream": false,
+                "messages": [
+                    { "role": "system", "content": system_prompt },
+                    { "role": "user", "content": &user_prompt }
+                ]
+            });
+            
+            let url = format!("{}/api/chat", base_url.trim_end_matches('/'));
+            let response = client.post(&url).json(&payload).send().await.context("Ollama request failed")?;
+            let text = response.text().await.context("Failed to read Ollama response")?;
+            
+            let parsed: serde_json::Value = serde_json::from_str(&text).context("Parsing Ollama JSON response")?;
+            let content = parsed.get("message")
+                .and_then(|m| m.get("content"))
+                .and_then(|c| c.as_str())
+                .context("Ollama response missing message.content")?;
+            
+            serde_json::from_str(content).context("Parsing LLM generated JSON")
+        }
+    }
+}
+
+pub async fn detect_sermon_analysis_report_with_backend(
+    backend: &LlmBackend,
+    segments: &[TranscriptSegment],
+) -> Result<SermonAnalysisResult> {
+    if segments.is_empty() {
+        return Ok(SermonAnalysisResult {
+            chapters: Vec::new(),
+            highlights_report: HighlightDetectionReport {
+                highlights: Vec::new(),
+                total_proposed: 0,
+                total_passed: 0,
+                discarded: Vec::new(),
+                status: HighlightDetectionStatus::NoCandidatesProposed,
+                error_message: Some("Transcript contains no segments to analyze.".to_string()),
+            },
+        });
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .context("building reqwest client")?;
+
+    let mut all_chapters: Vec<Chapter> = Vec::new();
+    let mut all_highlights: Vec<Highlight> = Vec::new();
+    let mut all_discarded: Vec<DiscardedCandidate> = Vec::new();
+    let mut total_proposed: usize = 0;
+
+    // If transcript is large, process in sequential semantic windows to guarantee requests stay under TPM limits
+    if segments.len() <= WINDOW_SEGMENTS_SIZE {
+        let prompt_text = format_segments_to_prompt(segments);
+        let json_val = execute_analysis_with_backend(&client, backend, &prompt_text).await?;
+
+        let chapters = parse_chapters_from_json(&json_val);
+        let (highlights, discarded, proposed) = parse_and_validate_highlights_detailed(&json_val);
+
+        all_chapters.extend(chapters);
+        all_highlights.extend(highlights);
+        all_discarded.extend(discarded);
+        total_proposed += proposed;
+    } else {
+        tracing::info!(
+            "Large transcript ({} segments) detected. Processing in windowed chunks to avoid TPM limits...",
+            segments.len()
+        );
+
+        let mut start_idx = 0;
+        while start_idx < segments.len() {
+            let end_idx = (start_idx + WINDOW_SEGMENTS_SIZE).min(segments.len());
+            let window_slice = &segments[start_idx..end_idx];
+            let prompt_text = format_segments_to_prompt(window_slice);
+
+            tracing::info!(
+                "Analyzing window segments {}..{} of {}...",
+                start_idx,
+                end_idx,
+                segments.len()
+            );
+
+            if let Ok(json_val) = execute_analysis_with_backend(&client, backend, &prompt_text).await {
+                let chapters = parse_chapters_from_json(&json_val);
+                let (highlights, discarded, proposed) = parse_and_validate_highlights_detailed(&json_val);
+
+                all_chapters.extend(chapters);
+                all_highlights.extend(highlights);
+                all_discarded.extend(discarded);
+                total_proposed += proposed;
+            }
+
+            if end_idx >= segments.len() {
+                break;
+            }
+            start_idx += WINDOW_SEGMENTS_SIZE - WINDOW_OVERLAP_SIZE;
+            if matches!(backend, LlmBackend::Groq { .. }) {
+                tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+            }
+        }
+    }
+
+    // Deduplicate and sort highlights
+    all_highlights.sort_by(|a, b| a.start_time.partial_cmp(&b.start_time).unwrap_or(std::cmp::Ordering::Equal));
+    let mut deduplicated_highlights: Vec<Highlight> = Vec::new();
+    let mut last_end = 0.0;
+    for hl in all_highlights {
+        if deduplicated_highlights.is_empty() || hl.start_time >= last_end - 5.0 {
+            last_end = hl.end_time;
+            deduplicated_highlights.push(hl);
+        }
+    }
+
+    let validated_chapters = validate_chapters(all_chapters);
+    let total_passed = deduplicated_highlights.len();
+    let status = if total_passed > 0 || !validated_chapters.is_empty() {
+        HighlightDetectionStatus::Success
+    } else if total_proposed == 0 {
+        HighlightDetectionStatus::NoCandidatesProposed
+    } else {
+        HighlightDetectionStatus::AllCandidatesFiltered
+    };
+
+    Ok(SermonAnalysisResult {
+        chapters: validated_chapters,
+        highlights_report: HighlightDetectionReport {
+            total_proposed,
+            total_passed,
+            discarded: all_discarded,
+            status,
+            error_message: None,
+            highlights: deduplicated_highlights,
+        },
+    })
+}
+
 const WINDOW_SEGMENTS_SIZE: usize = 90;
 const WINDOW_OVERLAP_SIZE: usize = 12;
 

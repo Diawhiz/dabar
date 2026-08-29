@@ -188,6 +188,36 @@ pub async fn preprocess_audio_for_whisper(
     Ok(())
 }
 
+pub async fn preprocess_audio_for_whisper_wav(
+    input_path: &Path,
+    output_path: &Path,
+) -> Result<()> {
+    let output = get_binary_command("ffmpeg")
+        .arg("-y")
+        .arg("-threads")
+        .arg("0")
+        .arg("-i")
+        .arg(input_path)
+        .arg("-vn")
+        .arg("-ac")
+        .arg("1")
+        .arg("-ar")
+        .arg("16000")
+        .arg("-c:a")
+        .arg("pcm_s16le")
+        .arg(output_path)
+        .output()
+        .await
+        .context("executing ffmpeg audio preprocessing to WAV for Whisper")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("ffmpeg audio preprocessing to WAV failed: {}", stderr.trim());
+    }
+
+    Ok(())
+}
+
 pub async fn extract_audio_chunk(
     input_path: &Path,
     output_path: &Path,
@@ -305,19 +335,47 @@ fn get_binary_command(name: &str) -> Command {
         name.to_string()
     };
 
-    // 1. Check AppData / LocalAppData / UserProfile .dabar/bin
-    if let Ok(appdata) = std::env::var("APPDATA") {
-        let candidate = PathBuf::from(&appdata).join("dabar").join("bin").join(&exe_name);
-        if candidate.exists() {
-            return Command::new(candidate);
+    // 1. Platform-specific app-data bin directories
+    #[cfg(windows)]
+    {
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            let candidate = PathBuf::from(&appdata).join("dabar").join("bin").join(&exe_name);
+            if candidate.exists() {
+                return Command::new(candidate);
+            }
+        }
+        if let Ok(localappdata) = std::env::var("LOCALAPPDATA") {
+            let candidate = PathBuf::from(&localappdata).join("dabar").join("bin").join(&exe_name);
+            if candidate.exists() {
+                return Command::new(candidate);
+            }
         }
     }
-    if let Ok(localappdata) = std::env::var("LOCALAPPDATA") {
-        let candidate = PathBuf::from(&localappdata).join("dabar").join("bin").join(&exe_name);
-        if candidate.exists() {
-            return Command::new(candidate);
+    // XDG-compliant path for Linux/macOS: ~/.local/share/dabar/bin/<exe>
+    #[cfg(not(windows))]
+    {
+        if let Ok(home) = std::env::var("HOME") {
+            let xdg_data = std::env::var("XDG_DATA_HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| PathBuf::from(&home).join(".local").join("share"));
+            let candidate = xdg_data.join("dabar").join("bin").join(&exe_name);
+            if candidate.exists() {
+                return Command::new(candidate);
+            }
+            // Legacy ~/.dabar/bin fallback
+            let legacy = PathBuf::from(&home).join(".dabar").join("bin").join(&exe_name);
+            if legacy.exists() {
+                return Command::new(legacy);
+            }
+            // ~/.local/bin fallback (user-installed system binaries)
+            let local_bin = PathBuf::from(&home).join(".local").join("bin").join(&exe_name);
+            if local_bin.exists() {
+                return Command::new(local_bin);
+            }
         }
     }
+
+    // Shared HOME/.dabar/bin for any remaining platforms
     if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
         let home_p = PathBuf::from(&home);
         let cand1 = home_p.join(".dabar").join("bin").join(&exe_name);

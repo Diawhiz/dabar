@@ -122,7 +122,8 @@ async fn run_pipeline(
     // Stage 2: Transcribing
     state.update_status(sermon_id, dabar_core::SermonStatus::Transcribing).await?;
     let backend = dabar_core::whisper::TranscriptionBackend::Groq { api_key: api_key.clone() };
-    let segments = dabar_core::whisper::transcribe_audio(&backend, &downloaded.path, None).await?;
+    let result = dabar_core::whisper::transcribe_audio(&backend, &downloaded.path, None, None).await?;
+    let segments = result.segments;
 
     // Clean up temporary audio file asynchronously
     let _ = tokio::fs::remove_dir_all(&temp_dir).await;

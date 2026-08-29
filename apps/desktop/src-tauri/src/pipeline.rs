@@ -103,6 +103,9 @@ pub async fn run_pipeline(
     api_key: String,
     transcription_backend: dabar_core::whisper::TranscriptionBackend,
     app_data_dir: PathBuf,
+    ollama_url: String,
+    ollama_model: String,
+    offline_mode: bool,
 ) -> Result<()> {
     let temp_dir = std::env::temp_dir().join(format!("dabar_{sermon_id}"));
     tokio::fs::create_dir_all(&temp_dir).await?;
@@ -200,12 +203,17 @@ pub async fn run_pipeline(
         },
         Some(Box::new({
             let app_clone = app.clone();
+            let is_offline = matches!(transcription_backend, dabar_core::whisper::TranscriptionBackend::Local { .. });
             move |progress_pct: f32| {
                 let pct = (progress_pct * 100.0) as u8;
                 let detail = if pct < 20 {
-                    "Preprocessing sermon audio (64kbps mono)…"
+                    "Preprocessing sermon audio (16kHz mono)…"
                 } else if pct < 95 {
-                    "Transcribing sermon audio via Groq Whisper…"
+                    if is_offline {
+                        "Transcribing sermon audio offline (whisper.cpp)…"
+                    } else {
+                        "Transcribing sermon audio via Groq Whisper…"
+                    }
                 } else {
                     "Stitching & aligning transcript segments…"
                 };
@@ -232,65 +240,69 @@ pub async fn run_pipeline(
 
     // ── Stage 3: Highlight & Chapter Analysis ─────────────────────────────────
 
-    let (highlights, chapters, highlight_status, highlight_error, total_candidates, passed_candidates) =
-        if !api_key.trim().is_empty() {
-            db.update_status(sermon_id, SermonStatus::Detecting).await?;
-            emit(&app, sermon_id, "detecting", 10, "Analysing sermon transcript for chapters and key moments…");
-
-            match dabar_core::llm::detect_sermon_analysis_report(api_key.trim(), &segments).await {
-                Ok(analysis) => {
-                    let total_passed = analysis.highlights_report.total_passed;
-                    let chapter_count = analysis.chapters.len();
-                    emit(
-                        &app,
-                        sermon_id,
-                        "detecting",
-                        100,
-                        &format!(
-                            "Generated {} topic chapters and {} key moments.",
-                            chapter_count, total_passed
-                        ),
-                    );
-                    let status_str = match analysis.highlights_report.status {
-                        dabar_core::llm::HighlightDetectionStatus::Success => "success",
-                        dabar_core::llm::HighlightDetectionStatus::NoCandidatesProposed => "no_candidates",
-                        dabar_core::llm::HighlightDetectionStatus::AllCandidatesFiltered => "all_filtered",
-                        dabar_core::llm::HighlightDetectionStatus::Failed => "failed",
-                    };
-                    (
-                        analysis.highlights_report.highlights,
-                        analysis.chapters,
-                        Some(status_str.to_string()),
-                        analysis.highlights_report.error_message,
-                        Some(analysis.highlights_report.total_proposed as u32),
-                        Some(total_passed as u32),
-                    )
-                }
-                Err(err) => {
-                    let err_msg = err.to_string();
-                    tracing::error!("LLM analysis failed for sermon {sermon_id}: {err_msg}");
-                    emit(&app, sermon_id, "detecting", 100, "Analysis completed with warnings.");
-                    (
-                        Vec::new(),
-                        Vec::new(),
-                        Some("failed".to_string()),
-                        Some(err_msg),
-                        None,
-                        Some(0),
-                    )
-                }
+    let (highlights, chapters, highlight_status, highlight_error, total_candidates, passed_candidates) = {
+        // Determine which LLM backend to use
+        let llm_backend = if offline_mode {
+            // Offline mode: use local Ollama if URL is set
+            dabar_core::llm::LlmBackend::Ollama {
+                base_url: ollama_url.clone(),
+                model: ollama_model.clone(),
             }
+        } else if !api_key.trim().is_empty() {
+            dabar_core::llm::LlmBackend::Groq { api_key: api_key.trim().to_string() }
         } else {
-            tracing::info!("No API key configured for LLM analysis on {sermon_id}");
-            (
-                Vec::new(),
-                Vec::new(),
-                Some("no_api_key".to_string()),
-                Some("Configure your Groq API key in Settings.".to_string()),
-                None,
-                Some(0),
-            )
+            // No backend configured — skip highlight detection
+            tracing::info!("No LLM backend configured for sermon {sermon_id}, skipping highlight detection.");
+            return Ok(save_no_highlights(&app, &db, sermon_id, &source, &audio_path, &segments, "no_api_key", "Configure your Groq API key or enable Ollama in Settings.").await?);
         };
+
+        db.update_status(sermon_id, SermonStatus::Detecting).await?;
+        emit(&app, sermon_id, "detecting", 10, "Analysing sermon transcript for chapters and key moments…");
+
+        match dabar_core::llm::detect_sermon_analysis_report_with_backend(&llm_backend, &segments).await {
+            Ok(analysis) => {
+                let total_passed = analysis.highlights_report.total_passed;
+                let chapter_count = analysis.chapters.len();
+                emit(
+                    &app,
+                    sermon_id,
+                    "detecting",
+                    100,
+                    &format!(
+                        "Generated {} topic chapters and {} key moments.",
+                        chapter_count, total_passed
+                    ),
+                );
+                let status_str = match analysis.highlights_report.status {
+                    dabar_core::llm::HighlightDetectionStatus::Success => "success",
+                    dabar_core::llm::HighlightDetectionStatus::NoCandidatesProposed => "no_candidates",
+                    dabar_core::llm::HighlightDetectionStatus::AllCandidatesFiltered => "all_filtered",
+                    dabar_core::llm::HighlightDetectionStatus::Failed => "failed",
+                };
+                (
+                    analysis.highlights_report.highlights,
+                    analysis.chapters,
+                    Some(status_str.to_string()),
+                    analysis.highlights_report.error_message,
+                    Some(analysis.highlights_report.total_proposed as u32),
+                    Some(total_passed as u32),
+                )
+            }
+            Err(err) => {
+                let err_msg = err.to_string();
+                tracing::error!("LLM analysis failed for sermon {sermon_id}: {err_msg}");
+                emit(&app, sermon_id, "detecting", 100, "Analysis completed with warnings.");
+                (
+                    Vec::new(),
+                    Vec::new(),
+                    Some("failed".to_string()),
+                    Some(err_msg),
+                    None,
+                    Some(0),
+                )
+            }
+        }
+    };
 
     // ── Stage 4: Save results ─────────────────────────────────────────────────
 
@@ -317,6 +329,42 @@ pub async fn run_pipeline(
 
     tracing::info!("Pipeline completed successfully for sermon {sermon_id}");
     emit_complete(&app, sermon_id);
+    Ok(())
+}
+
+/// Saves sermon results when highlight detection is skipped (no API key / no Ollama configured).
+async fn save_no_highlights(
+    app: &AppHandle,
+    db: &Db,
+    sermon_id: Uuid,
+    source: &PipelineSource,
+    audio_path: &Path,
+    segments: &[dabar_core::TranscriptSegment],
+    status: &str,
+    message: &str,
+) -> Result<()> {
+    let stored_title = match source {
+        PipelineSource::YouTube(_) | PipelineSource::GoogleDrive(_) => None,
+        PipelineSource::LocalFile(p) => p.file_stem().and_then(|s| s.to_str()).map(|s| s.to_string()),
+    };
+
+    db.save_sermon_results(
+        sermon_id,
+        stored_title.as_deref(),
+        Some(&audio_path.to_string_lossy()),
+        &[],
+        &[],
+        segments,
+        Some(status),
+        Some(message),
+        None,
+        Some(0),
+    )
+    .await?;
+
+    db.delete_checkpoint(sermon_id).await?;
+    tracing::info!("Pipeline completed (no highlights) for sermon {sermon_id}: {message}");
+    emit_complete(app, sermon_id);
     Ok(())
 }
 

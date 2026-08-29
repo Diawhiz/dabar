@@ -485,6 +485,58 @@ export default function Settings() {
                 </div>
               </div>
 
+              {/* Ollama Local LLM Section */}
+              <div className="space-y-3 pt-2">
+                <div>
+                  <h3 className="font-semibold text-primary">
+                    Local AI Highlight Detection (Ollama)
+                  </h3>
+                  <p className="text-[11px] text-muted mt-0.5">
+                    Use a locally-running Ollama model for fully offline pastoral highlight and chapter detection. Requires{" "}
+                  <a href="https://ollama.com" target="_blank" rel="noreferrer" className="text-accent underline">ollama.com</a>{" "}
+                    installed and running.
+                  </p>
+                </div>
+
+                <div className="border border-border rounded-md bg-surface p-3 space-y-3">
+                  <div className="space-y-1.5">
+                    <label className="font-semibold text-primary block">
+                      Ollama Server URL
+                    </label>
+                    <input
+                      type="text"
+                      value={settings.ollama_url ?? "http://localhost:11434"}
+                      onChange={(e) =>
+                        setSettings({ ...settings, ollama_url: e.target.value })
+                      }
+                      placeholder="http://localhost:11434"
+                      className="field-input font-mono"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="font-semibold text-primary block">
+                      Ollama Model
+                    </label>
+                    <select
+                      value={settings.ollama_model ?? "llama3.2:3b"}
+                      onChange={(e) =>
+                        setSettings({ ...settings, ollama_model: e.target.value })
+                      }
+                      className="field-input"
+                    >
+                      <option value="llama3.2:3b">llama3.2:3b — Fast, low-end friendly (~2GB)</option>
+                      <option value="llama3.1:8b">llama3.1:8b — Better accuracy (~5GB)</option>
+                      <option value="llama3.3:70b">llama3.3:70b — Highest quality (~40GB)</option>
+                      <option value="mistral:7b">mistral:7b — Alternate option (~4GB)</option>
+                    </select>
+                    <p className="text-[10px] text-muted">
+                      Run <code className="bg-surface-hover px-1 rounded font-mono">ollama pull llama3.2:3b</code> to download the model.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
               {savedNotice && (
                 <div className="p-2.5 rounded border border-success/30 bg-success-muted text-success flex items-center gap-2">
                   <i className="bx bxs-check-circle text-base" />

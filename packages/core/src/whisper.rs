@@ -663,59 +663,89 @@ async fn transcribe_single_audio_file(
 
     let prompt = build_whisper_prompt(custom_vocab);
 
-    let part = Part::bytes(bytes)
-        .file_name(filename)
-        .mime_str("audio/mpeg")
-        .context("creating multipart part")?;
+    // Retry loop with exponential backoff (handles connection resets, rate limits, 5xx errors)
+    let max_retries = 4;
+    let mut last_err = anyhow::anyhow!("unknown transcription error");
 
-    let form = Form::new()
-        .text("model", WHISPER_MODEL)
-        .text("response_format", "verbose_json")
-        .text("prompt", prompt)
-        .part("file", part);
+    for attempt in 1..=max_retries {
+        let part = Part::bytes(bytes.clone())
+            .file_name(filename.clone())
+            .mime_str("audio/mpeg")
+            .context("creating multipart part")?;
 
-    let res = client
-        .post(GROQ_TRANSCRIPTIONS_URL)
-        .bearer_auth(api_key)
-        .multipart(form)
-        .send()
-        .await
-        .context("sending transcription request to Groq API")?;
+        let form = Form::new()
+            .text("model", WHISPER_MODEL)
+            .text("response_format", "verbose_json")
+            .text("prompt", prompt.clone())
+            .part("file", part);
 
-    if !res.status().is_success() {
-        let status = res.status();
-        let body = res.text().await.unwrap_or_default();
-        anyhow::bail!("Groq API error ({status}): {body}");
-    }
+        match client
+            .post(GROQ_TRANSCRIPTIONS_URL)
+            .bearer_auth(api_key)
+            .multipart(form)
+            .send()
+            .await
+        {
+            Ok(res) => {
+                let status = res.status();
+                if status.is_success() {
+                    let parsed: GroqTranscription = res
+                        .json()
+                        .await
+                        .context("parsing Groq verbose_json response")?;
 
-    let parsed: GroqTranscription = res
-        .json()
-        .await
-        .context("parsing Groq verbose_json response")?;
+                    let mut segments = Vec::new();
+                    if let Some(groq_segments) = parsed.segments {
+                        for seg in groq_segments {
+                            let start = seg.start + time_offset;
+                            let end = seg.end + time_offset;
+                            let text = seg.text.trim().to_string();
+                            if !text.is_empty() {
+                                segments.push(TranscriptSegment { start, end, text });
+                            }
+                        }
+                    } else if let Some(full_text) = parsed.text {
+                        let clean = full_text.trim().to_string();
+                        if !clean.is_empty() {
+                            let duration = ffmpeg::get_media_duration(audio_path).await.unwrap_or(30.0);
+                            segments.push(TranscriptSegment {
+                                start: time_offset,
+                                end: time_offset + duration,
+                                text: clean,
+                            });
+                        }
+                    }
+                    return Ok(segments);
+                }
 
-    let mut segments = Vec::new();
-    if let Some(groq_segments) = parsed.segments {
-        for seg in groq_segments {
-            let start = seg.start + time_offset;
-            let end = seg.end + time_offset;
-            let text = seg.text.trim().to_string();
-            if !text.is_empty() {
-                segments.push(TranscriptSegment { start, end, text });
+                let body = res.text().await.unwrap_or_default();
+                let is_retryable = status.as_u16() == 429 || status.is_server_error();
+                if is_retryable && attempt < max_retries {
+                    let backoff = std::time::Duration::from_secs(2u64.pow(attempt));
+                    tracing::warn!(
+                        "Groq API returned HTTP {status} (attempt {attempt}/{max_retries}). Retrying in {backoff:?}... Details: {body}"
+                    );
+                    tokio::time::sleep(backoff).await;
+                    last_err = anyhow::anyhow!("Groq API error ({status}): {body}");
+                    continue;
+                } else {
+                    anyhow::bail!("Groq API error ({status}): {body}");
+                }
+            }
+            Err(e) => {
+                let backoff = std::time::Duration::from_secs(2u64.pow(attempt));
+                tracing::warn!(
+                    "Groq request network error on attempt {attempt}/{max_retries}: {e}. Retrying in {backoff:?}..."
+                );
+                last_err = anyhow::anyhow!("sending transcription request to Groq API: {e}");
+                if attempt < max_retries {
+                    tokio::time::sleep(backoff).await;
+                }
             }
         }
-    } else if let Some(full_text) = parsed.text {
-        let clean = full_text.trim().to_string();
-        if !clean.is_empty() {
-            let duration = ffmpeg::get_media_duration(audio_path).await.unwrap_or(30.0);
-            segments.push(TranscriptSegment {
-                start: time_offset,
-                end: time_offset + duration,
-                text: clean,
-            });
-        }
     }
 
-    Ok(segments)
+    Err(last_err)
 }
 
 async fn transcribe_chunked_audio(
@@ -741,6 +771,8 @@ async fn transcribe_chunked_audio(
         "Audio duration: {total_duration:.1}s. Splitting into {total_chunks} overlapping chunks."
     );
 
+    // Limit concurrent requests to 2 to prevent TCP connection resets and rate limits
+    let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(2));
     let mut handles = Vec::new();
 
     for (idx, (start, dur)) in chunk_plan.into_iter().enumerate() {
@@ -750,8 +782,10 @@ async fn transcribe_chunked_audio(
         let client_clone = client.clone();
         let key_clone = api_key.to_string();
         let vocab_clone = custom_vocab.map(str::to_string);
+        let sem = semaphore.clone();
 
         let handle = tokio::spawn(async move {
+            let _permit = sem.acquire().await.unwrap();
             let res = transcribe_single_audio_file(
                 &client_clone,
                 &key_clone,

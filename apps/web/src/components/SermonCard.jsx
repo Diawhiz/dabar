@@ -2,11 +2,13 @@ import { useNavigate } from "react-router-dom";
 
 export default function SermonCard({ sermon }) {
   const navigate = useNavigate();
-  const status = sermon.status || "Processing";
+  const status = (sermon.status || "Processing").toLowerCase();
   const isReady =
-    status.toLowerCase().includes("clip") ||
-    status.toLowerCase().includes("ready") ||
-    status.toLowerCase().includes("complete");
+    status.includes("clip") ||
+    status.includes("ready") ||
+    status.includes("complete");
+  const isCancelled = status.includes("cancel");
+  const isFailed = status.includes("fail") || status.includes("error");
 
   function handleClick() {
     if (sermon.id) {
@@ -40,19 +42,37 @@ export default function SermonCard({ sermon }) {
       <div className="pt-2 border-t border-border flex items-center justify-between text-xs font-sans">
         <span
           className={`inline-flex items-center gap-1 font-semibold text-[11px] ${
-            isReady ? "text-success" : "text-accent"
+            isReady
+              ? "text-success"
+              : isCancelled
+              ? "text-muted"
+              : isFailed
+              ? "text-danger"
+              : "text-accent"
           }`}
         >
           <i
             className={`bx ${
-              isReady ? "bxs-check-circle" : "bx-loader-alt bx-spin"
+              isReady
+                ? "bxs-check-circle"
+                : isCancelled
+                ? "bx-stop-circle"
+                : isFailed
+                ? "bx-error-circle"
+                : "bx-loader-alt bx-spin"
             }`}
           />
-          {isReady ? "Clips Ready" : "Transcribing…"}
+          {isReady
+            ? "Clips Ready"
+            : isCancelled
+            ? "Cancelled"
+            : isFailed
+            ? "Failed"
+            : "Transcribing…"}
         </span>
 
         <span className="text-[11px] text-muted group-hover:text-primary font-medium transition-colors">
-          Open Studio →
+          {isReady ? "Open Studio →" : isCancelled ? "View Details →" : "View Progress →"}
         </span>
       </div>
     </article>

@@ -1,6 +1,12 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { listSermons, createSermon, pickMediaFile } from "../lib/api.js";
+import {
+  listSermons,
+  createSermon,
+  pickMediaFile,
+  deleteSermon,
+  onPipelineProgress,
+} from "../lib/api.js";
 import { cleanSermonTitle } from "../lib/formatters.js";
 import Btn from "../components/Btn.jsx";
 
@@ -10,32 +16,57 @@ export default function Dashboard() {
   const [filterQuery, setFilterQuery] = useState("");
   const [quickUrl, setQuickUrl] = useState("");
   const [isStartingQuick, setIsStartingQuick] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    let mounted = true;
-    setIsLoading(true);
+  const fetchSermons = useCallback(async () => {
+    try {
+      const data = await listSermons();
+      if (Array.isArray(data)) {
+        setSermons(data);
+      }
+    } catch (err) {
+      console.warn("Could not list sermons:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
-    listSermons()
-      .then((data) => {
-        if (mounted && Array.isArray(data)) {
-          setSermons(data);
-        } else if (mounted) {
-          setSermons([]);
-        }
-      })
-      .catch((err) => {
-        console.warn("Could not list sermons:", err);
-        if (mounted) setSermons([]);
-      })
-      .finally(() => {
-        if (mounted) setIsLoading(false);
-      });
+  useEffect(() => {
+    fetchSermons();
+
+    // Listen for live pipeline progress events to update statuses in real-time
+    let unlisten = null;
+    onPipelineProgress((event) => {
+      if (event && event.sermon_id) {
+        setSermons((prev) =>
+          prev.map((s) => {
+            if (s.id === event.sermon_id) {
+              const stage = (event.stage || "").toLowerCase();
+              let newStatus = s.status;
+              if (stage === "ready" || event.is_complete) {
+                newStatus = "ready";
+              } else if (stage === "cancelled") {
+                newStatus = "cancelled";
+              } else if (stage === "failed" || event.is_error) {
+                newStatus = "failed";
+              } else if (stage) {
+                newStatus = stage;
+              }
+              return { ...s, status: newStatus };
+            }
+            return s;
+          })
+        );
+      }
+    }).then((fn) => {
+      unlisten = fn;
+    });
 
     return () => {
-      mounted = false;
+      if (typeof unlisten === "function") unlisten();
     };
-  }, []);
+  }, [fetchSermons]);
 
   const totalClips = useMemo(() => {
     return sermons.reduce((acc, s) => {
@@ -88,19 +119,36 @@ export default function Dashboard() {
     }
   }
 
+  async function handleDelete(sermonId, sermonTitle) {
+    const clean = cleanSermonTitle(sermonTitle || "this sermon");
+    if (!window.confirm(`Delete "${clean}" from your library?`)) return;
+    setDeletingId(sermonId);
+    try {
+      await deleteSermon(sermonId);
+      setSermons((prev) => prev.filter((s) => s.id !== sermonId));
+    } catch (err) {
+      alert("Could not delete sermon: " + (err.message || err));
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   return (
     <div className="space-y-7 animate-in fade-in duration-300">
       {/* ── Header ─────────────────────────────────────────────────── */}
       <section className="flex flex-col md:flex-row md:items-end justify-between gap-4 pt-2">
         <div className="space-y-1">
           <div className="flex items-center gap-2 text-xs text-secondary">
-            <span>{sermons.length} {sermons.length === 1 ? "sermon" : "sermons"} in library</span>
+            <span>
+              {sermons.length} {sermons.length === 1 ? "sermon" : "sermons"} in library
+            </span>
           </div>
           <h1 className="font-editorial text-3xl sm:text-4xl font-bold tracking-tight text-primary">
             Sermon Library
           </h1>
           <p className="text-secondary text-xs sm:text-sm font-normal max-w-xl">
-            Import sermons to automatically extract social media video clips, topic chapters, and full word-for-word transcripts.
+            Import sermons to automatically extract social media video clips, topic chapters, and
+            full word-for-word transcripts.
           </p>
         </div>
 
@@ -123,9 +171,7 @@ export default function Dashboard() {
               <i className="bx bx-link text-accent text-base" />
               <span>Quick Transcribe</span>
             </div>
-            <span className="text-[11px] text-muted">
-              YouTube URL or Local File
-            </span>
+            <span className="text-[11px] text-muted">YouTube URL or Local File</span>
           </div>
 
           <form onSubmit={handleQuickSubmit} className="flex flex-col sm:flex-row gap-2">
@@ -153,9 +199,7 @@ export default function Dashboard() {
 
         {/* Summary Stats */}
         <div className="lg:col-span-4 studio-card p-5 flex flex-col justify-between space-y-2">
-          <span className="text-xs text-secondary font-medium">
-            Library Summary
-          </span>
+          <span className="text-xs text-secondary font-medium">Library Summary</span>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="p-2.5 rounded-md bg-surface-elevated border border-border">
@@ -197,9 +241,7 @@ export default function Dashboard() {
         {isLoading ? (
           <div className="studio-card py-20 text-center space-y-2.5">
             <i className="bx bx-loader-alt bx-spin text-2xl text-accent" />
-            <p className="text-xs text-secondary">
-              Loading sermon library…
-            </p>
+            <p className="text-xs text-secondary">Loading sermon library…</p>
           </div>
         ) : filtered.length > 0 ? (
           <div className="studio-card overflow-hidden">
@@ -207,21 +249,11 @@ export default function Dashboard() {
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="border-b border-border bg-surface-elevated/40 text-secondary">
-                    <th className="py-3 px-4 font-semibold">
-                      Title
-                    </th>
-                    <th className="py-3 px-4 font-semibold">
-                      Speaker
-                    </th>
-                    <th className="py-3 px-4 font-semibold">
-                      Length
-                    </th>
-                    <th className="py-3 px-4 font-semibold">
-                      Status
-                    </th>
-                    <th className="py-3 px-4 font-semibold text-right">
-                      Actions
-                    </th>
+                    <th className="py-3 px-4 font-semibold">Title</th>
+                    <th className="py-3 px-4 font-semibold">Speaker</th>
+                    <th className="py-3 px-4 font-semibold">Length</th>
+                    <th className="py-3 px-4 font-semibold">Status</th>
+                    <th className="py-3 px-4 font-semibold text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/60">
@@ -234,7 +266,9 @@ export default function Dashboard() {
                       statusStr.includes("clip") ||
                       statusStr.includes("ready") ||
                       statusStr.includes("complete");
-                    const isFailed = statusStr.includes("fail") || statusStr.includes("error");
+                    const isCancelled = statusStr.includes("cancel");
+                    const isFailed =
+                      statusStr.includes("fail") || statusStr.includes("error");
                     const chaptersCount =
                       sermon.highlights?.length ||
                       sermon.chapters?.length ||
@@ -252,7 +286,11 @@ export default function Dashboard() {
                             <button
                               type="button"
                               onClick={() =>
-                                navigate(isReady ? `/clips/${sermon.id}` : `/processing/${sermon.id}`)
+                                navigate(
+                                  isReady
+                                    ? `/clips/${sermon.id}`
+                                    : `/processing/${sermon.id}`
+                                )
                               }
                               className="text-left font-editorial text-base font-bold text-primary group-hover:text-accent transition-colors leading-snug"
                             >
@@ -282,12 +320,17 @@ export default function Dashboard() {
                           {sermon.duration || "—"}
                         </td>
 
-                        {/* Status */}
+                        {/* Status Badge */}
                         <td className="py-3.5 px-4">
                           {isReady ? (
                             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-success-muted text-success text-[11px] font-semibold">
                               <span className="w-1.5 h-1.5 rounded-full bg-success" />
                               Ready
+                            </span>
+                          ) : isCancelled ? (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-surface-elevated border border-border text-muted text-[11px] font-semibold">
+                              <span className="w-1.5 h-1.5 rounded-full bg-muted" />
+                              Cancelled
                             </span>
                           ) : isFailed ? (
                             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-danger-muted text-danger text-[11px] font-semibold">
@@ -323,14 +366,56 @@ export default function Dashboard() {
                                   <span>Clips</span>
                                 </button>
                               </>
+                            ) : isCancelled || isFailed ? (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => navigate(`/processing/${sermon.id}`)}
+                                  className="px-2.5 py-1 rounded bg-surface-elevated text-xs text-secondary hover:text-primary transition-colors border border-border"
+                                >
+                                  Details
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDelete(sermon.id, sermon.title)}
+                                  disabled={deletingId === sermon.id}
+                                  title="Delete from library"
+                                  className="p-1.5 rounded hover:bg-danger/10 text-muted hover:text-danger transition-colors text-sm"
+                                >
+                                  <i
+                                    className={`bx ${
+                                      deletingId === sermon.id
+                                        ? "bx-loader-alt bx-spin"
+                                        : "bx-trash"
+                                    }`}
+                                  />
+                                </button>
+                              </>
                             ) : (
-                              <button
-                                type="button"
-                                onClick={() => navigate(`/processing/${sermon.id}`)}
-                                className="px-2.5 py-1 rounded bg-surface-elevated text-xs text-secondary hover:text-primary transition-colors border border-border"
-                              >
-                                View Progress
-                              </button>
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => navigate(`/processing/${sermon.id}`)}
+                                  className="px-2.5 py-1 rounded bg-surface-elevated text-xs text-secondary hover:text-primary transition-colors border border-border"
+                                >
+                                  View Progress
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDelete(sermon.id, sermon.title)}
+                                  disabled={deletingId === sermon.id}
+                                  title="Delete from library"
+                                  className="p-1.5 rounded hover:bg-danger/10 text-muted hover:text-danger transition-colors text-sm"
+                                >
+                                  <i
+                                    className={`bx ${
+                                      deletingId === sermon.id
+                                        ? "bx-loader-alt bx-spin"
+                                        : "bx-trash"
+                                    }`}
+                                  />
+                                </button>
+                              </>
                             )}
                           </div>
                         </td>

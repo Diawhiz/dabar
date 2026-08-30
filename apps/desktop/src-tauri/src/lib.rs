@@ -39,6 +39,16 @@ async fn get_sermon(id: String, state: State<'_, AppState>) -> Result<Option<Ser
     state.db.get_sermon(id).await.map_err(|e| e.to_string())
 }
 
+/// Delete a sermon from the local database and clean up any active tasks.
+#[tauri::command]
+async fn delete_sermon(id: String, state: State<'_, AppState>) -> Result<(), String> {
+    let id = Uuid::parse_str(&id).map_err(|e| e.to_string())?;
+    if let Some(handle) = state.active_tasks.lock().await.remove(&id) {
+        handle.abort();
+    }
+    state.db.delete_sermon(id).await.map_err(|e| e.to_string())
+}
+
 /// Start the processing pipeline for a YouTube URL or local file path.
 /// Returns the new sermon ID immediately; pipeline runs in the background.
 #[tauri::command]
@@ -611,6 +621,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             list_sermons,
             get_sermon,
+            delete_sermon,
             start_pipeline,
             cancel_pipeline,
             render_clip,

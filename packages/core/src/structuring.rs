@@ -25,7 +25,7 @@ const SECTION_MARKERS: &[&str] = &[
     "let's stand",
 ];
 
-const BIBLE_BOOKS: &[&str] = &[
+pub const BIBLE_BOOKS: &[&str] = &[
     "Genesis", "Exodus", "Leviticus", "Numbers", "Deuteronomy",
     "Joshua", "Judges", "Ruth", "1 Samuel", "2 Samuel",
     "1 Kings", "2 Kings", "1 Chronicles", "2 Chronicles",

@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use reqwest::multipart::{Form, Part};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use tokio::process::Command;
 
 const GROQ_TRANSCRIPTIONS_URL: &str = "https://api.groq.com/openai/v1/audio/transcriptions";
 const WHISPER_MODEL: &str = "whisper-large-v3-turbo";
@@ -25,14 +26,9 @@ pub struct TranscriptionResult {
     pub chapters: Vec<Chapter>,
 }
 
-// Groq has a hard 25 MB payload limit.
-// We trigger chunking fallback if compressed audio exceeds 24 MB or duration exceeds 20 minutes (1200s).
-const GROQ_MAX_FILE_BYTES: u64 = 25 * 1024 * 1024; // 25 MB
 const CHUNK_TRIGGER_BYTES: u64 = 24 * 1024 * 1024; // 24 MB
 const CHUNK_TRIGGER_DURATION_SECS: f32 = 1200.0; // 20 minutes
-
-// 15 minutes chunk duration with 5 seconds overlap
-const CHUNK_DURATION_SECS: f32 = 900.0;
+const CHUNK_DURATION_SECS: f32 = 900.0; // 15 minutes
 const CHUNK_OVERLAP_SECS: f32 = 5.0;
 
 #[derive(Debug, Deserialize)]
@@ -48,8 +44,6 @@ struct GroqSegment {
     text: String,
 }
 
-/// Builds domain-tailored prompt to steer Whisper toward Nigerian-accented English,
-/// Christian preaching vocabulary, and custom church terminology.
 pub fn build_whisper_prompt(custom_vocab: Option<&str>) -> String {
     let mut prompt = "Sermon transcript in Nigerian English, Christian preaching, Bible exposition, scripture readings, Yoruba interjections (Hallelujah, Amen, Pastor, Apostle, Jesus Christ, Holy Spirit, Jehovah, Lord God, Bible).".to_string();
     if let Some(vocab) = custom_vocab {
@@ -62,12 +56,6 @@ pub fn build_whisper_prompt(custom_vocab: Option<&str>) -> String {
     prompt
 }
 
-/// Transcribes an audio file using the specified backend.
-///
-/// - Preprocesses audio to high-clarity mono 16kHz 64kbps MP3.
-/// - Splits large files into chunks automatically if using Groq.
-/// - Injects domain-specific initial prompt and custom vocabulary for maximum accuracy.
-/// - Calls `progress_callback` with a float 0.0–1.0 to report transcription progress.
 pub async fn transcribe_audio(
     backend: &TranscriptionBackend,
     raw_audio_path: &Path,
@@ -83,7 +71,7 @@ pub async fn transcribe_audio(
             })
         }
         TranscriptionBackend::Local { model_path } => {
-            let segments = transcribe_audio_local(model_path, raw_audio_path, progress_callback).await?;
+            let segments = transcribe_audio_local(model_path, raw_audio_path, custom_vocab, progress_callback).await?;
             Ok(TranscriptionResult {
                 segments,
                 chapters: Vec::new(),
@@ -114,113 +102,475 @@ async fn transcribe_audio_groq(
     result
 }
 
-async fn transcribe_audio_local(
-    model_path: &std::path::PathBuf,
+// ── Local Whisper.cpp Implementation ────────────────────────────────────────
+
+pub async fn transcribe_audio_local(
+    model_path: &Path,
     raw_audio_path: &Path,
+    custom_vocab: Option<&str>,
     progress_callback: Option<Box<dyn Fn(f32) + Send + Sync>>,
 ) -> Result<Vec<TranscriptSegment>> {
-    if !model_path.exists() {
+    // Resolve effective model path — prefer tiny for speed
+    let effective_model_path: PathBuf = if model_path.exists() {
+        model_path.to_path_buf()
+    } else {
+        let mut candidates = Vec::new();
+        // Always prefer tiny over base for speed
+        if let Some(parent) = model_path.parent() {
+            candidates.push(parent.join("ggml-tiny.bin"));
+            candidates.push(parent.join("ggml-base.bin"));
+        }
+        for env_var in &["APPDATA", "LOCALAPPDATA"] {
+            if let Ok(val) = std::env::var(env_var) {
+                let base_p = PathBuf::from(&val);
+                for dir_name in &["dabar", "com.preshdevops.dabar", "com.dabar.app"] {
+                    candidates.push(base_p.join(dir_name).join("whisper-models").join("ggml-tiny.bin"));
+                    candidates.push(base_p.join(dir_name).join("whisper-models").join("ggml-base.bin"));
+                }
+            }
+        }
+        candidates
+            .into_iter()
+            .find(|p| p.exists())
+            .unwrap_or_else(|| model_path.to_path_buf())
+    };
+
+    if !effective_model_path.exists() {
         anyhow::bail!(
-            "Offline Whisper model not found at {}. Please download a model in Settings.",
+            "Offline Whisper model not found at {}. Please run setup in Onboarding or Settings to download the offline speech model.",
             model_path.display()
         );
     }
 
-    if let Some(ref cb) = progress_callback {
-        cb(0.1); // 0.1 on load
-    }
+    tracing::info!(
+        "Using Whisper model: {} ({:.1} MB)",
+        effective_model_path.display(),
+        effective_model_path.metadata().map(|m| m.len() as f64 / 1_048_576.0).unwrap_or(0.0)
+    );
 
-    let temp_dir = std::env::temp_dir().join(format!("dabar_whisper_local_{}", uuid::Uuid::new_v4()));
+    let temp_dir = std::env::temp_dir().join(format!("dabar_local_whisper_{}", uuid::Uuid::new_v4()));
     tokio::fs::create_dir_all(&temp_dir)
         .await
         .with_context(|| format!("creating temp directory {}", temp_dir.display()))?;
 
-    let wav_path = temp_dir.join("preprocessed.wav");
-
-    ffmpeg::preprocess_audio_for_whisper_wav(raw_audio_path, &wav_path).await?;
-
-    let bytes = tokio::fs::read(&wav_path).await?;
-    let mut data_offset = 0;
-    for i in 0..bytes.len().saturating_sub(4) {
-        if bytes[i..i + 4] == b"data"[..] {
-            data_offset = i + 8;
-            break;
-        }
-    }
-    if data_offset == 0 || data_offset > bytes.len() {
-        let _ = tokio::fs::remove_dir_all(&temp_dir).await;
-        anyhow::bail!("Invalid WAV generated by ffmpeg");
+    if let Some(ref cb) = progress_callback {
+        cb(0.05);
     }
 
-    let data_bytes = &bytes[data_offset..];
-    let samples_count = data_bytes.len() / 2;
-    let mut samples = Vec::with_capacity(samples_count);
-    for chunk in data_bytes.chunks_exact(2) {
-        let sample = i16::from_le_bytes([chunk[0], chunk[1]]);
-        samples.push(sample as f32 / 32768.0);
+    // Convert to 16kHz mono WAV
+    let wav_path = temp_dir.join("input_16k.wav");
+    tracing::info!("Converting audio to 16kHz mono WAV for local Whisper: {}", raw_audio_path.display());
+    ffmpeg::convert_audio_to_wav_16k(raw_audio_path, &wav_path).await?;
+
+    if let Some(ref cb) = progress_callback {
+        cb(0.10);
+    }
+
+    // Get audio duration to decide chunking strategy
+    let duration = ffmpeg::get_media_duration(&wav_path).await.unwrap_or(0.0);
+    tracing::info!("Audio duration: {duration:.1}s ({:.1} minutes)", duration / 60.0);
+
+    // ── Chunked parallel transcription for audio > 3 minutes ─────────────────
+    const LOCAL_CHUNK_SECS: f32 = 300.0;     // 5 minutes per chunk
+    const LOCAL_OVERLAP_SECS: f32 = 3.0;     // 3s overlap for stitching
+    const MIN_CHUNK_DURATION: f32 = 180.0;   // Only chunk if > 3 minutes
+
+    let segments = if duration > MIN_CHUNK_DURATION {
+        transcribe_local_chunked(
+            &effective_model_path,
+            &wav_path,
+            &temp_dir,
+            duration,
+            LOCAL_CHUNK_SECS,
+            LOCAL_OVERLAP_SECS,
+            custom_vocab,
+            progress_callback.as_ref(),
+        ).await?
+    } else {
+        // Short audio — single pass
+        run_single_whisper_pass(
+            &effective_model_path,
+            &wav_path,
+            &temp_dir.join("full"),
+            custom_vocab,
+            0.0,
+        ).await?
+    };
+
+    if let Some(ref cb) = progress_callback {
+        cb(1.0);
     }
 
     let _ = tokio::fs::remove_dir_all(&temp_dir).await;
 
-    if let Some(ref cb) = progress_callback {
-        cb(0.3); // 0.3 on start
+    if segments.is_empty() {
+        anyhow::bail!("Whisper transcription produced no text. The audio may be silent or unsupported.");
     }
 
-    let model_path_str = model_path.to_string_lossy().to_string();
+    Ok(segments)
+}
 
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<i32>();
-    
-    let handle = tokio::task::spawn_blocking(move || -> Result<Vec<TranscriptSegment>> {
-        let ctx = whisper_rs::WhisperContext::new_with_params(
-            &model_path_str,
-            whisper_rs::WhisperContextParameters::default(),
-        )
-        .context("failed to load whisper model")?;
+/// Split audio into chunks and run whisper-cli on them in parallel.
+async fn transcribe_local_chunked(
+    model_path: &Path,
+    wav_path: &Path,
+    temp_dir: &Path,
+    total_duration: f32,
+    chunk_secs: f32,
+    overlap_secs: f32,
+    custom_vocab: Option<&str>,
+    progress_callback: Option<&Box<dyn Fn(f32) + Send + Sync>>,
+) -> Result<Vec<TranscriptSegment>> {
+    // Build chunk list
+    let mut chunks: Vec<(f32, f32)> = Vec::new();
+    let mut start = 0.0_f32;
+    while start < total_duration {
+        let end = (start + chunk_secs).min(total_duration);
+        chunks.push((start, end));
+        start = end - overlap_secs;
+        if total_duration - start < 10.0 { break; } // don't create tiny trailing chunks
+    }
 
-        let mut state = ctx.create_state().context("failed to create whisper state")?;
+    let num_chunks = chunks.len();
+    tracing::info!(
+        "Splitting {:.0}s audio into {} chunks of ~{:.0}s each for parallel processing",
+        total_duration, num_chunks, chunk_secs
+    );
 
-        let mut params = whisper_rs::FullParams::new(whisper_rs::SamplingStrategy::Greedy { best_of: 1 });
-        params.set_print_progress(false);
-        params.set_print_special(false);
-        params.set_print_realtime(false);
-        params.set_print_timestamps(false);
+    // Extract audio chunks via ffmpeg (very fast, < 1s each)
+    let mut chunk_paths = Vec::new();
+    for (i, (start, end)) in chunks.iter().enumerate() {
+        let chunk_wav = temp_dir.join(format!("chunk_{i:03}.wav"));
+        let duration = end - start;
+        ffmpeg::extract_audio_chunk_wav(wav_path, &chunk_wav, *start, duration).await?;
+        chunk_paths.push((i, *start, chunk_wav));
+    }
 
-        let tx_clone = tx.clone();
-        // whisper_rs uses a progress callback that yields an integer 0..100
-        params.set_progress_callback_safe(move |progress| {
-            let _ = tx_clone.send(progress);
+    if let Some(cb) = progress_callback {
+        cb(0.15);
+    }
+
+    // Use 1 whisper process with all CPU threads to avoid duplicate model instances in RAM
+    let total_cores = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
+    let max_parallel = 1;
+    let threads_per_process = total_cores.clamp(2, 8);
+
+    tracing::info!(
+        "Running whisper-cli with {} threads (single-process mode for low RAM footprint)",
+        threads_per_process
+    );
+
+    // Process chunks with bounded concurrency
+    let model_path = model_path.to_path_buf();
+    let custom_vocab_owned = custom_vocab.map(|s| s.to_string());
+
+    let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(max_parallel));
+    let completed = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+
+    let mut handles = Vec::new();
+    for (i, offset, chunk_wav) in chunk_paths {
+        let model = model_path.clone();
+        let vocab = custom_vocab_owned.clone();
+        let chunk_temp = temp_dir.join(format!("out_{i:03}"));
+        let sem = semaphore.clone();
+        let done = completed.clone();
+        let n_chunks = num_chunks;
+
+        let handle = tokio::spawn(async move {
+            let _permit = sem.acquire().await.unwrap();
+
+            tracing::info!("Processing chunk {}/{} (offset {:.0}s)", i + 1, n_chunks, offset);
+
+            let result = run_single_whisper_pass_with_threads(
+                &model,
+                &chunk_wav,
+                &chunk_temp,
+                vocab.as_deref(),
+                offset,
+                threads_per_process,
+            ).await;
+
+            let finished = done.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+            tracing::info!("Chunk {}/{} done ({}/{})", i + 1, n_chunks, finished, n_chunks);
+
+            (offset, result)
         });
+        handles.push(handle);
+    }
 
-        state.full(params, &samples).context("failed to run whisper inference")?;
+    // Collect results
+    let mut chunk_results = Vec::new();
+    for handle in handles {
+        let (offset, result) = handle.await.context("joining chunk transcription task")?;
+        match result {
+            Ok(segments) => {
+                chunk_results.push((offset, segments));
+                if let Some(cb) = progress_callback {
+                    let progress = 0.15 + 0.80 * (chunk_results.len() as f32 / num_chunks as f32);
+                    cb(progress);
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Chunk at offset {offset:.0}s failed: {e}. Skipping.");
+                // Don't fail entire transcription for one bad chunk
+            }
+        }
+    }
 
-        let num_segments = state.full_n_segments().context("failed to get number of segments")?;
-        let mut results = Vec::new();
-        for i in 0..num_segments {
-            let text = state.full_get_segment_text(i).context("failed to get segment text")?;
-            let t0 = state.full_get_segment_t0(i).context("failed to get segment start")?;
-            let t1 = state.full_get_segment_t1(i).context("failed to get segment end")?;
+    if chunk_results.is_empty() {
+        anyhow::bail!("All audio chunks failed transcription.");
+    }
 
-            results.push(TranscriptSegment {
-                start: (t0 as f32) * 0.01,
-                end: (t1 as f32) * 0.01,
+    Ok(stitch_transcript_chunks(chunk_results))
+}
+
+/// Run a single whisper-cli invocation. `time_offset` shifts all timestamps.
+async fn run_single_whisper_pass(
+    model_path: &Path,
+    wav_path: &Path,
+    output_dir: &Path,
+    custom_vocab: Option<&str>,
+    time_offset: f32,
+) -> Result<Vec<TranscriptSegment>> {
+    let threads = std::thread::available_parallelism()
+        .map(|n| n.get().clamp(4, 16))
+        .unwrap_or(4);
+    run_single_whisper_pass_with_threads(model_path, wav_path, output_dir, custom_vocab, time_offset, threads).await
+}
+
+/// Run a single whisper-cli invocation with explicit thread count.
+async fn run_single_whisper_pass_with_threads(
+    model_path: &Path,
+    wav_path: &Path,
+    output_dir: &Path,
+    custom_vocab: Option<&str>,
+    time_offset: f32,
+    num_threads: usize,
+) -> Result<Vec<TranscriptSegment>> {
+    tokio::fs::create_dir_all(output_dir).await?;
+
+    let output_prefix = output_dir.join("transcription");
+    let json_output_path = output_dir.join("transcription.json");
+
+    let (whisper_bin_dir, mut cmd) = get_binary_command("whisper-cli");
+    if let Some(ref bin_dir) = whisper_bin_dir {
+        cmd.current_dir(bin_dir);
+    }
+    cmd.arg("-m")
+        .arg(model_path)
+        .arg("-f")
+        .arg(wav_path)
+        .arg("-oj")
+        .arg("-of")
+        .arg(&output_prefix)
+        .arg("-l")
+        .arg("en")
+        .arg("-t")
+        .arg(num_threads.to_string())
+        // ── Speed-first flags ───────────────────────────────────
+        .arg("-bs").arg("1")        // greedy decoding — fastest possible
+        .arg("-bo").arg("1")        // single candidate
+        .arg("--no-prints");        // suppress verbose logs
+
+    if let Some(vocab) = custom_vocab {
+        let clean = vocab.trim();
+        if !clean.is_empty() {
+            cmd.arg("--prompt").arg(clean);
+        }
+    }
+
+    let output = cmd.output().await;
+
+    let mut segments = match output {
+        Ok(out) => {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            let stderr = String::from_utf8_lossy(&out.stderr);
+
+            // 1. JSON output file
+            if json_output_path.exists() {
+                if let Ok(json_str) = tokio::fs::read_to_string(&json_output_path).await {
+                    if let Ok(segs) = parse_whisper_cpp_json(&json_str) {
+                        return Ok(offset_segments(segs, time_offset));
+                    }
+                }
+            }
+
+            // 2. Any .json file in output dir
+            if let Ok(mut entries) = tokio::fs::read_dir(output_dir).await {
+                while let Ok(Some(entry)) = entries.next_entry().await {
+                    let p = entry.path();
+                    if p.extension().and_then(|e| e.to_str()) == Some("json") {
+                        if let Ok(json_str) = tokio::fs::read_to_string(&p).await {
+                            if let Ok(segs) = parse_whisper_cpp_json(&json_str) {
+                                return Ok(offset_segments(segs, time_offset));
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 3. Text output from stdout/stderr
+            if let Ok(segs) = parse_whisper_cpp_text_output(&stdout) {
+                segs
+            } else if let Ok(segs) = parse_whisper_cpp_text_output(&stderr) {
+                segs
+            } else if !out.status.success() {
+                let err_msg = if !stderr.trim().is_empty() {
+                    stderr.trim().to_string()
+                } else if !stdout.trim().is_empty() {
+                    stdout.trim().to_string()
+                } else {
+                    format!("whisper-cli exited with status code {:?}", out.status.code())
+                };
+                anyhow::bail!("local whisper-cli error: {}", err_msg);
+            } else {
+                anyhow::bail!("whisper-cli produced no recognizable transcription output");
+            }
+        }
+        Err(e) => {
+            anyhow::bail!(
+                "Could not execute whisper-cli binary ({}). Please install offline tools in Settings.",
+                e
+            );
+        }
+    };
+
+    // Apply time offset for chunked processing
+    if time_offset > 0.1 {
+        for seg in &mut segments {
+            seg.start += time_offset;
+            seg.end += time_offset;
+        }
+    }
+
+    Ok(segments)
+}
+
+/// Shift all segment timestamps by a fixed offset.
+fn offset_segments(mut segments: Vec<TranscriptSegment>, offset: f32) -> Vec<TranscriptSegment> {
+    if offset > 0.1 {
+        for seg in &mut segments {
+            seg.start += offset;
+            seg.end += offset;
+        }
+    }
+    segments
+}
+
+pub fn parse_whisper_cpp_json(json_str: &str) -> Result<Vec<TranscriptSegment>> {
+    let parsed: serde_json::Value = serde_json::from_str(json_str)
+        .context("parsing whisper-cli JSON output")?;
+
+    let mut segments = Vec::new();
+
+    // Format 1: "transcription": [ { "offsets": { "from": 0, "to": 4500 }, "text": "..." }, ... ]
+    if let Some(arr) = parsed.get("transcription").and_then(|v| v.as_array()) {
+        for item in arr {
+            let text = item.get("text").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+            if text.is_empty() {
+                continue;
+            }
+
+            let mut start_sec = 0.0;
+            let mut end_sec = 0.0;
+
+            if let Some(offsets) = item.get("offsets") {
+                let from_ms = offsets.get("from").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let to_ms = offsets.get("to").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                start_sec = (from_ms / 1000.0) as f32;
+                end_sec = (to_ms / 1000.0) as f32;
+            } else if let Some(timestamps) = item.get("timestamps") {
+                if let Some(from_str) = timestamps.get("from").and_then(|v| v.as_str()) {
+                    start_sec = parse_whisper_timestamp_str(from_str).unwrap_or(0.0);
+                }
+                if let Some(to_str) = timestamps.get("to").and_then(|v| v.as_str()) {
+                    end_sec = parse_whisper_timestamp_str(to_str).unwrap_or(0.0);
+                }
+            }
+
+            if end_sec <= start_sec {
+                end_sec = start_sec + 3.0;
+            }
+
+            segments.push(TranscriptSegment {
+                start: start_sec,
+                end: end_sec,
                 text,
             });
         }
-        
-        Ok(results)
-    });
+    }
 
-    if let Some(ref cb) = progress_callback {
-        while let Some(progress_val) = rx.recv().await {
-            // progress_val is 0 to 100
-            let p = 0.3 + (0.7 * (progress_val as f32 / 100.0));
-            cb(p.min(1.0));
+    // Format 2: "segments": [ { "start": 0.0, "end": 4.5, "text": "..." } ]
+    if segments.is_empty() {
+        if let Some(arr) = parsed.get("segments").and_then(|v| v.as_array()) {
+            for item in arr {
+                let text = item.get("text").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+                if text.is_empty() {
+                    continue;
+                }
+                let start = item.get("start").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+                let end = item.get("end").and_then(|v| v.as_f64()).unwrap_or((start + 3.0) as f64) as f32;
+                segments.push(TranscriptSegment { start, end, text });
+            }
         }
     }
 
-    let segments = handle.await.context("whisper inference task panicked")??;
-    
+    if segments.is_empty() {
+        anyhow::bail!("whisper-cli JSON output contained no transcription segments");
+    }
+
     Ok(segments)
+}
+
+pub fn parse_whisper_cpp_text_output(text_out: &str) -> Result<Vec<TranscriptSegment>> {
+    let mut segments = Vec::new();
+
+    // Parse lines like: [00:00:00.000 --> 00:00:05.000]   Good morning church...
+    for line in text_out.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') && trimmed.contains("-->") {
+            if let Some(close_bracket) = trimmed.find(']') {
+                let time_part = &trimmed[1..close_bracket];
+                let text_part = trimmed[close_bracket + 1..].trim().to_string();
+
+                let parts: Vec<&str> = time_part.split("-->").collect();
+                if parts.len() == 2 && !text_part.is_empty() {
+                    let start = parse_whisper_timestamp_str(parts[0].trim()).unwrap_or(0.0);
+                    let end = parse_whisper_timestamp_str(parts[1].trim()).unwrap_or(start + 3.0);
+                    segments.push(TranscriptSegment {
+                        start,
+                        end,
+                        text: text_part,
+                    });
+                }
+            }
+        }
+    }
+
+    if segments.is_empty() {
+        anyhow::bail!("could not parse segments from whisper-cli output");
+    }
+
+    Ok(segments)
+}
+
+fn parse_whisper_timestamp_str(ts: &str) -> Option<f32> {
+    let clean = ts.trim().replace(',', ".");
+    let parts: Vec<&str> = clean.split(':').collect();
+    if parts.len() == 3 {
+        let hrs: f32 = parts[0].parse().ok()?;
+        let mins: f32 = parts[1].parse().ok()?;
+        let secs: f32 = parts[2].parse().ok()?;
+        Some(hrs * 3600.0 + mins * 60.0 + secs)
+    } else if parts.len() == 2 {
+        let mins: f32 = parts[0].parse().ok()?;
+        let secs: f32 = parts[1].parse().ok()?;
+        Some(mins * 60.0 + secs)
+    } else {
+        clean.parse().ok()
+    }
 }
 
 async fn transcribe_audio_internal(
@@ -304,218 +654,163 @@ async fn transcribe_single_audio_file(
         .to_string();
 
     tracing::info!(
-        "Sending audio to Groq Whisper: {:.2} MB (file: '{}', offset: {:.2}s, max allowed: 25.00 MB)",
+        "Sending audio to Groq Whisper: {:.2} MB (file: '{}', offset: {:.2}s)",
         size_mb,
         filename,
         time_offset
     );
 
-    if file_size > GROQ_MAX_FILE_BYTES {
-        anyhow::bail!(
-            "Audio file ({:.2} MB) exceeds Groq Whisper 25 MB payload limit",
-            size_mb
-        );
-    }
-
     let prompt = build_whisper_prompt(custom_vocab);
 
-    let mut attempts = 0;
-    let transcription: GroqTranscription = loop {
-        attempts += 1;
-        let file_part = Part::bytes(bytes.clone()).file_name(filename.clone());
+    // Retry loop with exponential backoff (handles connection resets, rate limits, 5xx errors)
+    let max_retries = 4;
+    let mut last_err = anyhow::anyhow!("unknown transcription error");
+
+    for attempt in 1..=max_retries {
+        let part = Part::bytes(bytes.clone())
+            .file_name(filename.clone())
+            .mime_str("audio/mpeg")
+            .context("creating multipart part")?;
+
         let form = Form::new()
             .text("model", WHISPER_MODEL)
-            .text("language", "en")
-            .text("temperature", "0.0")
-            .text("prompt", prompt.clone())
             .text("response_format", "verbose_json")
-            .part("file", file_part);
+            .text("prompt", prompt.clone())
+            .part("file", part);
 
-        let response = client
+        match client
             .post(GROQ_TRANSCRIPTIONS_URL)
             .bearer_auth(api_key)
             .multipart(form)
             .send()
-            .await;
+            .await
+        {
+            Ok(res) => {
+                let status = res.status();
+                if status.is_success() {
+                    let parsed: GroqTranscription = res
+                        .json()
+                        .await
+                        .context("parsing Groq verbose_json response")?;
 
-        match response {
-            Ok(resp) if resp.status().is_success() => {
-                match resp.json::<GroqTranscription>().await {
-                    Ok(data) => break data,
-                    Err(err) => {
-                        anyhow::bail!("parsing Groq Whisper response JSON: {}", err);
+                    let mut segments = Vec::new();
+                    if let Some(groq_segments) = parsed.segments {
+                        for seg in groq_segments {
+                            let start = seg.start + time_offset;
+                            let end = seg.end + time_offset;
+                            let text = seg.text.trim().to_string();
+                            if !text.is_empty() {
+                                segments.push(TranscriptSegment { start, end, text });
+                            }
+                        }
+                    } else if let Some(full_text) = parsed.text {
+                        let clean = full_text.trim().to_string();
+                        if !clean.is_empty() {
+                            let duration = ffmpeg::get_media_duration(audio_path).await.unwrap_or(30.0);
+                            segments.push(TranscriptSegment {
+                                start: time_offset,
+                                end: time_offset + duration,
+                                text: clean,
+                            });
+                        }
                     }
+                    return Ok(segments);
+                }
+
+                let body = res.text().await.unwrap_or_default();
+                let is_retryable = status.as_u16() == 429 || status.is_server_error();
+                if is_retryable && attempt < max_retries {
+                    let backoff = std::time::Duration::from_secs(2u64.pow(attempt));
+                    tracing::warn!(
+                        "Groq API returned HTTP {status} (attempt {attempt}/{max_retries}). Retrying in {backoff:?}... Details: {body}"
+                    );
+                    tokio::time::sleep(backoff).await;
+                    last_err = anyhow::anyhow!("Groq API error ({status}): {body}");
+                    continue;
+                } else {
+                    anyhow::bail!("Groq API error ({status}): {body}");
                 }
             }
-            Ok(resp)
-                if (resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS
-                    || resp.status().is_server_error())
-                    && attempts < 4 =>
-            {
-                let status = resp.status();
-                let wait_secs = attempts * 3;
+            Err(e) => {
+                let backoff = std::time::Duration::from_secs(2u64.pow(attempt));
                 tracing::warn!(
-                    "Groq Whisper returned HTTP {} for '{}'. Retrying in {}s (attempt {}/4)...",
-                    status,
-                    filename,
-                    wait_secs,
-                    attempts
+                    "Groq request network error on attempt {attempt}/{max_retries}: {e}. Retrying in {backoff:?}..."
                 );
-                tokio::time::sleep(std::time::Duration::from_secs(wait_secs)).await;
-            }
-            Ok(resp) => {
-                let status = resp.status();
-                let error_body = resp.text().await.unwrap_or_default();
-                anyhow::bail!(
-                    "Groq Whisper transcription failed (HTTP {}): {}",
-                    status,
-                    error_body
-                );
-            }
-            Err(err) if attempts < 4 => {
-                let wait_secs = attempts * 3;
-                tracing::warn!(
-                    "Network error sending Groq Whisper request for '{}': {}. Retrying in {}s (attempt {}/4)...",
-                    filename,
-                    err,
-                    wait_secs,
-                    attempts
-                );
-                tokio::time::sleep(std::time::Duration::from_secs(wait_secs)).await;
-            }
-            Err(err) => {
-                anyhow::bail!("sending Groq Whisper transcription request: {}", err);
+                last_err = anyhow::anyhow!("sending transcription request to Groq API: {e}");
+                if attempt < max_retries {
+                    tokio::time::sleep(backoff).await;
+                }
             }
         }
-    };
-
-    if let Some(segments) = transcription.segments {
-        return Ok(segments
-            .into_iter()
-            .map(|seg| TranscriptSegment {
-                start: seg.start + time_offset,
-                end: seg.end + time_offset,
-                text: seg.text,
-            })
-            .collect());
     }
 
-    Ok(transcription
-        .text
-        .map(|text| {
-            vec![TranscriptSegment {
-                start: time_offset,
-                end: time_offset,
-                text,
-            }]
-        })
-        .unwrap_or_default())
+    Err(last_err)
 }
 
 async fn transcribe_chunked_audio(
     client: &reqwest::Client,
     api_key: &str,
-    audio_path: &Path,
-    chunk_dir: &Path,
+    preprocessed_path: &Path,
+    temp_dir: &Path,
     total_duration: f32,
     custom_vocab: Option<&str>,
     progress_callback: Option<Box<dyn Fn(f32) + Send + Sync>>,
 ) -> Result<Vec<TranscriptSegment>> {
-    let duration = if total_duration > 0.0 {
-        total_duration
-    } else {
-        ffmpeg::get_media_duration(audio_path).await?
-    };
+    let mut chunk_plan = Vec::new();
+    let mut current_start = 0.0;
 
+    while current_start < total_duration {
+        let chunk_dur = CHUNK_DURATION_SECS.min(total_duration - current_start);
+        chunk_plan.push((current_start, chunk_dur));
+        current_start += CHUNK_DURATION_SECS - CHUNK_OVERLAP_SECS;
+    }
+
+    let total_chunks = chunk_plan.len();
     tracing::info!(
-        "Splitting audio of total duration {:.2}s into ~{:.0}s chunks with {:.0}s overlap",
-        duration,
-        CHUNK_DURATION_SECS,
-        CHUNK_OVERLAP_SECS
+        "Audio duration: {total_duration:.1}s. Splitting into {total_chunks} overlapping chunks."
     );
 
-    let mut current_start: f32 = 0.0;
-    let mut chunk_index: usize = 0;
-    let mut join_set = tokio::task::JoinSet::new();
-    let mut total_chunks = 0;
-    let vocab_owned = custom_vocab.map(|s| s.to_string());
+    // Limit concurrent requests to 2 to prevent TCP connection resets and rate limits
+    let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(2));
+    let mut handles = Vec::new();
 
-    // Overlap audio chunk extraction with immediate network dispatch
-    while current_start < duration {
-        let duration_to_extract = (duration - current_start).min(CHUNK_DURATION_SECS);
-        let chunk_file = chunk_dir.join(format!("chunk_{chunk_index:03}.mp3"));
-
-        tracing::info!(
-            "Extracting chunk #{chunk_index} (start: {current_start:.2}s, duration: {duration_to_extract:.2}s)..."
-        );
-
-        ffmpeg::extract_audio_chunk(
-            audio_path,
-            &chunk_file,
-            current_start,
-            duration_to_extract,
-        )
-        .await
-        .with_context(|| format!("extracting audio chunk #{chunk_index}"))?;
+    for (idx, (start, dur)) in chunk_plan.into_iter().enumerate() {
+        let chunk_path = temp_dir.join(format!("chunk_{idx:03}.mp3"));
+        ffmpeg::extract_audio_chunk(preprocessed_path, &chunk_path, start, dur).await?;
 
         let client_clone = client.clone();
-        let api_key_clone = api_key.to_string();
-        let file_path = chunk_file;
-        let start_time = current_start;
-        let idx = chunk_index;
-        let vocab_clone = vocab_owned.clone();
+        let key_clone = api_key.to_string();
+        let vocab_clone = custom_vocab.map(str::to_string);
+        let sem = semaphore.clone();
 
-        join_set.spawn(async move {
+        let handle = tokio::spawn(async move {
+            let _permit = sem.acquire().await.unwrap();
             let res = transcribe_single_audio_file(
                 &client_clone,
-                &api_key_clone,
-                &file_path,
-                0.0,
+                &key_clone,
+                &chunk_path,
+                start,
                 vocab_clone.as_deref(),
             )
             .await;
-            (idx, start_time, res)
+            (start, res)
         });
 
-        let advance = CHUNK_DURATION_SECS - CHUNK_OVERLAP_SECS;
-        current_start += advance;
-        chunk_index += 1;
-        total_chunks += 1;
+        handles.push(handle);
     }
 
-    if let Some(ref cb) = progress_callback {
-        cb(0.25);
+    let mut chunk_results = Vec::new();
+    for handle in handles {
+        let (start, res) = handle.await.context("joining chunk transcription thread")?;
+        let segments = res.with_context(|| format!("transcribing chunk at offset {start:.1}s"))?;
+        chunk_results.push((start, segments));
     }
-
-    let mut chunk_results: Vec<(f32, Vec<TranscriptSegment>)> = Vec::new();
-    let mut completed_chunks = 0;
-
-    while let Some(res) = join_set.join_next().await {
-        let (_idx, start_time, result) = res.context("joining chunk transcription task")?;
-        let segments = result?;
-        chunk_results.push((start_time, segments));
-        completed_chunks += 1;
-
-        if let Some(ref cb) = progress_callback {
-            if total_chunks > 0 {
-                let pct = 0.25 + 0.65 * (completed_chunks as f32 / total_chunks as f32);
-                cb(pct.min(0.92));
-            }
-        }
-    }
-
-    if let Some(ref cb) = progress_callback {
-        cb(0.95);
-    }
-
-    chunk_results.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-    let stitched = stitch_transcript_chunks(chunk_results);
 
     if let Some(ref cb) = progress_callback {
         cb(1.0);
     }
 
-    Ok(stitched)
+    Ok(stitch_transcript_chunks(chunk_results))
 }
 
 pub fn stitch_transcript_chunks(
@@ -524,144 +819,119 @@ pub fn stitch_transcript_chunks(
     chunk_results.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
 
     let mut stitched: Vec<TranscriptSegment> = Vec::new();
-    let mut last_end: f32 = 0.0;
 
-    for (chunk_start, segments) in chunk_results {
-        for mut seg in segments {
-            let abs_start = seg.start + chunk_start;
-            let abs_end = seg.end + chunk_start;
-            seg.start = abs_start;
-            seg.end = abs_end;
-
-            if !stitched.is_empty() {
-                // If segment completely falls inside previously covered time span, skip duplicate
-                if abs_end <= last_end + 0.3 {
+    for (_offset, segments) in chunk_results {
+        for seg in segments {
+            if let Some(last) = stitched.last() {
+                if seg.start <= last.end + 0.3 {
+                    if seg.end <= last.end + 0.3 {
+                        continue;
+                    }
+                    stitched.push(TranscriptSegment {
+                        start: last.end,
+                        end: seg.end,
+                        text: seg.text,
+                    });
                     continue;
                 }
-                // If segment crosses the boundary, clamp start to last_end to prevent overlap
-                if abs_start < last_end {
-                    seg.start = last_end;
-                }
             }
-
-            if seg.end > seg.start {
-                last_end = seg.end;
-                stitched.push(seg);
-            }
+            stitched.push(seg);
         }
     }
 
     stitched
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_build_whisper_prompt() {
-        let prompt = build_whisper_prompt(Some("Olorun, Oluwa, Pastor Emmanuel"));
-        assert!(prompt.contains("Nigerian English"));
-        assert!(prompt.contains("Pastor Emmanuel"));
+/// Returns `(Option<bin_parent_dir>, Command)`. The `bin_parent_dir` should be set as the
+/// working directory so Windows can locate sibling DLLs (whisper.dll, ggml.dll, etc.).
+fn get_binary_command(name: &str) -> (Option<PathBuf>, Command) {
+    let env_key = format!("{}_PATH", name.to_uppercase().replace('-', "_"));
+    if let Ok(custom_path) = std::env::var(&env_key) {
+        if !custom_path.trim().is_empty() {
+            let p = PathBuf::from(custom_path.trim());
+            if p.exists() {
+                let parent = p.parent().map(|d| d.to_path_buf());
+                return (parent, Command::new(p));
+            }
+        }
     }
 
-    #[test]
-    fn test_stitch_single_chunk() {
-        let chunk0 = vec![
-            TranscriptSegment {
-                start: 0.0,
-                end: 5.0,
-                text: "Hello world".into(),
-            },
-            TranscriptSegment {
-                start: 5.0,
-                end: 10.0,
-                text: "Welcome to Dabar".into(),
-            },
-        ];
+    let exe_names: Vec<String> = if cfg!(windows) {
+        if name == "whisper-cli" {
+            vec!["whisper-cli.exe".to_string(), "main.exe".to_string()]
+        } else if !name.ends_with(".exe") {
+            vec![format!("{name}.exe")]
+        } else {
+            vec![name.to_string()]
+        }
+    } else {
+        if name == "whisper-cli" {
+            vec!["whisper-cli".to_string(), "main".to_string()]
+        } else {
+            vec![name.to_string()]
+        }
+    };
 
-        let stitched = stitch_transcript_chunks(vec![(0.0, chunk0)]);
-        assert_eq!(stitched.len(), 2);
-        assert_eq!(stitched[0].start, 0.0);
-        assert_eq!(stitched[1].end, 10.0);
+    // 1. Check AppData / LocalAppData / UserProfile .dabar/bin
+    let mut check_dirs = Vec::new();
+    if let Ok(appdata) = std::env::var("APPDATA") {
+        let base_p = PathBuf::from(&appdata);
+        check_dirs.push(base_p.join("dabar").join("bin"));
+        check_dirs.push(base_p.join("com.preshdevops.dabar").join("bin"));
+        check_dirs.push(base_p.join("com.dabar.app").join("bin"));
+    }
+    if let Ok(localappdata) = std::env::var("LOCALAPPDATA") {
+        let base_p = PathBuf::from(&localappdata);
+        check_dirs.push(base_p.join("dabar").join("bin"));
+        check_dirs.push(base_p.join("com.preshdevops.dabar").join("bin"));
+        check_dirs.push(base_p.join("com.dabar.app").join("bin"));
+    }
+    if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
+        let home_p = PathBuf::from(&home);
+        check_dirs.push(home_p.join(".dabar").join("bin"));
+        check_dirs.push(home_p.join(".local").join("bin"));
     }
 
-    #[test]
-    fn test_stitch_multiple_overlapping_chunks() {
-        let chunk0 = vec![
-            TranscriptSegment {
-                start: 0.0,
-                end: 5.0,
-                text: "In the beginning".into(),
-            },
-            TranscriptSegment {
-                start: 5.0,
-                end: 10.0,
-                text: "God created the heavens".into(),
-            },
-        ];
-
-        // Chunk 1 starts at 8.0s (2.0s overlap with Chunk 0's 8.0-10.0 range)
-        let chunk1 = vec![
-            // Duplicate segment from overlap (abs: 8.0 -> 9.8s <= 10.0s + 0.3s)
-            TranscriptSegment {
-                start: 0.0,
-                end: 1.8,
-                text: "created the heavens".into(),
-            },
-            // Overlap boundary segment (abs: 9.8 -> 14.0s) -> clamped to start at 10.0s
-            TranscriptSegment {
-                start: 1.8,
-                end: 6.0,
-                text: "and the earth.".into(),
-            },
-            // Subsequent normal segment (abs: 14.0 -> 20.0s)
-            TranscriptSegment {
-                start: 6.0,
-                end: 12.0,
-                text: "Now the earth was formless and empty.".into(),
-            },
-        ];
-
-        let stitched = stitch_transcript_chunks(vec![(0.0, chunk0), (8.0, chunk1)]);
-        assert_eq!(stitched.len(), 4);
-        assert_eq!(stitched[0].text, "In the beginning");
-        assert_eq!(stitched[0].start, 0.0);
-        assert_eq!(stitched[0].end, 5.0);
-
-        assert_eq!(stitched[1].text, "God created the heavens");
-        assert_eq!(stitched[1].start, 5.0);
-        assert_eq!(stitched[1].end, 10.0);
-
-        // Clamped start
-        assert_eq!(stitched[2].text, "and the earth.");
-        assert_eq!(stitched[2].start, 10.0);
-        assert_eq!(stitched[2].end, 14.0);
-
-        assert_eq!(stitched[3].text, "Now the earth was formless and empty.");
-        assert_eq!(stitched[3].start, 14.0);
-        assert_eq!(stitched[3].end, 20.0);
+    for dir in &check_dirs {
+        for exe in &exe_names {
+            let candidate = dir.join(exe);
+            if candidate.exists() {
+                return (Some(dir.clone()), Command::new(candidate));
+            }
+        }
     }
 
-    #[test]
-    fn test_stitch_out_of_order_chunks() {
-        let chunk0 = vec![TranscriptSegment {
-            start: 0.0,
-            end: 5.0,
-            text: "Part 1".into(),
-        }];
-        let chunk1 = vec![TranscriptSegment {
-            start: 0.0,
-            end: 5.0,
-            text: "Part 2".into(),
-        }];
-
-        // Passed out of chronological order
-        let stitched = stitch_transcript_chunks(vec![(10.0, chunk1), (0.0, chunk0)]);
-        assert_eq!(stitched.len(), 2);
-        assert_eq!(stitched[0].text, "Part 1");
-        assert_eq!(stitched[0].start, 0.0);
-        assert_eq!(stitched[1].text, "Part 2");
-        assert_eq!(stitched[1].start, 10.0);
+    // 2. Walk up ancestor directories (cwd, cwd/.., cwd/../.., ...) to find bin/<exe>
+    if let Ok(cwd) = std::env::current_dir() {
+        let mut dir: Option<&Path> = Some(cwd.as_path());
+        while let Some(ancestor) = dir {
+            let bin_dir = ancestor.join("bin");
+            for exe in &exe_names {
+                let candidate = bin_dir.join(exe);
+                if candidate.exists() {
+                    return (Some(bin_dir.clone()), Command::new(candidate));
+                }
+            }
+            if let Ok(mut entries) = std::fs::read_dir(&bin_dir) {
+                while let Some(Ok(entry)) = entries.next() {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        for exe in &exe_names {
+                            let sub1 = path.join(exe);
+                            if sub1.exists() {
+                                return (Some(path.clone()), Command::new(sub1));
+                            }
+                            let sub2 = path.join("bin").join(exe);
+                            if sub2.exists() {
+                                return (Some(path.join("bin")), Command::new(sub2));
+                            }
+                        }
+                    }
+                }
+            }
+            dir = ancestor.parent();
+        }
     }
+
+    (None, Command::new(name))
 }

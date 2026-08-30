@@ -217,12 +217,40 @@ impl Db {
     }
 
     pub async fn update_status(&self, id: Uuid, status: SermonStatus) -> Result<()> {
+        let id_str = id.to_string();
+        let status_str = status_to_str(&status);
         sqlx::query("UPDATE sermons SET status = ? WHERE id = ?")
-            .bind(status_to_str(&status))
-            .bind(id.to_string())
+            .bind(status_str)
+            .bind(&id_str)
             .execute(&self.pool)
             .await
-            .context("updating sermon status")?;
+            .with_context(|| format!("updating status for sermon {id} to {status_str}"))?;
+        Ok(())
+    }
+
+    pub async fn delete_sermon(&self, id: Uuid) -> Result<()> {
+        let id_str = id.to_string();
+        let _ = sqlx::query("DELETE FROM highlights WHERE sermon_id = ?")
+            .bind(&id_str)
+            .execute(&self.pool)
+            .await;
+        let _ = sqlx::query("DELETE FROM chapters WHERE sermon_id = ?")
+            .bind(&id_str)
+            .execute(&self.pool)
+            .await;
+        let _ = sqlx::query("DELETE FROM transcript_segments WHERE sermon_id = ?")
+            .bind(&id_str)
+            .execute(&self.pool)
+            .await;
+        let _ = sqlx::query("DELETE FROM checkpoints WHERE sermon_id = ?")
+            .bind(&id_str)
+            .execute(&self.pool)
+            .await;
+        sqlx::query("DELETE FROM sermons WHERE id = ?")
+            .bind(&id_str)
+            .execute(&self.pool)
+            .await
+            .with_context(|| format!("deleting sermon {id}"))?;
         Ok(())
     }
 
@@ -513,6 +541,7 @@ pub fn status_to_str(status: &SermonStatus) -> &'static str {
         SermonStatus::Processing => "processing",
         SermonStatus::Ready => "ready",
         SermonStatus::Failed => "failed",
+        SermonStatus::Cancelled => "cancelled",
     }
 }
 
@@ -524,6 +553,7 @@ pub fn status_from_str(status: &str) -> SermonStatus {
         "processing" => SermonStatus::Processing,
         "ready" => SermonStatus::Ready,
         "failed" => SermonStatus::Failed,
+        "cancelled" => SermonStatus::Cancelled,
         _ => SermonStatus::Queued,
     }
 }

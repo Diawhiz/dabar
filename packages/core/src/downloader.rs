@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use tokio::process::Command;
+use std::time::Duration;
 
 #[derive(Debug, Clone)]
 pub struct DownloadedAudio {
@@ -176,15 +177,30 @@ pub fn extract_youtube_id(url_or_id: &str) -> Option<String> {
 /// Shells out to yt-dlp in a logged-out/no-cookie context. The downloaded
 /// file is saved to `output_dir` with a unique filename derived from the
 /// video ID. Returns the local file path and video title on success.
+/// Strip the `&t=` / `?t=` timestamp fragment from a YouTube URL so yt-dlp
+/// does not treat it as a separate stream selector or get confused during retries.
+fn strip_youtube_timestamp(url: &str) -> String {
+    // Remove &t=... or ?t=... query parameters (case-insensitive)
+    let url = if let Some(pos) = url.find("&t=") {
+        &url[..pos]
+    } else if let Some(pos) = url.find("?t=") {
+        &url[..pos]
+    } else {
+        url
+    };
+    url.to_string()
+}
+
 pub async fn download_youtube_audio(
     youtube_url: &str,
     output_dir: &Path,
 ) -> Result<DownloadedAudio> {
+    let youtube_url = strip_youtube_timestamp(youtube_url);
     tokio::fs::create_dir_all(output_dir)
         .await
         .with_context(|| format!("creating audio output directory {}", output_dir.display()))?;
 
-    let video_id = extract_youtube_id(youtube_url)
+    let video_id = extract_youtube_id(&youtube_url)
         .with_context(|| format!("could not extract YouTube video ID from '{youtube_url}' — expected a valid youtube.com or youtu.be URL"))?;
 
     // Use a deterministic filename template
@@ -208,12 +224,15 @@ pub async fn download_youtube_audio(
         .arg(format!("{}.%(ext)s", dest_template.display()));
 
     apply_yt_dlp_common_args(&mut cmd);
-    cmd.arg(youtube_url);
+    cmd.arg(&youtube_url);
 
-    let output = cmd
-        .output()
-        .await
-        .context("failed to spawn yt-dlp process — is yt-dlp installed and on PATH?")?;
+    let output = tokio::time::timeout(
+        Duration::from_secs(900), // 15-minute hard cap on any single download
+        cmd.output(),
+    )
+    .await
+    .context("yt-dlp download timed out after 15 minutes")?
+    .context("failed to spawn yt-dlp process — is yt-dlp installed and on PATH?")?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -279,85 +298,68 @@ pub async fn check_yt_dlp_installed() -> Result<String> {
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("yt-dlp execution failed: {}", stderr.trim());
+        anyhow::bail!("yt-dlp returned non-zero exit code: {}", stderr.trim());
     }
 
-    let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if version.is_empty() {
-        anyhow::bail!("yt-dlp returned empty version output");
-    }
-
-    Ok(version)
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-/// Scan `dir` for any file whose name starts with `video_id`.
-async fn find_downloaded_file(dir: &Path, video_id: &str) -> Result<PathBuf> {
+async fn find_downloaded_file(dir: &Path, base_name: &str) -> Result<PathBuf> {
     let mut entries = tokio::fs::read_dir(dir)
         .await
-        .with_context(|| format!("reading download directory {}", dir.display()))?;
+        .with_context(|| format!("reading audio directory {}", dir.display()))?;
 
     while let Some(entry) = entries.next_entry().await? {
-        let name = entry.file_name();
-        if let Some(name_str) = name.to_str() {
-            if name_str.starts_with(video_id) {
-                return Ok(entry.path());
+        let path = entry.path();
+        if path.is_file() {
+            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                if stem == base_name {
+                    return Ok(path);
+                }
             }
         }
     }
 
     anyhow::bail!(
-        "yt-dlp completed successfully but no output file found for video ID '{video_id}' in {}",
+        "downloaded audio file not found in {} for base name '{base_name}'",
         dir.display()
-    );
+    )
 }
 
-/// Translate yt-dlp stderr into a user-friendly error message.
-///
-/// Covers: private/unavailable video, geo-restricted content, invalid URL,
-/// bot-detection, and generic fallback.
 fn format_yt_dlp_error(action: &str, stderr: &str) -> anyhow::Error {
     let trimmed = stderr.trim();
 
-    if trimmed.contains("Private video")
-        || trimmed.contains("Video unavailable")
-        || trimmed.contains("This video is not available")
+    if trimmed.contains("Sign in to confirm you’re not a bot")
+        || trimmed.contains("Sign in to confirm you're not a bot")
+        || trimmed.contains("bot confirmation")
     {
         return anyhow::anyhow!(
-            "Sermon download failed: the YouTube video is private or unavailable. \
-             Please check the URL and ensure the video is publicly accessible."
+            "YouTube requires bot verification for this video. \
+             Place a 'cookies.txt' file in your workspace or set the YT_DLP_COOKIES_PATH \
+             environment variable."
         );
     }
 
-    if trimmed.contains("geo restriction")
-        || trimmed.contains("not available in your country")
-        || trimmed.contains("blocked it in your country")
-    {
+    if trimmed.contains("Private video") {
         return anyhow::anyhow!(
-            "Sermon download failed: the YouTube video is geo-restricted and cannot \
-             be accessed from this server's region."
+            "Sermon download failed: this YouTube video is private."
         );
     }
 
-    if trimmed.contains("is not a valid URL")
-        || trimmed.contains("Unsupported URL")
-        || trimmed.contains("Unable to extract")
-    {
+    if trimmed.contains("Video unavailable") {
         return anyhow::anyhow!(
-            "Sermon download failed: the provided URL is not a valid YouTube link."
+            "Sermon download failed: this YouTube video is unavailable or deleted."
         );
     }
 
-    if trimmed.contains("Sign in to confirm you're not a bot")
-        || trimmed.contains("confirm you're not a bot")
-    {
+    if trimmed.contains("members-only") || trimmed.contains("Join this channel") {
         return anyhow::anyhow!(
-            "YouTube bot-detection error during {action}: 'Sign in to confirm \
-             you're not a bot'. Export cookies.txt from a logged-in YouTube \
-             browser session, upload to server, and set YT_DLP_COOKIES_PATH \
+            "Sermon download failed: this is a members-only video. \
+             Export cookies from an account with membership and provide them via the YT_DLP_COOKIES_PATH \
              environment variable."
         );
     }
@@ -375,15 +377,18 @@ fn format_yt_dlp_error(action: &str, stderr: &str) -> anyhow::Error {
 }
 
 /// Applies common yt-dlp flags for robust YouTube extraction:
-/// - Uses embedded and mobile player clients to bypass web bot checks.
 /// - Passes cookies if YT_DLP_COOKIES_PATH, YT_DLP_COOKIES_FROM_BROWSER, or a local cookies.txt exists.
 /// - Enables JS runtime if Node.js is present.
 fn apply_yt_dlp_common_args(cmd: &mut Command) {
     cmd.arg("--no-playlist")
         .arg("--no-check-certificates")
         .arg("--no-cache-dir")
-        .arg("--extractor-args")
-        .arg("youtube:player_client=android,web,ios");
+        // Hard network timeout so yt-dlp never hangs indefinitely waiting for a CDN response
+        .arg("--socket-timeout").arg("30")
+        // Retry on transient failures, but cap low so errors surface quickly
+        .arg("--retries").arg("3")
+        .arg("--fragment-retries").arg("3")
+        .arg("--retry-sleep").arg("3");
 
     // Optional cookies support
     if let Ok(cookies_path) = std::env::var("YT_DLP_COOKIES_PATH") {
@@ -416,6 +421,7 @@ fn apply_yt_dlp_common_args(cmd: &mut Command) {
         cmd.arg("--js-runtimes").arg("node");
     }
 }
+
 
 fn which_node_exists() -> bool {
     if let Ok(cwd) = std::env::current_dir() {

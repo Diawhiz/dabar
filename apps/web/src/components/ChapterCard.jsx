@@ -15,28 +15,28 @@ export default function ChapterCard({
 
   return (
     <article
-      className={`border rounded-lg p-5 transition-all relative space-y-3.5 ${
+      className={`studio-card p-4 sm:p-5 transition-all relative space-y-3 ${
         isPlayingThisChapter
-          ? "border-accent bg-accent-muted/15 shadow-sm shadow-accent/5 ring-1 ring-accent/30"
-          : "border-border bg-surface hover:border-border-strong hover:bg-surface-hover/50"
+          ? "border-accent bg-accent-muted/20 shadow-xs"
+          : "hover:border-border-strong hover:bg-surface-hover/40"
       }`}
     >
       {/* Top Meta Bar */}
-      <div className="flex items-center justify-between gap-3 text-xs">
+      <div className="flex items-center justify-between gap-2 text-xs">
         <div className="flex items-center gap-2">
           <span
             className={`font-mono text-[11px] font-semibold px-2 py-0.5 rounded ${
               isPlayingThisChapter
                 ? "bg-accent text-accent-fg"
-                : "bg-surface-hover text-accent border border-border"
+                : "bg-surface-elevated text-accent border border-border"
             }`}
           >
             Chapter {String(index + 1).padStart(2, "0")}
           </span>
           {isPlayingThisChapter && (
-            <span className="flex items-center gap-1 text-[11px] font-medium text-accent animate-pulse">
+            <span className="flex items-center gap-1 text-[11px] font-medium text-accent">
               <i className="bx bx-volume-full text-xs" />
-              Now Playing
+              <span>Playing</span>
             </span>
           )}
         </div>
@@ -51,7 +51,7 @@ export default function ChapterCard({
       </div>
 
       {/* Chapter Title */}
-      <h3 className="text-sm font-semibold text-primary leading-snug">
+      <h3 className="font-editorial text-base sm:text-lg font-bold text-primary leading-snug">
         {chapter.title || `Chapter ${index + 1}`}
       </h3>
 
@@ -63,10 +63,10 @@ export default function ChapterCard({
       )}
 
       {/* Actions */}
-      <div className="flex items-center justify-between pt-1 border-t border-border/40 gap-2">
+      <div className="flex items-center justify-between pt-2 border-t border-border gap-2">
         <div className="flex items-center gap-2">
           <Btn
-            size="sm"
+            size="xs"
             variant={isPlayingThisChapter ? "primary" : "secondary"}
             onClick={() => onPlay(chapter)}
           >
@@ -75,10 +75,10 @@ export default function ChapterCard({
                 isPlayingThisChapter ? "bx-pause" : "bx-play"
               } text-sm`}
             />
-            <span>{isPlayingThisChapter ? "Pause" : "Listen Chapter"}</span>
+            <span>{isPlayingThisChapter ? "Pause" : "Listen"}</span>
           </Btn>
           <Btn
-            size="sm"
+            size="xs"
             variant="ghost"
             onClick={() => onRead(chapter)}
           >

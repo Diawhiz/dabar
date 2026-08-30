@@ -2,8 +2,13 @@ import { useNavigate } from "react-router-dom";
 
 export default function SermonCard({ sermon }) {
   const navigate = useNavigate();
-  const status = sermon.status || "Processing";
-  const isReady = status.toLowerCase().includes("clip") || status.toLowerCase().includes("ready") || status.toLowerCase().includes("complete");
+  const status = (sermon.status || "Processing").toLowerCase();
+  const isReady =
+    status.includes("clip") ||
+    status.includes("ready") ||
+    status.includes("complete");
+  const isCancelled = status.includes("cancel");
+  const isFailed = status.includes("fail") || status.includes("error");
 
   function handleClick() {
     if (sermon.id) {
@@ -17,29 +22,57 @@ export default function SermonCard({ sermon }) {
       tabIndex={0}
       onClick={handleClick}
       onKeyDown={(e) => e.key === "Enter" && handleClick()}
-      className="group w-72 shrink-0 cursor-pointer rounded-2xl border border-border bg-paper p-5 shadow-xs transition-all duration-200 hover:border-amber/70 hover:shadow-md space-y-3"
+      className="studio-card-interactive group w-72 shrink-0 p-4 space-y-2.5"
     >
       <div className="flex items-center justify-between text-xs text-muted font-sans">
-        <span className="font-semibold text-amber">{sermon.date || "Recent"}</span>
-        <span className="font-mono">{sermon.duration || ""}</span>
+        <span className="meta-chip text-[10.5px] font-semibold text-accent">
+          {sermon.date || "Recent"}
+        </span>
+        <span className="font-mono text-[11px]">{sermon.duration || ""}</span>
       </div>
 
-      <h3 className="font-display text-base font-bold leading-snug text-ink line-clamp-2 group-hover:text-amber transition-colors">
+      <h3 className="font-editorial text-base font-bold leading-snug text-primary line-clamp-2 group-hover:text-accent transition-colors">
         {sermon.title}
       </h3>
 
       {sermon.speaker && (
-        <p className="text-xs text-ink-secondary font-sans">{sermon.speaker}</p>
+        <p className="text-xs text-secondary font-sans">{sermon.speaker}</p>
       )}
 
-      <div className="pt-2 border-t border-border/60 flex items-center justify-between text-xs font-sans">
-        <span className={`inline-flex items-center gap-1 font-semibold ${isReady ? "text-amber" : "text-muted"}`}>
-          <i className={`bx ${isReady ? "bx-check-circle" : "bx-loader-alt bx-spin"}`} />
-          {isReady ? "Clips Ready" : "Transcribing…"}
+      <div className="pt-2 border-t border-border flex items-center justify-between text-xs font-sans">
+        <span
+          className={`inline-flex items-center gap-1 font-semibold text-[11px] ${
+            isReady
+              ? "text-success"
+              : isCancelled
+              ? "text-muted"
+              : isFailed
+              ? "text-danger"
+              : "text-accent"
+          }`}
+        >
+          <i
+            className={`bx ${
+              isReady
+                ? "bxs-check-circle"
+                : isCancelled
+                ? "bx-stop-circle"
+                : isFailed
+                ? "bx-error-circle"
+                : "bx-loader-alt bx-spin"
+            }`}
+          />
+          {isReady
+            ? "Clips Ready"
+            : isCancelled
+            ? "Cancelled"
+            : isFailed
+            ? "Failed"
+            : "Transcribing…"}
         </span>
 
-        <span className="text-[11px] text-muted group-hover:text-ink font-medium transition-colors">
-          Open Studio →
+        <span className="text-[11px] text-muted group-hover:text-primary font-medium transition-colors">
+          {isReady ? "Open Studio →" : isCancelled ? "View Details →" : "View Progress →"}
         </span>
       </div>
     </article>

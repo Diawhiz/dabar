@@ -68,6 +68,22 @@ export async function getSermon(id) {
 }
 
 /**
+ * Delete a sermon by ID from local SQLite database.
+ */
+export async function deleteSermon(id) {
+  const core = await getTauriCore();
+  if (core) {
+    return await core.invoke("delete_sermon", { id });
+  }
+  const local = localStorage.getItem("dabar_sermons");
+  if (local) {
+    const list = JSON.parse(local).filter((s) => s.id !== id);
+    localStorage.setItem("dabar_sermons", JSON.stringify(list));
+  }
+  return true;
+}
+
+/**
  * Convert a local file path into a webview asset URL for HTML5 video/audio playback.
  */
 export async function getAssetUrl(filePath) {
@@ -92,6 +108,17 @@ export async function createSermon(source) {
   // Browser mock
   const mockId = "mock-" + Date.now();
   return { id: mockId };
+}
+
+/**
+ * Cancel an in-flight sermon processing pipeline.
+ */
+export async function cancelPipeline(sermonId) {
+  const core = await getTauriCore();
+  if (core) {
+    return await core.invoke("cancel_pipeline", { sermonId });
+  }
+  return true;
 }
 
 /**

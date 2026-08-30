@@ -1,47 +1,42 @@
-import { Outlet, NavLink, useLocation } from "react-router-dom";
+import { Outlet, NavLink } from "react-router-dom";
 import { useTheme } from "../context/ThemeContext.jsx";
 
 export default function Shell() {
   const { theme, toggleTheme } = useTheme();
-  const location = useLocation();
 
   return (
-    <div className="min-h-screen bg-base text-primary ethereal-glow-bg relative selection:bg-accent/20">
-      {/* ── Fixed Atmospheric Grain Overlay (GPU safe) ─────────────── */}
-      <div className="grain-overlay" />
-
-      {/* ── The "Fluid Island" Floating Top Navigation Bar ─────────── */}
-      <header className="fixed top-4 left-0 right-0 z-50 px-4">
+    <div className="min-h-screen bg-base text-primary relative selection:bg-orange/20">
+      {/* ── Studio Navigation Bar ───────────────────────────────────── */}
+      <header className="sticky top-0 z-50 px-4 pt-3 pb-2 sm:px-6 bg-base/95 backdrop-blur-md border-b border-border">
         <nav
-          className="fluid-island-nav mx-auto max-w-5xl"
+          className="mx-auto max-w-6xl flex items-center justify-between gap-4"
           aria-label="Studio Master Navigation"
         >
-          {/* Brand Seal */}
+          {/* Brand Seal — Unified Architectural DABAAR Monogram with Warm Orange Touch */}
           <NavLink to="/dashboard" className="flex items-center gap-3 group">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-accent to-[#92400E] p-[1px] shadow-[0_0_15px_var(--accent-glow)] transition-transform duration-500 group-hover:scale-105">
-              <div className="w-full h-full rounded-full bg-surface flex items-center justify-center font-editorial font-bold text-accent text-sm">
-                ד
-              </div>
+            <div className="w-8 h-8 rounded-lg bg-surface-elevated border border-border text-primary flex items-center justify-center font-editorial font-bold text-base shadow-sm transition-transform group-hover:scale-105 relative">
+              <span>ד</span>
+              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-orange ring-1 ring-base" />
             </div>
             <div className="flex flex-col">
-              <span className="font-editorial text-base font-bold tracking-tight text-primary leading-none group-hover:text-accent transition-colors duration-300">
-                DABAR
+              <span className="font-editorial text-lg font-bold tracking-tight text-primary leading-none group-hover:text-orange transition-colors">
+                DABAAR
               </span>
-              <span className="font-mono-code text-[8.5px] uppercase tracking-[0.25em] text-accent/80 font-semibold leading-tight mt-0.5">
-                Studio
+              <span className="text-[10px] text-orange font-medium mt-0.5 tracking-wider">
+                Preaching Studio
               </span>
             </div>
           </NavLink>
 
-          {/* Navigation Links Island */}
-          <div className="flex items-center gap-1 bg-surface-hover/60 border border-white/[0.06] p-1 rounded-full backdrop-blur-md">
+          {/* Navigation Links Dock */}
+          <div className="flex items-center gap-1 bg-surface-elevated border border-border p-1 rounded-xl">
             <NavLink
               to="/dashboard"
               className={({ isActive }) =>
-                `px-4 py-1.5 rounded-full text-xs font-semibold tracking-tight transition-all duration-500 ease-fluid flex items-center gap-1.5 ${
+                `px-3.5 py-1.5 rounded-lg text-xs font-semibold tracking-tight transition-all flex items-center gap-1.5 ${
                   isActive
-                    ? "bg-accent text-accent-fg shadow-[0_2px_12px_var(--accent-glow)]"
-                    : "text-secondary hover:text-primary hover:bg-white/5"
+                    ? "bg-accent text-white shadow-xs"
+                    : "text-secondary hover:text-primary hover:bg-surface-hover"
                 }`
               }
             >
@@ -52,10 +47,10 @@ export default function Shell() {
             <NavLink
               to="/upload"
               className={({ isActive }) =>
-                `px-4 py-1.5 rounded-full text-xs font-semibold tracking-tight transition-all duration-500 ease-fluid flex items-center gap-1.5 ${
+                `px-3.5 py-1.5 rounded-lg text-xs font-semibold tracking-tight transition-all flex items-center gap-1.5 ${
                   isActive
-                    ? "bg-accent text-accent-fg shadow-[0_2px_12px_var(--accent-glow)]"
-                    : "text-secondary hover:text-primary hover:bg-white/5"
+                    ? "bg-accent text-white shadow-xs"
+                    : "text-secondary hover:text-primary hover:bg-surface-hover"
                 }`
               }
             >
@@ -66,10 +61,10 @@ export default function Shell() {
             <NavLink
               to="/settings"
               className={({ isActive }) =>
-                `px-4 py-1.5 rounded-full text-xs font-semibold tracking-tight transition-all duration-500 ease-fluid flex items-center gap-1.5 ${
+                `px-3.5 py-1.5 rounded-lg text-xs font-semibold tracking-tight transition-all flex items-center gap-1.5 ${
                   isActive
-                    ? "bg-accent text-accent-fg shadow-[0_2px_12px_var(--accent-glow)]"
-                    : "text-secondary hover:text-primary hover:bg-white/5"
+                    ? "bg-accent text-white shadow-xs"
+                    : "text-secondary hover:text-primary hover:bg-surface-hover"
                 }`
               }
             >
@@ -78,32 +73,31 @@ export default function Shell() {
             </NavLink>
           </div>
 
-          {/* Engine Status & Theme Toggle */}
-          <div className="flex items-center gap-3">
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1 rounded-full bg-white/[0.04] border border-white/[0.08]">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-success"></span>
-              </span>
-              <span className="font-mono-code text-[10px] text-secondary font-medium tracking-wide">
-                Groq v3 · GPT-OSS
-              </span>
-            </div>
+          {/* Actions & Theme Toggle */}
+          <div className="flex items-center gap-2">
+            <NavLink
+              to="/onboarding"
+              className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-secondary hover:text-primary bg-surface border border-border hover:border-orange/40 transition-all"
+              title="Tour & Scripture Sandbox"
+            >
+              <i className="bx bx-book-open text-orange" />
+              <span>Scripture Lab</span>
+            </NavLink>
 
             <button
               type="button"
               onClick={toggleTheme}
-              className="w-8 h-8 rounded-full bg-white/[0.05] border border-white/[0.08] hover:border-accent/40 text-secondary hover:text-accent flex items-center justify-center transition-all duration-300"
+              className="w-8 h-8 rounded-lg bg-surface border border-border hover:border-border-strong text-secondary hover:text-primary flex items-center justify-center transition-all"
               aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
             >
-              <i className={`bx ${theme === "dark" ? "bx-sun" : "bx-moon"} text-base`} />
+              <i className={`bx ${theme === "dark" ? "bx-sun" : "bx-moon"} text-sm`} />
             </button>
           </div>
         </nav>
       </header>
 
-      {/* ── Main Canvas Viewport (Macro-Whitespace & Spatial Rhythm) ── */}
-      <main className="pt-24 pb-20 px-4 sm:px-8 max-w-7xl mx-auto">
+      {/* ── Main Canvas Viewport ────────────────────────────────────── */}
+      <main className="py-8 px-4 sm:px-6 max-w-6xl mx-auto">
         <Outlet />
       </main>
     </div>

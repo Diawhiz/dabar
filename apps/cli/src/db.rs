@@ -1,8 +1,7 @@
 use anyhow::{Context, Result};
-use dabar_core::{Highlight, Sermon, SermonStatus, TranscriptSegment, Chapter};
+use dabar_core::{Highlight, Sermon, SermonStatus, TranscriptSegment};
 use sqlx::{Row, SqlitePool};
 use uuid::Uuid;
-use chrono::Utc;
 
 #[derive(Clone)]
 pub struct Db {
@@ -182,19 +181,9 @@ impl Db {
         Ok(())
     }
 
-    pub async fn mark_failed(&self, id: Uuid, error: &str) -> Result<()> {
-        sqlx::query("UPDATE sermons SET status = 'failed', error_message = ? WHERE id = ?")
-            .bind(error)
-            .bind(id.to_string())
-            .execute(&self.pool)
-            .await
-            .context("marking sermon as failed")?;
-        Ok(())
-    }
-
     pub async fn list_sermons(&self) -> Result<Vec<SermonSummary>> {
         let rows = sqlx::query(
-            "SELECT id, title, source_url, status, created_at, audio_path, error_message FROM sermons ORDER BY created_at DESC",
+            "SELECT id, title, status, created_at, audio_path FROM sermons ORDER BY created_at DESC",
         )
         .fetch_all(&self.pool)
         .await
@@ -205,11 +194,9 @@ impl Db {
             .map(|r| SermonSummary {
                 id: r.get::<String, _>("id"),
                 title: r.get::<String, _>("title"),
-                source_url: r.get::<String, _>("source_url"),
                 status: r.get::<String, _>("status"),
                 created_at: r.get::<String, _>("created_at"),
                 audio_path: r.try_get::<String, _>("audio_path").ok(),
-                error_message: r.try_get::<String, _>("error_message").ok(),
             })
             .collect())
     }
@@ -259,11 +246,9 @@ impl Db {
 pub struct SermonSummary {
     pub id: String,
     pub title: String,
-    pub source_url: String,
     pub status: String,
     pub created_at: String,
     pub audio_path: Option<String>,
-    pub error_message: Option<String>,
 }
 
 fn status_to_str(status: &SermonStatus) -> &'static str {

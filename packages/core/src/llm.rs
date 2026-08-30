@@ -1,4 +1,4 @@
-﻿use crate::models::{Chapter, Highlight, TranscriptSegment};
+use crate::models::{Chapter, Highlight, TranscriptSegment};
 use crate::structuring::detect_scripture_references;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -15,7 +15,7 @@ const OPENROUTER_MODEL_1: &str = "meta-llama/llama-3.2-3b-instruct:free";
 const OPENROUTER_MODEL_2: &str = "google/gemma-2-9b-it:free";
 
 const CLIP_MIN_SECS: f32 = 30.0;
-const CLIP_MAX_SECS: f32 = 180.0;
+// No upper limit — special moments (altar calls, testimonies) can run 5+ minutes
 const MAX_PROMPT_WORDS: usize = 2_500;
 
 #[derive(Debug, Deserialize)]
@@ -195,8 +195,8 @@ pub fn parse_and_validate_highlights_detailed(json_value: &serde_json::Value) ->
         if end <= start { disc.push(DiscardedCandidate { title, start_time: Some(start), end_time: Some(end), duration: Some(end - start), reason: "end <= start".to_string() }); continue; }
         let dur = end - start;
         if dur < CLIP_MIN_SECS { disc.push(DiscardedCandidate { title, start_time: Some(start), end_time: Some(end), duration: Some(dur), reason: format!("{dur:.0}s < min {CLIP_MIN_SECS}s") }); continue; }
-        let final_end = if dur > CLIP_MAX_SECS { start + CLIP_MAX_SECS } else { end };
-        valid.push(Highlight { id: Uuid::new_v4(), title, start_time: start, end_time: final_end, score, reason, suggested_hook_text: hook });
+        // No upper clamp — preserve the full natural duration of the moment
+        valid.push(Highlight { id: Uuid::new_v4(), title, start_time: start, end_time: end, score, reason, suggested_hook_text: hook });
     }
     (valid, disc, total)
 }
@@ -220,8 +220,8 @@ pub async fn analyze_sermon(api_key: Option<&str>, segments: &[TranscriptSegment
     let condensed = condense_transcript(segments);
     let total_dur = segments.last().map(|s| s.end).unwrap_or(0.0);
     let sys = format!(r#"You are a pastoral editor. Analyze the timestamped sermon transcript and return JSON:
-{{"chapters":[{{"title":"3-7 word title","summary":"section overview","start_timestamp":0.0,"end_timestamp":300.0}}],"clips":[{{"title":"3-7 word title","start_timestamp":45.0,"end_timestamp":165.0,"reason":"why this impacts listeners","suggested_hook_text":"key quote"}}]}}
-Rules: 3-8 chapters spanning the full {total_dur:.0}s sermon. 3-6 clips each 60-180s long. Use exact timestamps from the transcript."#);
+{{"chapters":[{{"title":"3-7 word title","summary":"section overview","start_timestamp":0.0,"end_timestamp":300.0}}],"clips":[{{"title":"3-7 word title","start_timestamp":45.0,"end_timestamp":345.0,"reason":"why this impacts listeners","suggested_hook_text":"key quote"}}]}}
+Rules: 3-8 chapters spanning the full {total_dur:.0}s sermon. 3-6 clips with NO upper time limit — a powerful altar call or testimony may run 5-10 minutes, preserve it fully. Minimum 60s per clip. Use exact timestamps from the transcript."#);
     let usr = format!("Analyze this sermon transcript:\n\n{condensed}");
 
     for model in [DEFAULT_MOMENT_MODEL, FALLBACK_MOMENT_MODEL, GROQ_FALLBACK_MODEL] {
@@ -380,16 +380,18 @@ pub fn analyze_sermon_offline_heuristics(segments: &[TranscriptSegment]) -> Serm
     let mut highlights: Vec<Highlight> = Vec::new();
     let mut last_end = -gap;
     let mut used: Vec<f32> = Vec::new();
-    let clip_dur = if total_dur > 3600.0 { 150.0_f32 } else { 120.0_f32 };
+    // Default target clip duration — the heuristic extends to the natural end of the peak
+    let clip_target_dur = if total_dur > 3600.0 { 150.0_f32 } else { 120.0_f32 };
 
     for (seg_idx, _) in &candidates {
         if highlights.len() >= target_clips { break; }
         let start = segments[*seg_idx].start;
         if start < last_end + gap || used.iter().any(|&s| (s - start).abs() < gap) { continue; }
-        let end_target = start + clip_dur;
+        // Extend to at least clip_target_dur; no upper cap — allow the moment to breathe
+        let end_target = start + clip_target_dur;
         let end = segments[*seg_idx..].iter().find(|s| s.end >= end_target)
-            .map(|s| s.end.min(start + CLIP_MAX_SECS))
-            .unwrap_or_else(|| (start + clip_dur).min(total_dur));
+            .map(|s| s.end)
+            .unwrap_or_else(|| (start + clip_target_dur).min(total_dur));
         if end <= start + CLIP_MIN_SECS { continue; }
         let clip_segs: Vec<&TranscriptSegment> = segments[*seg_idx..].iter().take_while(|s| s.start <= end).collect();
         let title = derive_clip_title(&clip_segs);
@@ -408,7 +410,7 @@ pub fn analyze_sermon_offline_heuristics(segments: &[TranscriptSegment]) -> Serm
         let interval = total_dur / (count as f32 + 1.0);
         for i in 1..=count {
             let s = interval * i as f32;
-            let e = (s + clip_dur).min(total_dur);
+            let e = (s + clip_target_dur).min(total_dur);
             if e > s + CLIP_MIN_SECS {
                 highlights.push(Highlight { id: Uuid::new_v4(), title: format!("Key Moment · Part {i}"), start_time: s, end_time: e, score: 0.80, reason: "Evenly-spaced fallback.".to_string(), suggested_hook_text: "Key sermon moment.".to_string() });
             }

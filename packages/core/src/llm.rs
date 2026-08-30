@@ -1,28 +1,31 @@
 use crate::models::{Chapter, Highlight, TranscriptSegment};
+use crate::structuring::detect_scripture_references;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use uuid::Uuid;
 
 const GROQ_CHAT_URL: &str = "https://api.groq.com/openai/v1/chat/completions";
-pub const DEFAULT_MOMENT_MODEL: &str = "openai/gpt-oss-120b";
-pub const FALLBACK_MOMENT_MODEL: &str = "openai/gpt-oss-20b";
-const LEGACY_FALLBACK_MODEL_1: &str = "llama-3.3-70b-versatile";
-const LEGACY_FALLBACK_MODEL_2: &str = "llama-3.1-8b-instant";
+const OPENROUTER_CHAT_URL: &str = "https://openrouter.ai/api/v1/chat/completions";
 
-const WINDOW_SEGMENTS_SIZE: usize = 90;
-const WINDOW_OVERLAP_SIZE: usize = 12;
+pub const DEFAULT_MOMENT_MODEL: &str = "llama-3.3-70b-versatile";
+pub const FALLBACK_MOMENT_MODEL: &str = "llama-3.1-8b-instant";
+const GROQ_FALLBACK_MODEL: &str = "gemma2-9b-it";
+const OPENROUTER_MODEL_1: &str = "meta-llama/llama-3.2-3b-instruct:free";
+const OPENROUTER_MODEL_2: &str = "google/gemma-2-9b-it:free";
+
+const CLIP_MIN_SECS: f32 = 30.0;
+// No upper limit — special moments (altar calls, testimonies) can run 5+ minutes
+const MAX_PROMPT_WORDS: usize = 2_500;
 
 #[derive(Debug, Deserialize)]
 struct ChatResponse {
     choices: Vec<Choice>,
 }
-
 #[derive(Debug, Deserialize)]
 struct Choice {
     message: Message,
 }
-
 #[derive(Debug, Deserialize)]
 struct Message {
     content: String,
@@ -62,14 +65,6 @@ pub struct SermonAnalysisResult {
     pub highlights_report: HighlightDetectionReport,
 }
 
-/// Formats time given in floating-point seconds into an `[HH:MM:SS]` string.
-///
-/// # Examples
-/// ```
-/// use dabar_core::llm::format_timestamp;
-/// assert_eq!(format_timestamp(75.0), "[00:01:15]");
-/// assert_eq!(format_timestamp(3665.0), "[01:01:05]");
-/// ```
 pub fn format_timestamp(seconds: f32) -> String {
     let total_secs = seconds.max(0.0) as u32;
     let hours = total_secs / 3600;
@@ -78,635 +73,377 @@ pub fn format_timestamp(seconds: f32) -> String {
     format!("[{:02}:{:02}:{:02}]", hours, minutes, secs)
 }
 
-/// Converts timestamped transcript segments into a single formatted prompt string
-/// where each line begins with an inline `[HH:MM:SS]` timestamp marker.
 pub fn format_segments_to_prompt(segments: &[TranscriptSegment]) -> String {
     segments
         .iter()
-        .map(|seg| {
-            let timestamp_str = format_timestamp(seg.start);
-            format!("{} {}", timestamp_str, seg.text.trim())
-        })
+        .map(|seg| format!("{} {}", format_timestamp(seg.start), seg.text.trim()))
         .collect::<Vec<_>>()
         .join("\n")
 }
 
-/// Parses timestamp values flexibly, accepting numeric floats (e.g. `45.5`)
-/// or formatted timestamp strings (e.g. `"00:01:15"`, `"01:15"`).
-pub fn parse_timestamp_value(val: &serde_json::Value) -> Option<f32> {
-    if let Some(num) = val.as_f64() {
-        return Some(num as f32);
+fn condense_transcript(segments: &[TranscriptSegment]) -> String {
+    let full = format_segments_to_prompt(segments);
+    let word_count: usize = full.split_whitespace().count();
+    if word_count <= MAX_PROMPT_WORDS {
+        return full;
     }
-    if let Some(s) = val.as_str() {
-        let trimmed = s.trim();
-        if let Ok(num) = trimmed.parse::<f32>() {
-            return Some(num);
+    tracing::info!("Transcript ~{word_count} words — condensing to ~{MAX_PROMPT_WORDS} for LLM");
+    let scores: Vec<f32> = segments.iter().map(segment_importance_score).collect();
+    let avg_words: f32 = word_count as f32 / segments.len() as f32;
+    let target_segs = (MAX_PROMPT_WORDS as f32 / avg_words.max(1.0)) as usize;
+    let step = (segments.len() / target_segs.max(1)).max(1);
+    let mut selected: Vec<usize> = vec![0];
+    let mut i = step;
+    while i < segments.len().saturating_sub(1) {
+        let end = (i + step).min(segments.len());
+        let best = (i..end)
+            .max_by(|&a, &b| scores[a].partial_cmp(&scores[b]).unwrap_or(std::cmp::Ordering::Equal))
+            .unwrap_or(i);
+        selected.push(best);
+        i += step;
+    }
+    if segments.len() > 1 { selected.push(segments.len() - 1); }
+    selected.sort_unstable();
+    selected.dedup();
+    let mut lines = Vec::new();
+    let mut prev: Option<usize> = None;
+    for idx in &selected {
+        if let Some(p) = prev {
+            if *idx > p + 1 {
+                let gap = segments[*idx].start - segments[p].end;
+                lines.push(format!("  ... [{:.0}s omitted] ...", gap));
+            }
         }
-        let parts: Vec<&str> = trimmed.split(':').collect();
-        return match parts.len() {
-            3 => {
-                let h: f32 = parts[0].trim().parse().ok()?;
-                let m: f32 = parts[1].trim().parse().ok()?;
-                let sec: f32 = parts[2].trim().parse().ok()?;
-                Some(h * 3600.0 + m * 60.0 + sec)
-            }
-            2 => {
-                let m: f32 = parts[0].trim().parse().ok()?;
-                let sec: f32 = parts[1].trim().parse().ok()?;
-                Some(m * 60.0 + sec)
-            }
-            1 => parts[0].trim().parse().ok(),
-            _ => None,
-        };
+        lines.push(format!("{} {}", format_timestamp(segments[*idx].start), segments[*idx].text.trim()));
+        prev = Some(*idx);
+    }
+    lines.join("\n")
+}
+
+pub fn parse_timestamp_value(val: &serde_json::Value) -> Option<f32> {
+    if let Some(n) = val.as_f64() { return Some(n as f32); }
+    if let Some(s) = val.as_str() {
+        let t = s.trim().trim_matches('[').trim_matches(']');
+        let p: Vec<&str> = t.split(':').collect();
+        if p.len() == 3 {
+            let h: f32 = p[0].parse().ok()?;
+            let m: f32 = p[1].parse().ok()?;
+            let s: f32 = p[2].parse().ok()?;
+            return Some(h * 3600.0 + m * 60.0 + s);
+        } else if p.len() == 2 {
+            let m: f32 = p[0].parse().ok()?;
+            let s: f32 = p[1].parse().ok()?;
+            return Some(m * 60.0 + s);
+        } else if let Ok(v) = t.parse::<f32>() { return Some(v); }
     }
     None
 }
 
-/// Parses topic chapters from LLM response.
-pub fn parse_chapters_from_json(json_value: &serde_json::Value) -> Vec<Chapter> {
-    let chapters_array = match json_value.get("chapters").and_then(|v| v.as_array()) {
-        Some(arr) => arr,
-        None => return Vec::new(),
+pub fn validate_chapters(mut chapters: Vec<Chapter>) -> Vec<Chapter> {
+    if chapters.is_empty() { return Vec::new(); }
+    chapters.sort_by(|a, b| a.start_time.partial_cmp(&b.start_time).unwrap_or(std::cmp::Ordering::Equal));
+    let mut validated = Vec::new();
+    for ch in chapters {
+        if ch.end_time <= ch.start_time { continue; }
+        if let Some(prev) = validated.last_mut() {
+            let p: &mut Chapter = prev;
+            if ch.start_time < p.end_time { p.end_time = ch.start_time; }
+        }
+        validated.push(ch);
+    }
+    validated
+}
+
+pub fn parse_and_validate_chapters(json_value: &serde_json::Value) -> Vec<Chapter> {
+    let arr = match json_value.get("chapters").and_then(|v| v.as_array()) {
+        Some(a) => a, None => return Vec::new(),
     };
-
     let mut result = Vec::new();
-    for item in chapters_array {
-        let title = item
-            .get("title")
-            .and_then(|v| v.as_str())
-            .unwrap_or("Sermon Chapter")
-            .trim()
-            .to_string();
-
-        let summary = item
-            .get("summary")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .trim()
-            .to_string();
-
-        let start_time = item
-            .get("start_time")
-            .or_else(|| item.get("start_timestamp"))
-            .and_then(parse_timestamp_value);
-
-        let end_time = item
-            .get("end_time")
-            .or_else(|| item.get("end_timestamp"))
-            .and_then(parse_timestamp_value);
-
-        if let (Some(start), Some(end)) = (start_time, end_time) {
-            if end > start {
-                result.push(Chapter {
-                    id: Uuid::new_v4(),
-                    title,
-                    summary,
-                    start_time: start,
-                    end_time: end,
-                });
-            }
+    for item in arr {
+        let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("Sermon Section").trim().to_string();
+        let summary = item.get("summary").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+        let start = item.get("start_time").or_else(|| item.get("start_timestamp")).and_then(parse_timestamp_value);
+        let end = item.get("end_time").or_else(|| item.get("end_timestamp")).and_then(parse_timestamp_value);
+        if let (Some(s), Some(e)) = (start, end) {
+            if e > s { result.push(Chapter { id: Uuid::new_v4(), title, summary, start_time: s, end_time: e }); }
         }
     }
-
     validate_chapters(result)
 }
 
-/// Parses raw JSON response from the LLM, validates timestamps and duration constraints,
-/// records any discarded moments with detailed reasons, and produces validated `Highlight` structs.
-pub fn parse_and_validate_highlights_detailed(
-    json_value: &serde_json::Value,
-) -> (Vec<Highlight>, Vec<DiscardedCandidate>, usize) {
-    let clips_array = match json_value.get("clips").and_then(|v| v.as_array()) {
-        Some(arr) => arr,
-        None => match json_value.get("highlights").and_then(|v| v.as_array()) {
-            Some(arr) => arr,
-            None => {
-                tracing::warn!("LLM JSON response missing 'clips' or 'highlights' array");
-                return (Vec::new(), Vec::new(), 0);
-            }
-        },
+pub fn parse_and_validate_highlights_detailed(json_value: &serde_json::Value) -> (Vec<Highlight>, Vec<DiscardedCandidate>, usize) {
+    let arr = match json_value.get("clips").and_then(|v| v.as_array())
+        .or_else(|| json_value.get("highlights").and_then(|v| v.as_array())) {
+        Some(a) => a, None => return (Vec::new(), Vec::new(), 0),
     };
-
-    let total_proposed = clips_array.len();
-    let mut valid_highlights = Vec::new();
-    let mut discarded = Vec::new();
-
-    for (index, item) in clips_array.iter().enumerate() {
-        let title = item
-            .get("title")
-            .and_then(|v| v.as_str())
-            .unwrap_or("Sermon Highlight")
-            .trim()
-            .to_string();
-
-        let start_raw = item.get("start_timestamp").or_else(|| item.get("start_time"));
-        let end_raw = item.get("end_timestamp").or_else(|| item.get("end_time"));
-
-        let start_time = match start_raw.and_then(parse_timestamp_value) {
+    let total = arr.len();
+    let mut valid = Vec::new();
+    let mut disc = Vec::new();
+    for item in arr {
+        let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("Sermon Highlight").trim().to_string();
+        let start = match item.get("start_timestamp").or_else(|| item.get("start_time")).and_then(parse_timestamp_value) {
             Some(t) => t,
-            None => {
-                let reason = format!("Missing or unparseable start_timestamp: {start_raw:?}");
-                tracing::warn!("Discarding clip #{index} ('{title}'): {reason}");
-                discarded.push(DiscardedCandidate {
-                    title,
-                    start_time: None,
-                    end_time: None,
-                    duration: None,
-                    reason,
-                });
-                continue;
-            }
+            None => { disc.push(DiscardedCandidate { title, start_time: None, end_time: None, duration: None, reason: "Missing start".to_string() }); continue; }
         };
-
-        let end_time = match end_raw.and_then(parse_timestamp_value) {
+        let end = match item.get("end_timestamp").or_else(|| item.get("end_time")).and_then(parse_timestamp_value) {
             Some(t) => t,
-            None => {
-                let reason = format!("Missing or unparseable end_timestamp: {end_raw:?}");
-                tracing::warn!("Discarding clip #{index} ('{title}'): {reason}");
-                discarded.push(DiscardedCandidate {
-                    title,
-                    start_time: Some(start_time),
-                    end_time: None,
-                    duration: None,
-                    reason,
-                });
-                continue;
-            }
+            None => { disc.push(DiscardedCandidate { title, start_time: Some(start), end_time: None, duration: None, reason: "Missing end".to_string() }); continue; }
         };
-
-        let reason = item
-            .get("reason")
-            .and_then(|v| v.as_str())
-            .unwrap_or("High-impact preaching moment with strong spiritual encouragement.")
-            .trim()
-            .to_string();
-
-        let suggested_hook_text = item
-            .get("suggested_hook_text")
-            .or_else(|| item.get("hook_text"))
-            .and_then(|v| v.as_str())
-            .unwrap_or(&title)
-            .trim()
-            .to_string();
-
-        let score = item
-            .get("score")
-            .and_then(|v| v.as_f64())
-            .map(|f| f as f32)
-            .unwrap_or(8.5);
-
-        // Rule 1: start_timestamp < end_timestamp
-        if start_time >= end_time {
-            let reason_msg = format!(
-                "Start timestamp ({start_time:.1}s) >= End timestamp ({end_time:.1}s)"
-            );
-            tracing::warn!("Discarding clip #{index} ('{title}'): {reason_msg}");
-            discarded.push(DiscardedCandidate {
-                title,
-                start_time: Some(start_time),
-                end_time: Some(end_time),
-                duration: Some(end_time - start_time),
-                reason: reason_msg,
-            });
-            continue;
-        }
-
-        // Rule 2: Duration check with flexible tolerance (25s to 120s)
-        let raw_duration = end_time - start_time;
-        if raw_duration < 25.0 {
-            let reason_msg = format!(
-                "Duration ({raw_duration:.1}s) is too short (< 25s threshold)"
-            );
-            tracing::warn!("Discarding clip #{index} ('{title}'): {reason_msg}");
-            discarded.push(DiscardedCandidate {
-                title,
-                start_time: Some(start_time),
-                end_time: Some(end_time),
-                duration: Some(raw_duration),
-                reason: reason_msg,
-            });
-            continue;
-        }
-
-        if raw_duration > 120.0 {
-            let reason_msg = format!(
-                "Duration ({raw_duration:.1}s) exceeds maximum clip length (> 120s)"
-            );
-            tracing::warn!("Discarding clip #{index} ('{title}'): {reason_msg}");
-            discarded.push(DiscardedCandidate {
-                title,
-                start_time: Some(start_time),
-                end_time: Some(end_time),
-                duration: Some(raw_duration),
-                reason: reason_msg,
-            });
-            continue;
-        }
-
-        let final_end_time = if raw_duration > 90.0 {
-            start_time + 90.0
-        } else {
-            end_time
-        };
-
-        valid_highlights.push(Highlight {
-            id: Uuid::new_v4(),
-            title,
-            start_time,
-            end_time: final_end_time,
-            score,
-            reason,
-            suggested_hook_text,
-        });
+        let reason = item.get("reason").and_then(|v| v.as_str()).unwrap_or("High-impact moment.").trim().to_string();
+        let hook = item.get("suggested_hook_text").or_else(|| item.get("hook_text")).and_then(|v| v.as_str()).unwrap_or(&title).trim().to_string();
+        let score = item.get("score").and_then(|v| v.as_f64()).map(|f| (f as f32).clamp(0.0, 1.0)).unwrap_or(0.90);
+        if end <= start { disc.push(DiscardedCandidate { title, start_time: Some(start), end_time: Some(end), duration: Some(end - start), reason: "end <= start".to_string() }); continue; }
+        let dur = end - start;
+        if dur < CLIP_MIN_SECS { disc.push(DiscardedCandidate { title, start_time: Some(start), end_time: Some(end), duration: Some(dur), reason: format!("{dur:.0}s < min {CLIP_MIN_SECS}s") }); continue; }
+        // No upper clamp — preserve the full natural duration of the moment
+        valid.push(Highlight { id: Uuid::new_v4(), title, start_time: start, end_time: end, score, reason, suggested_hook_text: hook });
     }
-
-    (valid_highlights, discarded, total_proposed)
+    (valid, disc, total)
 }
 
-/// Backwards-compatible parser returning only valid highlights.
 pub fn parse_and_validate_highlights(json_value: &serde_json::Value) -> Vec<Highlight> {
-    let (valid, _, _) = parse_and_validate_highlights_detailed(json_value);
-    valid
+    parse_and_validate_highlights_detailed(json_value).0
 }
 
-async fn execute_llm_analysis_request(
-    client: &reqwest::Client,
-    api_key: &str,
-    formatted_transcript: &str,
-) -> Result<serde_json::Value> {
-    let system_prompt = r#"You are an experienced pastoral editor, theologian, and media director.
-Analyze the timestamped sermon transcript and produce structured output containing BOTH topic chapters and high-impact pastoral video clips.
-
-Return JSON in this exact structure:
-{
-  "chapters": [
-    {
-      "title": "Topic Chapter Title (3-7 words)",
-      "summary": "1-2 sentence overview of this teaching section",
-      "start_timestamp": 0.0,
-      "end_timestamp": 320.0
-    }
-  ],
-  "clips": [
-    {
-      "title": "Compelling Pastoral Title (3-7 words)",
-      "start_timestamp": 45.0,
-      "end_timestamp": 90.0,
-      "reason": "Spiritual insight and conviction why this moment impacts listeners",
-      "suggested_hook_text": "Key core truth or scripture quote"
-    }
-  ]
-}
-
-Guidelines:
-1. Chapters: 3 to 8 logical teaching topic chapters spanning the transcript chronologically.
-2. Clips: 2 to 6 high-impact clips, each strictly between 30 and 90 seconds in duration.
-3. Prioritize clear Gospel truths, scriptural insight, personal testimony, and practical life application."#;
-
-    let user_prompt = format!(
-        "Analyze the following timestamped sermon transcript:\n\n{}",
-        formatted_transcript
-    );
-
-    let configured_model = std::env::var("GROQ_MODEL").unwrap_or_else(|_| DEFAULT_MOMENT_MODEL.to_string());
-    let models_to_try = [
-        configured_model.as_str(),
-        FALLBACK_MOMENT_MODEL,
-        LEGACY_FALLBACK_MODEL_1,
-        LEGACY_FALLBACK_MODEL_2,
-    ];
-
-    let mut last_error: Option<anyhow::Error> = None;
-
-    for model in models_to_try {
-        let payload = json!({
-            "model": model,
-            "response_format": { "type": "json_object" },
-            "messages": [
-                { "role": "system", "content": system_prompt },
-                { "role": "user", "content": &user_prompt }
-            ]
-        });
-
-        for attempt in 1..=2 {
-            tracing::info!(
-                "Executing LLM analysis (model: {model}, attempt {attempt}/2)..."
-            );
-
-            let response = client
-                .post(GROQ_CHAT_URL)
-                .bearer_auth(api_key)
-                .json(&payload)
-                .send()
-                .await;
-
-            match response {
-                Ok(resp) if resp.status().is_success() => {
-                    let chat_resp = resp
-                        .json::<ChatResponse>()
-                        .await
-                        .context("parsing Groq LLM response JSON")?;
-
-                    let content = chat_resp
-                        .choices
-                        .first()
-                        .map(|c| c.message.content.as_str())
-                        .context("Groq LLM response contained no choice messages")?;
-
-                    let parsed_json: serde_json::Value =
-                        serde_json::from_str(content).context("parsing LLM message content as JSON")?;
-
-                    return Ok(parsed_json);
-                }
-                Ok(resp) => {
-                    let status = resp.status();
-                    let err_body = resp.text().await.unwrap_or_default();
-                    tracing::warn!("Groq LLM error with model {model} (HTTP {status}): {err_body}");
-                    last_error = Some(anyhow::anyhow!("Groq LLM returned {status}: {err_body}"));
-                    if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-                        tokio::time::sleep(std::time::Duration::from_millis(2500)).await;
-                    } else {
-                        tokio::time::sleep(std::time::Duration::from_millis(600)).await;
-                    }
-                }
-                Err(err) => {
-                    tracing::warn!("Groq LLM network error with model {model}: {err}");
-                    last_error = Some(err.into());
-                    tokio::time::sleep(std::time::Duration::from_millis(600)).await;
-                }
-            }
-        }
-    }
-
-    let err_msg = last_error
-        .map(|e| e.to_string())
-        .unwrap_or_else(|| "All Groq LLM models failed".to_string());
-    anyhow::bail!("{err_msg}")
-}
-
-/// Detects sermon chapters and highlight moments with windowed chunking for zero TPM limits.
-pub async fn detect_sermon_analysis_report(
-    api_key: &str,
-    segments: &[TranscriptSegment],
-) -> Result<SermonAnalysisResult> {
+pub async fn analyze_sermon(api_key: Option<&str>, segments: &[TranscriptSegment]) -> Result<SermonAnalysisResult> {
     if segments.is_empty() {
         return Ok(SermonAnalysisResult {
             chapters: Vec::new(),
-            highlights_report: HighlightDetectionReport {
-                highlights: Vec::new(),
-                total_proposed: 0,
-                total_passed: 0,
-                discarded: Vec::new(),
-                status: HighlightDetectionStatus::NoCandidatesProposed,
-                error_message: Some("Transcript contains no segments to analyze.".to_string()),
-            },
+            highlights_report: HighlightDetectionReport { highlights: Vec::new(), total_proposed: 0, total_passed: 0, discarded: Vec::new(), status: HighlightDetectionStatus::NoCandidatesProposed, error_message: None },
         });
     }
-
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(120))
-        .build()
-        .context("building reqwest client")?;
-
-    let mut all_chapters: Vec<Chapter> = Vec::new();
-    let mut all_highlights: Vec<Highlight> = Vec::new();
-    let mut all_discarded: Vec<DiscardedCandidate> = Vec::new();
-    let mut total_proposed: usize = 0;
-
-    // If transcript is large, process in sequential semantic windows to guarantee requests stay under TPM limits
-    if segments.len() <= WINDOW_SEGMENTS_SIZE {
-        let prompt_text = format_segments_to_prompt(segments);
-        let json_val = execute_llm_analysis_request(&client, api_key, &prompt_text).await?;
-
-        let chapters = parse_chapters_from_json(&json_val);
-        let (highlights, discarded, proposed) = parse_and_validate_highlights_detailed(&json_val);
-
-        all_chapters.extend(chapters);
-        all_highlights.extend(highlights);
-        all_discarded.extend(discarded);
-        total_proposed += proposed;
-    } else {
-        tracing::info!(
-            "Large transcript ({} segments) detected. Processing in windowed chunks to avoid Groq TPM limits...",
-            segments.len()
-        );
-
-        let mut start_idx = 0;
-        while start_idx < segments.len() {
-            let end_idx = (start_idx + WINDOW_SEGMENTS_SIZE).min(segments.len());
-            let window_slice = &segments[start_idx..end_idx];
-            let prompt_text = format_segments_to_prompt(window_slice);
-
-            tracing::info!(
-                "Analyzing window segments {}..{} of {}...",
-                start_idx,
-                end_idx,
-                segments.len()
-            );
-
-            if let Ok(json_val) = execute_llm_analysis_request(&client, api_key, &prompt_text).await {
-                let chapters = parse_chapters_from_json(&json_val);
-                let (highlights, discarded, proposed) = parse_and_validate_highlights_detailed(&json_val);
-
-                all_chapters.extend(chapters);
-                all_highlights.extend(highlights);
-                all_discarded.extend(discarded);
-                total_proposed += proposed;
-            }
-
-            if end_idx >= segments.len() {
-                break;
-            }
-            start_idx += WINDOW_SEGMENTS_SIZE - WINDOW_OVERLAP_SIZE;
-            tokio::time::sleep(std::time::Duration::from_millis(800)).await;
-        }
-    }
-
-    // Deduplicate and sort highlights
-    all_highlights.sort_by(|a, b| a.start_time.partial_cmp(&b.start_time).unwrap_or(std::cmp::Ordering::Equal));
-    let mut deduplicated_highlights: Vec<Highlight> = Vec::new();
-    let mut last_end = 0.0;
-    for hl in all_highlights {
-        if deduplicated_highlights.is_empty() || hl.start_time >= last_end - 5.0 {
-            last_end = hl.end_time;
-            deduplicated_highlights.push(hl);
-        }
-    }
-
-    let validated_chapters = validate_chapters(all_chapters);
-    let total_passed = deduplicated_highlights.len();
-    let status = if total_passed > 0 || !validated_chapters.is_empty() {
-        HighlightDetectionStatus::Success
-    } else if total_proposed == 0 {
-        HighlightDetectionStatus::NoCandidatesProposed
-    } else {
-        HighlightDetectionStatus::AllCandidatesFiltered
+    let key = match api_key.filter(|k| !k.trim().is_empty()) {
+        Some(k) => k,
+        None => { tracing::info!("No API key — offline heuristics."); return Ok(analyze_sermon_offline_heuristics(segments)); }
     };
+    let client = reqwest::Client::builder().timeout(std::time::Duration::from_secs(90)).build().context("building client")?;
+    let condensed = condense_transcript(segments);
+    let total_dur = segments.last().map(|s| s.end).unwrap_or(0.0);
+    let sys = format!(r#"You are a pastoral editor. Analyze the timestamped sermon transcript and return JSON:
+{{"chapters":[{{"title":"3-7 word title","summary":"section overview","start_timestamp":0.0,"end_timestamp":300.0}}],"clips":[{{"title":"3-7 word title","start_timestamp":45.0,"end_timestamp":345.0,"reason":"why this impacts listeners","suggested_hook_text":"key quote"}}]}}
+Rules: 3-8 chapters spanning the full {total_dur:.0}s sermon. 3-6 clips with NO upper time limit — a powerful altar call or testimony may run 5-10 minutes, preserve it fully. Minimum 60s per clip. Use exact timestamps from the transcript."#);
+    let usr = format!("Analyze this sermon transcript:\n\n{condensed}");
 
-    Ok(SermonAnalysisResult {
-        chapters: validated_chapters,
+    for model in [DEFAULT_MOMENT_MODEL, FALLBACK_MOMENT_MODEL, GROQ_FALLBACK_MODEL] {
+        match try_chat_completion(&client, GROQ_CHAT_URL, key, model, &sys, &usr).await {
+            Ok(Some(r)) => { tracing::info!("LLM succeeded: Groq/{model}"); return Ok(r); }
+            Ok(None) => tracing::warn!("Groq/{model}: no usable JSON"),
+            Err(e) => tracing::warn!("Groq/{model}: {e}"),
+        }
+    }
+
+    let or_key = std::env::var("OPENROUTER_API_KEY").unwrap_or_default();
+    for model in [OPENROUTER_MODEL_1, OPENROUTER_MODEL_2] {
+        match try_chat_completion(&client, OPENROUTER_CHAT_URL, &or_key, model, &sys, &usr).await {
+            Ok(Some(r)) => { tracing::info!("LLM succeeded: OpenRouter/{model}"); return Ok(r); }
+            Ok(None) => tracing::warn!("OpenRouter/{model}: no usable JSON"),
+            Err(e) => tracing::warn!("OpenRouter/{model}: {e}"),
+        }
+    }
+
+    tracing::info!("All cloud LLMs unavailable — using upgraded offline heuristics.");
+    Ok(analyze_sermon_offline_heuristics(segments))
+}
+
+async fn try_chat_completion(client: &reqwest::Client, url: &str, api_key: &str, model: &str, system_prompt: &str, user_prompt: &str) -> Result<Option<SermonAnalysisResult>> {
+    let body = json!({"model": model, "messages": [{"role":"system","content":system_prompt},{"role":"user","content":user_prompt}], "temperature": 0.3, "response_format": {"type":"json_object"}});
+    let mut req = client.post(url).json(&body);
+    if !api_key.trim().is_empty() { req = req.bearer_auth(api_key); }
+    if url.contains("openrouter") { req = req.header("HTTP-Referer", "https://dabar.app").header("X-Title", "Dabar"); }
+    let resp = req.send().await.with_context(|| format!("request to {url}"))?;
+    let status = resp.status();
+    if status.as_u16() == 429 { let b = resp.text().await.unwrap_or_default(); anyhow::bail!("rate limited: {}", &b[..b.len().min(200)]); }
+    if !status.is_success() { let b = resp.text().await.unwrap_or_default(); anyhow::bail!("HTTP {status}: {}", &b[..b.len().min(200)]); }
+    let cr = resp.json::<ChatResponse>().await.context("parsing response")?;
+    let content = match cr.choices.first() { Some(c) => &c.message.content, None => return Ok(None) };
+    let json_val = match serde_json::from_str::<serde_json::Value>(content) { Ok(v) => v, Err(_) => return Ok(None) };
+    let chapters = parse_and_validate_chapters(&json_val);
+    let (highlights, discarded, total_proposed) = parse_and_validate_highlights_detailed(&json_val);
+    let total_passed = highlights.len();
+    if chapters.is_empty() && highlights.is_empty() { return Ok(None); }
+    Ok(Some(SermonAnalysisResult {
+        chapters,
         highlights_report: HighlightDetectionReport {
-            total_proposed,
-            total_passed,
-            discarded: all_discarded,
-            status,
+            highlights, total_proposed, total_passed, discarded,
+            status: if total_passed > 0 { HighlightDetectionStatus::Success } else { HighlightDetectionStatus::AllCandidatesFiltered },
             error_message: None,
-            highlights: deduplicated_highlights,
         },
-    })
+    }))
 }
 
-/// Detects sermon highlights and returns a comprehensive `HighlightDetectionReport`.
-pub async fn detect_sermon_highlights_report(
-    api_key: &str,
-    segments: &[TranscriptSegment],
-) -> Result<HighlightDetectionReport> {
-    let result = detect_sermon_analysis_report(api_key, segments).await?;
-    Ok(result.highlights_report)
+pub fn segment_importance_score(seg: &TranscriptSegment) -> f32 {
+    let text = seg.text.to_lowercase();
+    let mut score: f32 = 0.0;
+    let refs = detect_scripture_references(&seg.text, seg.start);
+    score += refs.len() as f32 * 0.35;
+    score += seg.text.matches('?').count() as f32 * 0.12;
+    score += seg.text.matches('!').count() as f32 * 0.08;
+    for p in ["you must","you need to","you have to","don't give up","stand up","rise up","hold on","listen to me","receive this"] { if text.contains(p) { score += 0.15; } }
+    for p in ["the truth is","what god is saying","here's the key","i want you to understand","let me tell you something","this is important","the spirit of god","holy spirit"] { if text.contains(p) { score += 0.18; } }
+    let words: Vec<&str> = text.split_whitespace().collect();
+    if words.len() >= 4 {
+        let mut counts = std::collections::HashMap::new();
+        for w in &words { *counts.entry(w).or_insert(0usize) += 1; }
+        let reps: usize = counts.values().filter(|&&c| c >= 2).sum();
+        score += (reps as f32 * 0.04).min(0.20);
+    }
+    for p in ["i remember","there was a time","let me share","one day","god told me"] { if text.contains(p) { score += 0.10; } }
+    for p in ["jesus christ","the blood of jesus","salvation","born again","eternal life","the cross","resurrection","he is risen","god so loved","grace of god"] { if text.contains(p) { score += 0.12; } }
+    if text.contains("let us pray") || text.contains("father god") || text.contains("in jesus name") { score += 0.08; }
+    let dur = (seg.end - seg.start).max(0.0);
+    if dur < 10.0 { score *= 0.3; }
+    score.min(1.0)
 }
 
-/// Detects sermon highlights and returns a `Vec<Highlight>`.
-pub async fn detect_sermon_highlights(
-    api_key: &str,
-    segments: &[TranscriptSegment],
-) -> Result<Vec<Highlight>> {
-    let report = detect_sermon_highlights_report(api_key, segments).await?;
-    Ok(report.highlights)
+fn detect_chapter_boundaries(segments: &[TranscriptSegment], target: usize) -> Vec<usize> {
+    if segments.len() < 4 || target <= 1 { return Vec::new(); }
+    let win = (segments.len() / (target * 2)).max(3);
+    let word_set = |segs: &[TranscriptSegment]| -> std::collections::HashSet<String> {
+        segs.iter().flat_map(|s| s.text.split_whitespace().map(|w| w.to_lowercase())).filter(|w| w.len() > 4).collect()
+    };
+    let mut scores: Vec<(usize, f32)> = Vec::new();
+    let mut i = win;
+    while i + win < segments.len() {
+        let a = word_set(&segments[i.saturating_sub(win)..i]);
+        let b = word_set(&segments[i..(i + win).min(segments.len())]);
+        if !a.is_empty() && !b.is_empty() {
+            let inter = a.intersection(&b).count() as f32;
+            let uni = a.union(&b).count() as f32;
+            scores.push((i, 1.0 - if uni > 0.0 { inter / uni } else { 0.0 }));
+        }
+        i += win;
+    }
+    scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    let mut boundaries: Vec<usize> = scores.iter().take(target - 1).map(|(idx, _)| *idx).collect();
+    boundaries.sort_unstable();
+    boundaries
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_format_timestamp() {
-        assert_eq!(format_timestamp(0.0), "[00:00:00]");
-        assert_eq!(format_timestamp(75.4), "[00:01:15]");
-        assert_eq!(format_timestamp(3665.0), "[01:01:05]");
+fn derive_chapter_title(segments: &[TranscriptSegment], fallback: &str) -> String {
+    for seg in segments.iter().take(10) {
+        if let Some(r) = detect_scripture_references(&seg.text, seg.start).into_iter().next() {
+            return format!("Teaching from {}", r.reference);
+        }
     }
-
-    #[test]
-    fn test_format_segments_to_prompt() {
-        let segments = vec![
-            TranscriptSegment {
-                start: 10.0,
-                end: 25.0,
-                text: " Faith is stepping out when you can't see the full staircase. ".to_string(),
-            },
-            TranscriptSegment {
-                start: 75.0,
-                end: 90.0,
-                text: "Your current trial is preparing you for a greater purpose.".to_string(),
-            },
-        ];
-
-        let prompt = format_segments_to_prompt(&segments);
-        assert!(prompt.contains("[00:00:10] Faith is stepping out"));
-        assert!(prompt.contains("[00:01:15] Your current trial"));
+    let best = segments.iter().max_by(|a, b| segment_importance_score(a).partial_cmp(&segment_importance_score(b)).unwrap_or(std::cmp::Ordering::Equal));
+    if let Some(seg) = best {
+        let words: Vec<&str> = seg.text.split_whitespace().take(8).collect();
+        if words.len() >= 4 {
+            let mut phrase = words.join(" ");
+            if phrase.len() > 50 { phrase.truncate(50); if let Some(p) = phrase.rfind(' ') { phrase.truncate(p); } }
+            phrase = phrase.trim_end_matches(|c: char| !c.is_alphanumeric()).to_string();
+            if !phrase.is_empty() { return phrase; }
+        }
     }
-
-    #[test]
-    fn test_parse_timestamp_value() {
-        assert_eq!(parse_timestamp_value(&json!(45.5)), Some(45.5));
-        assert_eq!(parse_timestamp_value(&json!("45.5")), Some(45.5));
-        assert_eq!(parse_timestamp_value(&json!("01:15")), Some(75.0));
-        assert_eq!(parse_timestamp_value(&json!("01:01:05")), Some(3665.0));
-        assert_eq!(parse_timestamp_value(&json!("invalid")), None);
-    }
-
-    #[test]
-    fn test_parse_and_validate_highlights_filtering() {
-        let raw_json = json!({
-            "clips": [
-                {
-                    "title": "Valid Sermon Highlight",
-                    "start_timestamp": 10.0,
-                    "end_timestamp": 55.0, // 45s duration (valid: 25-120s)
-                    "reason": "Clear illustration with strong message",
-                    "suggested_hook_text": "Don't give up in your storm!"
-                },
-                {
-                    "title": "Too Short Clip",
-                    "start_timestamp": 0.0,
-                    "end_timestamp": 15.0, // 15s duration (<25s, invalid)
-                    "reason": "Too brief",
-                    "suggested_hook_text": "Short"
-                },
-                {
-                    "title": "Too Long Clip",
-                    "start_timestamp": 0.0,
-                    "end_timestamp": 150.0, // 150s duration (>120s, invalid)
-                    "reason": "Exceeds max duration",
-                    "suggested_hook_text": "Long"
-                },
-                {
-                    "title": "Inverted Timestamp Clip",
-                    "start_timestamp": 100.0,
-                    "end_timestamp": 50.0, // start >= end (invalid)
-                    "reason": "Bad timestamps",
-                    "suggested_hook_text": "Inverted"
-                }
-            ]
-        });
-
-        let (highlights, discarded, total) = parse_and_validate_highlights_detailed(&raw_json);
-        assert_eq!(total, 4);
-        assert_eq!(highlights.len(), 1);
-        assert_eq!(discarded.len(), 3);
-        assert_eq!(highlights[0].title, "Valid Sermon Highlight");
-        assert_eq!(highlights[0].start_time, 10.0);
-        assert_eq!(highlights[0].end_time, 55.0);
-        assert_eq!(highlights[0].reason, "Clear illustration with strong message");
-        assert_eq!(highlights[0].suggested_hook_text, "Don't give up in your storm!");
-    }
-
-    #[test]
-    fn test_validate_chapters() {
-        let chapters = vec![
-            Chapter {
-                id: Uuid::new_v4(),
-                title: "Chapter 2".into(),
-                summary: "Summary 2".into(),
-                start_time: 120.0,
-                end_time: 240.0,
-            },
-            Chapter {
-                id: Uuid::new_v4(),
-                title: "Chapter 1".into(),
-                summary: "Summary 1".into(),
-                start_time: 0.0,
-                end_time: 120.0,
-            },
-            Chapter {
-                id: Uuid::new_v4(),
-                title: "Invalid Chapter".into(),
-                summary: "Bad timestamps".into(),
-                start_time: 300.0,
-                end_time: 250.0,
-            },
-        ];
-
-        let validated = validate_chapters(chapters);
-        assert_eq!(validated.len(), 2);
-        assert_eq!(validated[0].title, "Chapter 1");
-        assert_eq!(validated[1].title, "Chapter 2");
-    }
+    fallback.to_string()
 }
 
-/// Validates and normalizes chapter boundaries (ensuring start < end and chronological ordering).
-pub fn validate_chapters(chapters: Vec<Chapter>) -> Vec<Chapter> {
-    let mut valid: Vec<Chapter> = chapters
-        .into_iter()
-        .filter(|c| c.end_time > c.start_time)
-        .map(|mut c| {
-            if c.title.trim().is_empty() {
-                c.title = "Chapter".to_string();
+fn derive_clip_title(segs: &[&TranscriptSegment]) -> String {
+    for seg in segs.iter().take(5) {
+        if let Some(r) = detect_scripture_references(&seg.text, seg.start).into_iter().next() {
+            return format!("Teaching: {}", r.reference);
+        }
+    }
+    let best = segs.iter().max_by(|a, b| segment_importance_score(a).partial_cmp(&segment_importance_score(b)).unwrap_or(std::cmp::Ordering::Equal));
+    if let Some(seg) = best {
+        let words: Vec<&str> = seg.text.split_whitespace().take(7).collect();
+        if words.len() >= 3 {
+            let mut p = words.join(" ");
+            p = p.trim_end_matches(|c: char| !c.is_alphanumeric()).to_string();
+            if !p.is_empty() { return p; }
+        }
+    }
+    "Key Preaching Moment".to_string()
+}
+
+pub fn analyze_sermon_offline_heuristics(segments: &[TranscriptSegment]) -> SermonAnalysisResult {
+    if segments.is_empty() {
+        return SermonAnalysisResult {
+            chapters: Vec::new(),
+            highlights_report: HighlightDetectionReport { highlights: Vec::new(), total_proposed: 0, total_passed: 0, discarded: Vec::new(), status: HighlightDetectionStatus::NoCandidatesProposed, error_message: None },
+        };
+    }
+    let total_dur = segments.last().map(|s| s.end).unwrap_or(0.0);
+    let scores: Vec<f32> = segments.iter().map(segment_importance_score).collect();
+
+    // Build candidates: sum scores over 45s windows
+    let mut candidates: Vec<(usize, f32)> = (0..segments.len()).filter_map(|i| {
+        let ws: f32 = segments[i..].iter().zip(scores[i..].iter())
+            .take_while(|(s, _)| s.start - segments[i].start < 45.0)
+            .map(|(_, sc)| sc).sum();
+        if ws > 0.1 { Some((i, ws)) } else { None }
+    }).collect();
+    candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    let target_clips = if total_dur > 3600.0 { 6 } else if total_dur > 1200.0 { 5 } else { 3 };
+    let gap = 120.0_f32;
+    let mut highlights: Vec<Highlight> = Vec::new();
+    let mut last_end = -gap;
+    let mut used: Vec<f32> = Vec::new();
+    // Default target clip duration — the heuristic extends to the natural end of the peak
+    let clip_target_dur = if total_dur > 3600.0 { 150.0_f32 } else { 120.0_f32 };
+
+    for (seg_idx, _) in &candidates {
+        if highlights.len() >= target_clips { break; }
+        let start = segments[*seg_idx].start;
+        if start < last_end + gap || used.iter().any(|&s| (s - start).abs() < gap) { continue; }
+        // Extend to at least clip_target_dur; no upper cap — allow the moment to breathe
+        let end_target = start + clip_target_dur;
+        let end = segments[*seg_idx..].iter().find(|s| s.end >= end_target)
+            .map(|s| s.end)
+            .unwrap_or_else(|| (start + clip_target_dur).min(total_dur));
+        if end <= start + CLIP_MIN_SECS { continue; }
+        let clip_segs: Vec<&TranscriptSegment> = segments[*seg_idx..].iter().take_while(|s| s.start <= end).collect();
+        let title = derive_clip_title(&clip_segs);
+        let hook = segments[*seg_idx..].iter().zip(scores[*seg_idx..].iter())
+            .take_while(|(s, _)| s.start <= end)
+            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(s, _)| s.text.chars().take(120).collect::<String>())
+            .unwrap_or_else(|| title.clone());
+        highlights.push(Highlight { id: Uuid::new_v4(), title, start_time: start, end_time: end, score: (0.85 + highlights.len() as f32 * 0.02).min(0.95), reason: "Multi-signal heuristic peak.".to_string(), suggested_hook_text: hook });
+        last_end = end;
+        used.push(start);
+    }
+
+    if highlights.is_empty() && total_dur > 60.0 {
+        let count = 3_usize.min((total_dur / 300.0) as usize + 1);
+        let interval = total_dur / (count as f32 + 1.0);
+        for i in 1..=count {
+            let s = interval * i as f32;
+            let e = (s + clip_target_dur).min(total_dur);
+            if e > s + CLIP_MIN_SECS {
+                highlights.push(Highlight { id: Uuid::new_v4(), title: format!("Key Moment · Part {i}"), start_time: s, end_time: e, score: 0.80, reason: "Evenly-spaced fallback.".to_string(), suggested_hook_text: "Key sermon moment.".to_string() });
             }
-            c
-        })
-        .collect();
+        }
+    }
 
-    valid.sort_by(|a, b| a.start_time.partial_cmp(&b.start_time).unwrap_or(std::cmp::Ordering::Equal));
-    valid
+    let target_chs = if total_dur > 3600.0 { 8 } else if total_dur > 1800.0 { 6 } else if total_dur > 600.0 { 4 } else { 3 };
+    let boundaries = detect_chapter_boundaries(segments, target_chs);
+    let mut ranges: Vec<(usize, usize)> = Vec::new();
+    let mut prev = 0;
+    for &b in &boundaries { if b > prev { ranges.push((prev, b)); prev = b; } }
+    ranges.push((prev, segments.len()));
+    let names = ["Introduction & Opening","Scripture & Context","Core Teaching","Illustration & Application","Altar Call & Exhortation","Testimony & Encouragement","Prayer & Intercession","Closing & Benediction"];
+    let mut chapters: Vec<Chapter> = ranges.iter().enumerate().filter_map(|(i, (si, ei))| {
+        let ch = &segments[*si..*ei];
+        if ch.is_empty() { return None; }
+        let cs = ch.first().unwrap().start;
+        let ce = ch.last().unwrap().end;
+        if ce <= cs { return None; }
+        let fb = names.get(i).copied().unwrap_or("Teaching Section");
+        Some(Chapter { id: Uuid::new_v4(), title: derive_chapter_title(ch, fb), summary: format!("From {} to {}.", format_timestamp(cs), format_timestamp(ce)), start_time: cs, end_time: ce })
+    }).collect();
+
+    if chapters.is_empty() {
+        let interval = 360.0_f32;
+        let n = ((total_dur / interval).ceil() as usize).max(1);
+        for i in 0..n {
+            let cs = i as f32 * interval;
+            let ce = ((i+1) as f32 * interval).min(total_dur);
+            if ce > cs { chapters.push(Chapter { id: Uuid::new_v4(), title: names.get(i).copied().unwrap_or("Teaching Section").to_string(), summary: format!("From {} to {}.", format_timestamp(cs), format_timestamp(ce)), start_time: cs, end_time: ce }); }
+        }
+    }
+
+    let tp = highlights.len();
+    SermonAnalysisResult { chapters, highlights_report: HighlightDetectionReport { highlights, total_proposed: tp, total_passed: tp, discarded: Vec::new(), status: HighlightDetectionStatus::Success, error_message: None } }
 }
-

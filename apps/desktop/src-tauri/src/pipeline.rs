@@ -183,6 +183,33 @@ pub async fn run_pipeline(
     db.update_status(sermon_id, SermonStatus::Transcribing).await?;
     emit(&app, sermon_id, "transcribing", 5, "Preparing audio for transcription…");
 
+    // If local transcription is selected, ensure whisper-cli and model exist, downloading automatically if needed
+    if let dabar_core::whisper::TranscriptionBackend::Local { ref model_path } = transcription_backend {
+        let app_bin = app_data_dir.join("bin").join(if cfg!(windows) { "whisper-cli.exe" } else { "whisper-cli" });
+        let main_bin = app_data_dir.join("bin").join(if cfg!(windows) { "main.exe" } else { "main" });
+        if !app_bin.exists() && !main_bin.exists() {
+            emit(&app, sermon_id, "transcribing", 10, "Setting up speech recognition engine…");
+            let _ = crate::deps::download_whisper_cli(&app_data_dir, {
+                let app_c = app.clone();
+                move |cur, tot| {
+                    let pct = if tot > 0 { ((cur as f32 / tot as f32) * 10.0) as u8 } else { 5 };
+                    emit(&app_c, sermon_id, "transcribing", 5 + pct, "Downloading speech engine (whisper-cli)…");
+                }
+            }).await;
+        }
+
+        if !model_path.exists() {
+            emit(&app, sermon_id, "transcribing", 15, "Downloading speech model…");
+            let _ = crate::deps::download_whisper_model(&app_data_dir, "tiny", {
+                let app_c = app.clone();
+                move |cur, tot| {
+                    let pct = if tot > 0 { ((cur as f32 / tot as f32) * 10.0) as u8 } else { 5 };
+                    emit(&app_c, sermon_id, "transcribing", 15 + pct, "Downloading speech model (tiny)…");
+                }
+            }).await;
+        }
+    }
+
     let custom_vocab = db
         .get_setting("custom_vocabulary")
         .await
@@ -200,12 +227,17 @@ pub async fn run_pipeline(
         },
         Some(Box::new({
             let app_clone = app.clone();
+            let is_local = matches!(transcription_backend, dabar_core::whisper::TranscriptionBackend::Local { .. });
             move |progress_pct: f32| {
                 let pct = (progress_pct * 100.0) as u8;
                 let detail = if pct < 20 {
-                    "Preprocessing sermon audio (64kbps mono)…"
+                    "Preprocessing sermon audio (16kHz mono)…"
                 } else if pct < 95 {
-                    "Transcribing sermon audio via Groq Whisper…"
+                    if is_local {
+                        "Transcribing sermon audio offline (on-device AI)…"
+                    } else {
+                        "Transcribing sermon audio via Groq Whisper…"
+                    }
                 } else {
                     "Stitching & aligning transcript segments…"
                 };
@@ -232,65 +264,70 @@ pub async fn run_pipeline(
 
     // ── Stage 3: Highlight & Chapter Analysis ─────────────────────────────────
 
-    let (highlights, chapters, highlight_status, highlight_error, total_candidates, passed_candidates) =
-        if !api_key.trim().is_empty() {
-            db.update_status(sermon_id, SermonStatus::Detecting).await?;
-            emit(&app, sermon_id, "detecting", 10, "Analysing sermon transcript for chapters and key moments…");
+    db.update_status(sermon_id, SermonStatus::Detecting).await?;
+    emit(&app, sermon_id, "detecting", 10, "Finding sermon chapters and key moments…");
 
-            match dabar_core::llm::detect_sermon_analysis_report(api_key.trim(), &segments).await {
-                Ok(analysis) => {
-                    let total_passed = analysis.highlights_report.total_passed;
-                    let chapter_count = analysis.chapters.len();
-                    emit(
-                        &app,
-                        sermon_id,
-                        "detecting",
-                        100,
-                        &format!(
-                            "Generated {} topic chapters and {} key moments.",
-                            chapter_count, total_passed
-                        ),
-                    );
-                    let status_str = match analysis.highlights_report.status {
-                        dabar_core::llm::HighlightDetectionStatus::Success => "success",
-                        dabar_core::llm::HighlightDetectionStatus::NoCandidatesProposed => "no_candidates",
-                        dabar_core::llm::HighlightDetectionStatus::AllCandidatesFiltered => "all_filtered",
-                        dabar_core::llm::HighlightDetectionStatus::Failed => "failed",
-                    };
-                    (
-                        analysis.highlights_report.highlights,
-                        analysis.chapters,
-                        Some(status_str.to_string()),
-                        analysis.highlights_report.error_message,
-                        Some(analysis.highlights_report.total_proposed as u32),
-                        Some(total_passed as u32),
-                    )
-                }
-                Err(err) => {
-                    let err_msg = err.to_string();
-                    tracing::error!("LLM analysis failed for sermon {sermon_id}: {err_msg}");
-                    emit(&app, sermon_id, "detecting", 100, "Analysis completed with warnings.");
-                    (
-                        Vec::new(),
-                        Vec::new(),
-                        Some("failed".to_string()),
-                        Some(err_msg),
-                        None,
-                        Some(0),
-                    )
-                }
+    let env_key = std::env::var("GROQ_API_KEY").ok();
+    let api_key_opt = if !api_key.trim().is_empty() {
+        Some(api_key.trim())
+    } else {
+        env_key.as_deref().filter(|k| !k.trim().is_empty())
+    };
+
+    let (highlights, chapters, highlight_status, highlight_error, total_candidates, passed_candidates) = {
+        match dabar_core::llm::analyze_sermon(api_key_opt, &segments).await {
+            Ok(analysis) => {
+                let total_passed = analysis.highlights_report.total_passed;
+                let chapter_count = analysis.chapters.len();
+                emit(
+                    &app,
+                    sermon_id,
+                    "detecting",
+                    100,
+                    &format!(
+                        "Generated {} topic chapters and {} key moments.",
+                        chapter_count, total_passed
+                    ),
+                );
+                let status_str = match analysis.highlights_report.status {
+                    dabar_core::llm::HighlightDetectionStatus::Success => "success",
+                    dabar_core::llm::HighlightDetectionStatus::NoCandidatesProposed => "no_candidates",
+                    dabar_core::llm::HighlightDetectionStatus::AllCandidatesFiltered => "all_filtered",
+                    dabar_core::llm::HighlightDetectionStatus::Failed => "failed",
+                };
+                (
+                    analysis.highlights_report.highlights,
+                    analysis.chapters,
+                    Some(status_str.to_string()),
+                    analysis.highlights_report.error_message,
+                    Some(analysis.highlights_report.total_proposed as u32),
+                    Some(total_passed as u32),
+                )
             }
-        } else {
-            tracing::info!("No API key configured for LLM analysis on {sermon_id}");
-            (
-                Vec::new(),
-                Vec::new(),
-                Some("no_api_key".to_string()),
-                Some("Configure your Groq API key in Settings.".to_string()),
-                None,
-                Some(0),
-            )
-        };
+            Err(err) => {
+                let err_msg = err.to_string();
+                tracing::warn!("Analysis fallback on sermon {sermon_id}: {err_msg}");
+                let fallback_analysis = dabar_core::llm::analyze_sermon_offline_heuristics(&segments);
+                let total_passed = fallback_analysis.highlights_report.total_passed;
+                let chapter_count = fallback_analysis.chapters.len();
+                emit(
+                    &app,
+                    sermon_id,
+                    "detecting",
+                    100,
+                    &format!("Generated {} chapters and {} moments.", chapter_count, total_passed),
+                );
+                (
+                    fallback_analysis.highlights_report.highlights,
+                    fallback_analysis.chapters,
+                    Some("success".to_string()),
+                    None,
+                    Some(total_passed as u32),
+                    Some(total_passed as u32),
+                )
+            }
+        }
+    };
 
     // ── Stage 4: Save results ─────────────────────────────────────────────────
 
@@ -327,10 +364,6 @@ pub async fn retry_highlights_pipeline(
     sermon_id: Uuid,
     api_key: String,
 ) -> Result<Vec<dabar_core::Highlight>> {
-    if api_key.trim().is_empty() {
-        anyhow::bail!("Groq API key is required. Please configure it in Settings.");
-    }
-
     let sermon = db
         .get_sermon(sermon_id)
         .await?
@@ -340,9 +373,17 @@ pub async fn retry_highlights_pipeline(
         anyhow::bail!("This sermon has no transcript segments to analyze.");
     }
 
-    emit(&app, sermon_id, "detecting", 10, "Re-analyzing transcript for key moments…");
+    emit(&app, sermon_id, "detecting", 10, "Finding key sermon moments…");
 
-    let report = dabar_core::llm::detect_sermon_highlights_report(api_key.trim(), &sermon.transcript_segments).await?;
+    let env_key = std::env::var("GROQ_API_KEY").ok();
+    let api_key_opt = if !api_key.trim().is_empty() {
+        Some(api_key.trim())
+    } else {
+        env_key.as_deref().filter(|k| !k.trim().is_empty())
+    };
+
+    let analysis = dabar_core::llm::analyze_sermon(api_key_opt, &sermon.transcript_segments).await?;
+    let report = analysis.highlights_report;
 
     let status_str = match report.status {
         dabar_core::llm::HighlightDetectionStatus::Success => "success",
@@ -396,12 +437,17 @@ pub async fn render_clip_to_disk(
 
     tokio::fs::create_dir_all(output_dir).await?;
 
-    let safe_title: String = highlight
+    let raw_safe: String = highlight
         .title
         .chars()
         .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
         .take(60)
         .collect();
+    let safe_title = if raw_safe.trim_matches('_').is_empty() {
+        format!("clip_{:.0}s_{:.0}s", highlight.start_time, highlight.end_time)
+    } else {
+        raw_safe
+    };
     let output_path = output_dir.join(format!("dabar_{safe_title}.mp4"));
 
     // Prefer local audio_path or youtube_url
@@ -446,11 +492,16 @@ pub async fn render_clip_range_to_disk(
 
     let default_title = format!("clip_{:.0}s_{:.0}s", start_time, end_time);
     let raw_title = clip_title.filter(|t| !t.trim().is_empty()).unwrap_or(&default_title);
-    let safe_title: String = raw_title
+    let raw_safe: String = raw_title
         .chars()
         .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
         .take(60)
         .collect();
+    let safe_title = if raw_safe.trim_matches('_').is_empty() {
+        default_title
+    } else {
+        raw_safe
+    };
     let output_path = output_dir.join(format!("dabar_{safe_title}.mp4"));
 
     // Prefer local audio_path or youtube_url

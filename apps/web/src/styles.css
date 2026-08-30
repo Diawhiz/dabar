@@ -2,77 +2,93 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Vanguard UI & High-End Design System (DABAR STUDIO) ──────────── */
+/* ── DABAAR Studio Design Tokens (Architectural Obsidian & Warm Titanium) ── */
 
 :root,
 html.dark {
-  --bg-base: #05070B;
-  --bg-surface: #0C1018;
-  --bg-surface-elevated: #111722;
-  --bg-surface-hover: #161E2E;
-  --bg-surface-active: #1D283D;
+  /* Bespoke Titanium & Obsidian Dark Palette (No Vibe-Code Neon) */
+  --bg-base: #0B0D12;
+  --bg-surface: #12151D;
+  --bg-surface-elevated: #181C26;
+  --bg-surface-hover: #1F2432;
+  --bg-surface-active: #272D3D;
 
   --border-base: rgba(255, 255, 255, 0.08);
   --border-strong: rgba(255, 255, 255, 0.15);
   --border-subtle: rgba(255, 255, 255, 0.04);
+  --border-focus: #3B82F6;
 
-  --text-primary: #F8FAFC;
-  --text-secondary: #94A3B8;
-  --text-muted: #64748B;
+  --text-primary: #F9FAFB;
+  --text-secondary: #9CA3AF;
+  --text-muted: #6B7280;
 
-  /* Warm Sacred Gold — Optical Metallic Sheen */
-  --accent: #E5A93C;
-  --accent-hover: #F3BA54;
-  --accent-fg: #0A0702;
-  --accent-muted: rgba(229, 169, 60, 0.12);
-  --accent-border: rgba(229, 169, 60, 0.32);
-  --accent-glow: rgba(229, 169, 60, 0.25);
+  /* Restrained Royal Cobalt */
+  --accent: #2563EB;
+  --accent-hover: #1D4ED8;
+  --accent-fg: #FFFFFF;
+  --accent-muted: rgba(37, 99, 235, 0.12);
+  --accent-border: rgba(37, 99, 235, 0.30);
 
-  --success: #34D399;
-  --success-muted: rgba(52, 211, 153, 0.12);
-  --warning: #FBBF24;
-  --danger: #F87171;
-  --danger-muted: rgba(248, 113, 113, 0.12);
+  /* Warm Sacred Orange / Flame Accent (Precise, not blurry) */
+  --orange: #EA580C;
+  --orange-hover: #C2410C;
+  --orange-light: #F97316;
+  --orange-muted: rgba(234, 88, 12, 0.12);
+  --orange-border: rgba(234, 88, 12, 0.28);
 
-  --scripture-chip-bg: rgba(229, 169, 60, 0.08);
-  --scripture-chip-border: rgba(229, 169, 60, 0.3);
-  --scripture-chip-text: #FCD34D;
+  --success: #10B981;
+  --success-muted: rgba(16, 185, 129, 0.12);
+  --warning: #F59E0B;
+  --danger: #EF4444;
+  --danger-muted: rgba(239, 68, 68, 0.12);
+
+  /* Scripture Chips: Crisp Warm Amber on Matte Slate */
+  --scripture-chip-bg: rgba(249, 115, 22, 0.08);
+  --scripture-chip-border: rgba(249, 115, 22, 0.25);
+  --scripture-chip-text: #FDBA74;
 }
 
 html.light {
-  --bg-base: #FDFBF7;
+  /* Warm Architectural Linen & Porcelain White */
+  --bg-base: #F8F9FA;
   --bg-surface: #FFFFFF;
-  --bg-surface-elevated: #F5F2EB;
-  --bg-surface-hover: #EFECE3;
-  --bg-surface-active: #E6E1D4;
+  --bg-surface-elevated: #F1F3F5;
+  --bg-surface-hover: #E9ECEF;
+  --bg-surface-active: #DEE2E6;
 
-  --border-base: rgba(0, 0, 0, 0.08);
-  --border-strong: rgba(0, 0, 0, 0.15);
-  --border-subtle: rgba(0, 0, 0, 0.04);
+  --border-base: rgba(15, 23, 42, 0.08);
+  --border-strong: rgba(15, 23, 42, 0.16);
+  --border-subtle: rgba(15, 23, 42, 0.04);
+  --border-focus: #2563EB;
 
-  --text-primary: #181512;
-  --text-secondary: #57524C;
-  --text-muted: #8C867E;
+  --text-primary: #0F172A;
+  --text-secondary: #475569;
+  --text-muted: #64748B;
 
-  --accent: #B45309;
-  --accent-hover: #92400E;
+  --accent: #1D4ED8;
+  --accent-hover: #1E40AF;
   --accent-fg: #FFFFFF;
-  --accent-muted: rgba(180, 83, 9, 0.1);
-  --accent-border: rgba(180, 83, 9, 0.3);
-  --accent-glow: rgba(180, 83, 9, 0.18);
+  --accent-muted: rgba(29, 78, 216, 0.08);
+  --accent-border: rgba(29, 78, 216, 0.22);
+
+  --orange: #EA580C;
+  --orange-hover: #C2410C;
+  --orange-light: #F97316;
+  --orange-muted: rgba(234, 88, 12, 0.08);
+  --orange-border: rgba(234, 88, 12, 0.24);
 
   --success: #059669;
-  --success-muted: rgba(5, 150, 105, 0.1);
+  --success-muted: rgba(5, 150, 105, 0.08);
   --warning: #D97706;
   --danger: #DC2626;
-  --danger-muted: rgba(220, 38, 38, 0.1);
+  --danger-muted: rgba(220, 38, 38, 0.08);
 
-  --scripture-chip-bg: rgba(180, 83, 9, 0.07);
-  --scripture-chip-border: rgba(180, 83, 9, 0.28);
-  --scripture-chip-text: #92400E;
+  --scripture-chip-bg: rgba(234, 88, 12, 0.08);
+  --scripture-chip-border: rgba(234, 88, 12, 0.22);
+  --scripture-chip-text: #C2410C;
 }
 
-/* ── Base Reset & Physics ─────────────────────────────────────────── */
+/* ── Base Reset ───────────────────────────────────────────────────── */
 @layer base {
   * {
     box-sizing: border-box;
@@ -82,8 +98,8 @@ html.light {
     background-color: var(--bg-base);
     color: var(--text-primary);
     font-family: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
-    font-size: 13.5px;
-    line-height: 1.6;
+    font-size: 13px;
+    line-height: 1.55;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     overflow-x: hidden;
@@ -92,210 +108,161 @@ html.light {
   h1, h2, h3, h4, h5 {
     color: var(--text-primary);
     font-family: "Newsreader", Georgia, serif;
-    letter-spacing: -0.02em;
-    line-height: 1.2;
+    letter-spacing: -0.015em;
+    line-height: 1.25;
   }
 
   *:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 3px;
-    border-radius: 8px;
+    outline: 2px solid var(--border-focus);
+    outline-offset: 2px;
+    border-radius: 6px;
   }
 
   ::selection {
-    background-color: var(--accent-muted);
-    color: var(--accent);
+    background-color: rgba(249, 115, 22, 0.25);
+    color: var(--text-primary);
   }
 }
 
-/* ── Atmospheric Grain Overlay (GPU safe, zero scroll repaint) ────── */
-.grain-overlay {
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 90;
-  opacity: 0.035;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
-}
-
-/* ── Fluid Mesh Glows ─────────────────────────────────────────────── */
-.ethereal-glow-bg {
-  background-image: 
-    radial-gradient(ellipse 65% 45% at 50% -8%, rgba(229, 169, 60, 0.16) 0%, transparent 65%),
-    radial-gradient(ellipse 45% 35% at 88% 18%, rgba(56, 189, 248, 0.06) 0%, transparent 55%),
-    radial-gradient(ellipse 40% 30% at 12% 40%, rgba(147, 51, 234, 0.04) 0%, transparent 60%);
-}
-
-/* ── The "Double-Bezel" (Doppelrand) Architecture ─────────────────── */
-.doppelrand-shell {
-  border-radius: 2rem;
-  padding: 0.5rem;
+/* ── Solid Architectural Double-Bezel Enclosures (No Fake Glows) ───── */
+.double-bezel {
+  padding: 0.375rem;
+  border-radius: 1.25rem;
   background-color: rgba(255, 255, 255, 0.03);
   border: 1px solid var(--border-base);
-  box-shadow: 0 24px 60px -15px rgba(0, 0, 0, 0.65);
-  transition: all 0.7s cubic-bezier(0.32, 0.72, 0, 1);
+  box-shadow: 0 4px 20px -4px rgba(0, 0, 0, 0.5);
 }
 
-.doppelrand-shell:hover {
-  border-color: var(--border-strong);
-  transform: translateY(-2px);
-  box-shadow: 0 32px 75px -15px rgba(0, 0, 0, 0.8), 0 0 30px -8px var(--accent-glow);
-}
-
-.doppelrand-core {
-  border-radius: calc(2rem - 0.5rem);
+.double-bezel-inner {
+  border-radius: calc(1.25rem - 0.375rem);
   background-color: var(--bg-surface);
-  padding: 1.5rem;
-  box-shadow: inset 0 1px 1px 0 rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
 }
 
-/* ── Eyebrow Tags (Microscopic Pill) ──────────────────────────────── */
-.eyebrow-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  border-radius: 9999px;
-  padding: 0.3rem 0.85rem;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-  font-family: "JetBrains Mono", monospace;
-  font-weight: 600;
-  background-color: var(--accent-muted);
-  border: 1px solid var(--accent-border);
-  color: var(--accent);
-}
-
-/* ── Button-in-Button Nested Island Architecture ──────────────────── */
-.island-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  border-radius: 9999px;
-  padding: 0.5rem 0.6rem 0.5rem 1.4rem;
-  font-size: 12.5px;
-  font-weight: 600;
-  transition: all 0.5s cubic-bezier(0.32, 0.72, 0, 1);
-  cursor: pointer;
-  user-select: none;
-  white-space: nowrap;
-  outline: none;
-}
-
-.island-btn:active {
-  transform: scale(0.98);
-}
-
-.island-btn-primary {
-  background: linear-gradient(135deg, var(--accent) 0%, #D49326 100%);
-  color: var(--accent-fg);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  box-shadow: 0 4px 18px -2px var(--accent-glow);
-}
-
-.island-btn-primary:hover {
-  filter: brightness(1.08);
-  box-shadow: 0 8px 25px -2px var(--accent-glow);
-}
-
-.island-btn-secondary {
-  background-color: var(--bg-surface-elevated);
-  color: var(--text-primary);
+.studio-card {
+  border-radius: 0.875rem;
+  background-color: var(--bg-surface);
   border: 1px solid var(--border-base);
-  box-shadow: inset 0 1px 1px 0 rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.05), 0 2px 8px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s cubic-bezier(0.32, 0.72, 0, 1);
 }
 
-.island-btn-secondary:hover {
-  background-color: var(--bg-surface-hover);
+.studio-card-interactive {
+  border-radius: 0.875rem;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-base);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
+  transition: all 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+  cursor: pointer;
+}
+
+.studio-card-interactive:hover {
   border-color: var(--border-strong);
+  background-color: var(--bg-surface-hover);
+  transform: translateY(-1px);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.08), 0 6px 16px -4px rgba(0, 0, 0, 0.35);
 }
 
-.island-btn-icon-capsule {
-  width: 1.85rem;
-  height: 1.85rem;
-  border-radius: 9999px;
-  background-color: rgba(0, 0, 0, 0.15);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  transition: transform 0.5s cubic-bezier(0.32, 0.72, 0, 1);
+.studio-card-elevated {
+  border-radius: 1rem;
+  background-color: var(--bg-surface-elevated);
+  border: 1px solid var(--border-base);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.06), 0 6px 20px -6px rgba(0, 0, 0, 0.4);
 }
 
-.island-btn:hover .island-btn-icon-capsule {
-  transform: translate(2px, -1px) scale(1.08);
-}
-
-/* ── Fluid Island Navbar ──────────────────────────────────────────── */
-.fluid-island-nav {
-  position: sticky;
-  top: 1.25rem;
-  z-index: 60;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 95%;
-  max-width: 1100px;
-  margin: 0 auto;
-  padding: 0.6rem 1rem;
-  border-radius: 9999px;
-  background-color: rgba(12, 16, 24, 0.85);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.7), inset 0 1px 1px rgba(255, 255, 255, 0.15);
-  transition: all 0.6s cubic-bezier(0.32, 0.72, 0, 1);
-}
-
-/* ── Scripture Reference Marginalia Badge ─────────────────────────── */
+/* ── Scripture Chips ──────────────────────────────────────────────── */
 .scripture-badge {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  padding: 0.25rem 0.75rem;
-  border-radius: 9999px;
+  padding: 0.25rem 0.65rem;
+  border-radius: 0.375rem;
   font-size: 11px;
   font-weight: 600;
   font-family: "JetBrains Mono", monospace;
   background-color: var(--scripture-chip-bg);
   border: 1px solid var(--scripture-chip-border);
   color: var(--scripture-chip-text);
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
 }
 
-/* ── Live Audio Frequency Waveform ─────────────────────────────────── */
-.audio-equalizer {
+.meta-chip {
   display: inline-flex;
   align-items: center;
-  gap: 2.5px;
-  height: 15px;
+  gap: 0.35rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 0.375rem;
+  font-size: 11px;
+  font-family: "JetBrains Mono", monospace;
+  font-weight: 500;
+  background-color: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-base);
+  color: var(--text-secondary);
 }
 
-.audio-equalizer-bar {
-  width: 2.5px;
-  height: 100%;
-  background: linear-gradient(180deg, var(--accent) 0%, #B45309 100%);
-  border-radius: 2px;
-  animation: equalize 1.2s infinite alternate cubic-bezier(0.32, 0.72, 0, 1);
+/* ── Tactile Studio Buttons (Solid Matte Finishes with Top Specularity) ── */
+.btn-studio {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 0.5rem;
+  font-size: 12.5px;
+  font-weight: 600;
+  transition: all 0.18s cubic-bezier(0.32, 0.72, 0, 1);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  outline: none;
 }
 
-.audio-equalizer-bar:nth-child(1) { animation-delay: 0.1s; height: 35%; }
-.audio-equalizer-bar:nth-child(2) { animation-delay: 0.35s; height: 85%; }
-.audio-equalizer-bar:nth-child(3) { animation-delay: 0.2s; height: 55%; }
-.audio-equalizer-bar:nth-child(4) { animation-delay: 0.45s; height: 100%; }
-
-@keyframes equalize {
-  0% { transform: scaleY(0.2); }
-  100% { transform: scaleY(1.0); }
+.btn-studio:active {
+  transform: scale(0.98);
 }
 
-/* ── Custom Scrollbars & Utilities ────────────────────────────────── */
+.btn-studio-primary {
+  background-color: #2563EB;
+  color: #FFFFFF;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.20), 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.btn-studio-primary:hover {
+  background-color: #1D4ED8;
+  border-color: rgba(255, 255, 255, 0.24);
+}
+
+.btn-studio-orange {
+  background-color: #EA580C;
+  color: #FFFFFF;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.btn-studio-orange:hover {
+  background-color: #C2410C;
+  border-color: rgba(255, 255, 255, 0.26);
+}
+
+.btn-studio-secondary {
+  background-color: var(--bg-surface-elevated);
+  color: var(--text-primary);
+  border: 1px solid var(--border-base);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.04);
+}
+
+.btn-studio-secondary:hover {
+  background-color: var(--bg-surface-hover);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+/* ── Custom Scrollbars ────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 9999px; }
-::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.22); }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

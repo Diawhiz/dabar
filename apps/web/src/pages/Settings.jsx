@@ -8,7 +8,6 @@ import {
   downloadWhisperModel,
   getOfflineStatus,
   onDownloadProgress,
-  getHardwareInfo,
 } from "../lib/api.js";
 import { useTheme } from "../context/ThemeContext.jsx";
 import Btn from "../components/Btn.jsx";
@@ -17,18 +16,16 @@ export default function Settings() {
   const { theme, setTheme } = useTheme();
   const [activeTab, setActiveTab] = useState("general");
   const [settings, setSettings] = useState({
-    groq_api_key: "",
     output_dir: "",
     offline_mode: false,
-    offline_model: "base",
+    offline_model: "base", // "tiny" | "base"
     custom_vocabulary: "",
     transcription_backend: "groq",
   });
   const [deps, setDeps] = useState(null);
   const [offlineStatus, setOfflineStatus] = useState(null);
-  const [hardware, setHardware] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [downloadingComponent, setDownloadingComponent] = useState(null); // "ffmpeg" | "yt_dlp" | "whisper_base" | "all"
+  const [downloadingComponent, setDownloadingComponent] = useState(null);
   const [downloadProgress, setDownloadProgress] = useState({});
   const [savedNotice, setSavedNotice] = useState(false);
 
@@ -41,9 +38,6 @@ export default function Settings() {
     });
     getOfflineStatus().then((s) => {
       if (s) setOfflineStatus(s);
-    });
-    getHardwareInfo().then((h) => {
-      if (h) setHardware(h);
     });
 
     let unlisten = null;
@@ -75,7 +69,7 @@ export default function Settings() {
       setSavedNotice(true);
       setTimeout(() => setSavedNotice(false), 2500);
     } catch (err) {
-      alert("Failed to save settings: " + (err.message || err));
+      alert("Could not save settings: " + (err.message || err));
     } finally {
       setIsSaving(false);
     }
@@ -95,7 +89,7 @@ export default function Settings() {
       } else if (comp === "all") {
         await downloadYtDlp();
         await downloadFfmpeg();
-        await downloadWhisperModel("base");
+        await downloadWhisperModel(settings.offline_model || "base");
       }
       const updatedDeps = await checkDependencies();
       setDeps(updatedDeps);
@@ -109,68 +103,65 @@ export default function Settings() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen pb-16">
+    <div className="flex flex-col min-h-screen pb-16 space-y-6">
       {/* ── Page Header ───────────────────────────────────────────── */}
-      <header className="page-header">
+      <header className="pt-2">
         <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <span className="scripture-badge text-[10px]">
-              CONFIGURATION
-            </span>
-          </div>
-          <h1 className="font-editorial text-2xl font-bold text-primary">Studio Settings</h1>
+          <h1 className="font-editorial text-2xl sm:text-3xl font-bold text-primary">Settings</h1>
+          <p className="text-secondary text-xs sm:text-sm font-normal">
+            Configure transcription mode, church vocabulary terms, and output folders.
+          </p>
         </div>
       </header>
 
       {/* ── Tabs Toolbar ──────────────────────────────────────────── */}
-      <div className="px-8 py-3 border-b border-border bg-surface/40 flex gap-2 text-xs font-semibold">
+      <div className="flex p-1 bg-surface border border-border rounded-lg text-xs font-semibold max-w-xl">
         {[
-          { key: "general", label: "General & Storage", icon: "bx-slider" },
-          { key: "offline", label: "Processing & Offline Tools", icon: "bx-chip" },
+          { key: "general", label: "General", icon: "bx-slider" },
+          { key: "mode", label: "Transcription Mode", icon: "bx-chip" },
           { key: "vocabulary", label: "Church Vocabulary", icon: "bx-book" },
-          { key: "diagnostics", label: "System Status", icon: "bx-pulse" },
         ].map((tab) => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
-            className={`px-3.5 py-1.5 rounded-lg flex items-center gap-2 transition-all ${
+            className={`flex-1 py-1.5 px-3 rounded-md flex items-center justify-center gap-1.5 transition-all ${
               activeTab === tab.key
-                ? "bg-accent text-accent-fg shadow-xs"
+                ? "bg-accent text-accent-fg shadow-xs font-semibold"
                 : "text-secondary hover:text-primary"
             }`}
           >
-            <i className={`bx ${tab.icon} text-base`} />
+            <i className={`bx ${tab.icon} text-sm`} />
             <span>{tab.label}</span>
           </button>
         ))}
       </div>
 
       {/* ── Tab Content ───────────────────────────────────────────── */}
-      <div className="page-content flex justify-center py-8">
-        <div className="w-full max-w-xl space-y-6">
-          {/* Tab 1: General & Storage */}
+      <div className="flex justify-start py-2">
+        <div className="w-full max-w-xl space-y-5">
+          {/* Tab 1: General */}
           {activeTab === "general" && (
             <form onSubmit={handleSave} className="space-y-5 text-xs">
               {/* Theme Mode */}
               <div className="space-y-2">
                 <label className="font-semibold text-primary block text-xs">
-                  Studio Theme Appearance
+                  Appearance
                 </label>
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     type="button"
                     onClick={() => setTheme("dark")}
-                    className={`p-3.5 rounded-xl border text-left flex items-center justify-between transition-all ${
+                    className={`p-3 rounded-lg border text-left flex items-center justify-between transition-all ${
                       theme === "dark"
-                        ? "border-accent bg-accent-muted/40 shadow-xs"
+                        ? "border-accent bg-accent-muted shadow-xs"
                         : "border-border bg-surface hover:bg-surface-hover text-secondary"
                     }`}
                   >
                     <div className="flex items-center gap-2.5">
-                      <i className="bx bx-moon text-lg text-accent" />
+                      <i className="bx bx-moon text-base text-accent" />
                       <div>
-                        <p className="font-semibold text-primary">Sanctuary Dark</p>
-                        <p className="text-[10px] text-muted">Warm obsidian & gold</p>
+                        <p className="font-semibold text-primary">Obsidian Navy</p>
+                        <p className="text-[11px] text-muted">Deep midnight and cobalt</p>
                       </div>
                     </div>
                     {theme === "dark" && (
@@ -181,17 +172,17 @@ export default function Settings() {
                   <button
                     type="button"
                     onClick={() => setTheme("light")}
-                    className={`p-3.5 rounded-xl border text-left flex items-center justify-between transition-all ${
+                    className={`p-3 rounded-lg border text-left flex items-center justify-between transition-all ${
                       theme === "light"
-                        ? "border-accent bg-accent-muted/40 shadow-xs"
+                        ? "border-accent bg-accent-muted shadow-xs"
                         : "border-border bg-surface hover:bg-surface-hover text-secondary"
                     }`}
                   >
                     <div className="flex items-center gap-2.5">
-                      <i className="bx bx-sun text-lg text-accent" />
+                      <i className="bx bx-sun text-base text-accent" />
                       <div>
-                        <p className="font-semibold text-primary">Sacred Linen</p>
-                        <p className="text-[10px] text-muted">Parchment & rich bronze</p>
+                        <p className="font-semibold text-primary">Porcelain White</p>
+                        <p className="text-[11px] text-muted">Pristine ice and azure</p>
                       </div>
                     </div>
                     {theme === "light" && (
@@ -201,42 +192,29 @@ export default function Settings() {
                 </div>
               </div>
 
-              {/* Groq API Key (Primary) */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label className="font-semibold text-primary block">
-                    Groq API Key (Fast Whisper & GPT-OSS Analysis)
-                  </label>
-                  <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-accent text-accent-fg">
-                    Active
-                  </span>
+              {/* Studio Onboarding Tour */}
+              <div className="p-3.5 rounded-lg bg-surface border border-border flex items-center justify-between">
+                <div>
+                  <p className="font-semibold text-primary">Interactive Studio Tour</p>
+                  <p className="text-[11px] text-muted">Revisit the first-time setup and interactive reel sandbox.</p>
                 </div>
-                <input
-                  type="password"
-                  value={settings.groq_api_key}
-                  onChange={(e) =>
-                    setSettings({ ...settings, groq_api_key: e.target.value })
-                  }
-                  placeholder="gsk_..."
-                  className="field-input font-mono"
-                />
-                <p className="text-[11px] text-muted">
-                  High-speed cloud transcription using Whisper Large v3 Turbo + intelligent pastoral chapters and clip moment detection via GPT-OSS. Free keys available at{" "}
-                  <a
-                    href="https://console.groq.com"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-accent underline"
-                  >
-                    console.groq.com
-                  </a>.
-                </p>
+                <Btn
+                  variant="secondary"
+                  size="sm"
+                  icon="bx-sparkles"
+                  onClick={() => {
+                    localStorage.removeItem("dabaar_onboarded");
+                    window.location.href = "/onboarding";
+                  }}
+                >
+                  Start Tour
+                </Btn>
               </div>
 
               {/* Output Directory */}
               <div className="space-y-1.5">
                 <label className="font-semibold text-primary block">
-                  Clips Output Folder
+                  Saved Videos Folder
                 </label>
                 <input
                   type="text"
@@ -245,15 +223,15 @@ export default function Settings() {
                     setSettings({ ...settings, output_dir: e.target.value })
                   }
                   placeholder="Videos/Dabar"
-                  className="field-input font-mono"
+                  className="w-full rounded-md bg-surface border border-border px-3 py-2 text-xs text-primary outline-none focus:border-accent"
                 />
                 <p className="text-[11px] text-muted">
-                  The folder on your computer where finished video clips are saved.
+                  The folder on your computer where exported video clips are saved.
                 </p>
               </div>
 
               {savedNotice && (
-                <div className="p-2.5 rounded border border-success/30 bg-success-muted text-success flex items-center gap-2">
+                <div className="p-2.5 rounded-md border border-success/30 bg-success-muted text-success flex items-center gap-2">
                   <i className="bx bxs-check-circle text-base" />
                   <span>Settings saved successfully.</span>
                 </div>
@@ -270,262 +248,282 @@ export default function Settings() {
             </form>
           )}
 
-          {/* Tab 2: Processing & Offline Tools */}
-          {activeTab === "offline" && (
-            <div className="space-y-6 text-xs">
-              {/* Engine Choice */}
+          {/* Tab 2: Transcription Mode & Tools */}
+          {activeTab === "mode" && (
+            <div className="space-y-5 text-xs">
+              {/* Primary Engine Choice: Online vs Offline */}
               <div className="space-y-2">
                 <label className="font-semibold text-primary block">
-                  Transcription Method
+                  How should sermons be transcribed?
                 </label>
-                <div className="space-y-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Online Mode */}
                   <div
                     onClick={() =>
                       setSettings({ ...settings, offline_mode: false })
                     }
-                    className={`cursor-pointer border rounded-md p-3 transition-colors ${
+                    className={`cursor-pointer border rounded-lg p-3.5 transition-all ${
                       !settings.offline_mode
-                        ? "border-accent bg-surface-active"
+                        ? "border-accent bg-accent-muted/20 shadow-xs"
                         : "border-border bg-surface hover:bg-surface-hover"
                     }`}
                   >
                     <div className="flex items-center justify-between">
                       <span className="font-semibold text-primary flex items-center gap-1.5">
-                        <i className="bx bx-cloud text-accent text-sm" />
-                        <span>High-Speed Cloud Mode (Recommended)</span>
+                        <i className="bx bx-cloud text-accent text-base" />
+                        <span>Fast Cloud (Recommended)</span>
                       </span>
                       {!settings.offline_mode && (
-                        <i className="bx bxs-check-circle text-accent text-sm" />
+                        <i className="bx bxs-check-circle text-accent text-base" />
                       )}
                     </div>
-                    <p className="text-[11px] text-muted mt-1">
-                      Transcribes a 45-minute sermon in ~20 seconds with highest accuracy on church worship acoustics. Requires internet connection.
+                    <p className="text-[11px] text-muted mt-1 leading-relaxed">
+                      Transcribes a full 45-minute sermon in ~20 seconds with highest accuracy. Ready out of the box with zero setup.
                     </p>
                   </div>
 
+                  {/* Offline Mode */}
                   <div
                     onClick={() =>
                       setSettings({ ...settings, offline_mode: true })
                     }
-                    className={`cursor-pointer border rounded-md p-3 transition-colors ${
+                    className={`cursor-pointer border rounded-lg p-3.5 transition-all ${
                       settings.offline_mode
-                        ? "border-accent bg-surface-active"
+                        ? "border-accent bg-accent-muted/20 shadow-xs"
                         : "border-border bg-surface hover:bg-surface-hover"
                     }`}
                   >
                     <div className="flex items-center justify-between">
                       <span className="font-semibold text-primary flex items-center gap-1.5">
-                        <i className="bx bx-laptop text-accent text-sm" />
-                        <span>Private Offline Mode</span>
+                        <i className="bx bx-laptop text-accent text-base" />
+                        <span>Private On-Device</span>
                       </span>
                       {settings.offline_mode && (
-                        <i className="bx bxs-check-circle text-accent text-sm" />
+                        <i className="bx bxs-check-circle text-accent text-base" />
                       )}
                     </div>
-                    <p className="text-[11px] text-muted mt-1">
-                      Processes everything locally on your computer with zero internet required. All data stays on your machine.
+                    <p className="text-[11px] text-muted mt-1 leading-relaxed">
+                      Runs completely on your computer with zero internet required. All sermon files stay private on your machine.
                     </p>
                   </div>
                 </div>
               </div>
 
-              {/* Offline Tools Manager */}
-              <div className="space-y-3 pt-2">
-                <div className="flex items-center justify-between">
+              {/* Offline Model Selection (Standard vs Enhanced) */}
+              {settings.offline_mode && (
+                <div className="studio-card p-4 space-y-3 border-accent/40 animate-in fade-in duration-200">
                   <div>
-                    <h3 className="font-semibold text-primary">
-                      Offline Processing Tools
-                    </h3>
+                    <label className="font-semibold text-primary block text-xs">
+                      On-Device Accuracy Level
+                    </label>
                     <p className="text-[11px] text-muted">
-                      Install components to process and export video clips without internet.
+                      Choose standard speed for laptops or enhanced accuracy for complex church acoustics.
                     </p>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => handleDownload("all")}
-                    disabled={Boolean(downloadingComponent)}
-                    className="px-2.5 py-1 rounded bg-accent text-white hover:bg-[var(--accent-hover)] text-xs font-medium transition-colors"
-                  >
-                    {downloadingComponent === "all" ? "Downloading…" : "Install All Tools"}
-                  </button>
-                </div>
-
-                <div className="border border-border rounded-md bg-surface divide-y divide-border overflow-hidden">
-                  {/* Video Processor */}
-                  <div className="p-3 flex items-center justify-between">
-                    <div>
-                      <p className="font-medium text-primary">Video Clip Processor</p>
-                      <p className="text-[10px] text-muted">
-                        Trims, frames, and exports vertical video clips
-                      </p>
-                      {downloadProgress.ffmpeg !== undefined &&
-                        downloadingComponent === "ffmpeg" && (
-                          <div className="w-36 mt-1.5">
-                            <div className="download-bar-track">
-                              <div
-                                className="download-bar-fill"
-                                style={{ width: `${downloadProgress.ffmpeg}%` }}
-                              />
-                            </div>
-                            <span className="text-[9px] font-mono text-muted">
-                              {downloadProgress.ffmpeg}%
-                            </span>
-                          </div>
-                        )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {deps?.ffmpeg?.found ? (
-                        <span className="status-pill ready">
-                          <i className="bx bxs-check-circle text-xs" />
-                          <span>Installed</span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {/* Standard / Tiny */}
+                    <div
+                      onClick={() =>
+                        setSettings({ ...settings, offline_model: "tiny" })
+                      }
+                      className={`cursor-pointer border rounded-md p-3 transition-all ${
+                        settings.offline_model === "tiny"
+                          ? "border-accent bg-accent-muted text-accent font-semibold"
+                          : "border-border bg-surface hover:bg-surface-hover text-secondary"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-xs text-primary">
+                          Standard (Fastest)
                         </span>
-                      ) : (
-                        <Btn
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => handleDownload("ffmpeg")}
-                          disabled={Boolean(downloadingComponent)}
-                        >
-                          <i className="bx bx-download text-xs" />
-                          <span>Install</span>
-                        </Btn>
-                      )}
+                        {settings.offline_model === "tiny" && (
+                          <i className="bx bxs-check-circle text-accent text-sm" />
+                        )}
+                      </div>
+                      <p className="text-[11px] text-muted mt-1">
+                        ~75MB download. Recommended for regular laptops and quick turnarounds.
+                      </p>
+                    </div>
+
+                    {/* Enhanced / Base */}
+                    <div
+                      onClick={() =>
+                        setSettings({ ...settings, offline_model: "base" })
+                      }
+                      className={`cursor-pointer border rounded-md p-3 transition-all ${
+                        settings.offline_model === "base"
+                          ? "border-accent bg-accent-muted text-accent font-semibold"
+                          : "border-border bg-surface hover:bg-surface-hover text-secondary"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-xs text-primary">
+                          Enhanced (Higher Accuracy)
+                        </span>
+                        {settings.offline_model === "base" && (
+                          <i className="bx bxs-check-circle text-accent text-sm" />
+                        )}
+                      </div>
+                      <p className="text-[11px] text-muted mt-1">
+                        ~140MB download. Better recognition of quiet voices and background organ pads.
+                      </p>
                     </div>
                   </div>
-
-                  {/* Link Downloader */}
-                  <div className="p-3 flex items-center justify-between">
-                    <div>
-                      <p className="font-medium text-primary">Web Link Downloader</p>
-                      <p className="text-[10px] text-muted">
-                        Retrieves audio directly from YouTube and Google Drive links
-                      </p>
-                      {downloadProgress.yt_dlp !== undefined &&
-                        downloadingComponent === "yt_dlp" && (
-                          <div className="w-36 mt-1.5">
-                            <div className="download-bar-track">
-                              <div
-                                className="download-bar-fill"
-                                style={{ width: `${downloadProgress.yt_dlp}%` }}
-                              />
-                            </div>
-                            <span className="text-[9px] font-mono text-muted">
-                              {downloadProgress.yt_dlp}%
-                            </span>
-                          </div>
-                        )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {deps?.yt_dlp?.found ? (
-                        <span className="status-pill ready">
-                          <i className="bx bxs-check-circle text-xs" />
-                          <span>Installed</span>
-                        </span>
-                      ) : (
-                        <Btn
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => handleDownload("yt_dlp")}
-                          disabled={Boolean(downloadingComponent)}
-                        >
-                          <i className="bx bx-download text-xs" />
-                          <span>Install</span>
-                        </Btn>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Speech Model */}
-                  <div className="p-3 flex items-center justify-between">
-                    <div>
-                      <p className="font-medium text-primary">
-                        Offline Speech Recognition Engine (~140MB)
-                      </p>
-                      <p className="text-[10px] text-muted">
-                        Local language package for offline speech transcription
-                      </p>
-                      {downloadProgress.whisper_base !== undefined &&
-                        downloadingComponent === "whisper_base" && (
-                          <div className="w-36 mt-1.5">
-                            <div className="download-bar-track">
-                              <div
-                                className="download-bar-fill"
-                                style={{
-                                  width: `${downloadProgress.whisper_base}%`,
-                                }}
-                              />
-                            </div>
-                            <span className="text-[9px] font-mono text-muted">
-                              {downloadProgress.whisper_base}%
-                            </span>
-                          </div>
-                        )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {offlineStatus?.whisper_base_ready ||
-                      deps?.whisper_model?.base_available ? (
-                        <span className="status-pill ready">
-                          <i className="bx bxs-check-circle text-xs" />
-                          <span>Installed</span>
-                        </span>
-                      ) : (
-                        <Btn
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => handleDownload("whisper_base")}
-                          disabled={Boolean(downloadingComponent)}
-                        >
-                          <i className="bx bx-download text-xs" />
-                          <span>Install</span>
-                        </Btn>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {savedNotice && (
-                <div className="p-2.5 rounded border border-success/30 bg-success-muted text-success flex items-center gap-2">
-                  <i className="bx bxs-check-circle text-base" />
-                  <span>Settings saved.</span>
                 </div>
               )}
 
-              <Btn onClick={handleSave} disabled={isSaving}>
-                <i
-                  className={`bx ${
-                    isSaving ? "bx-loader-alt bx-spin" : "bx-check"
-                  } text-sm`}
-                />
-                <span>Save Settings</span>
-              </Btn>
+              {/* On-Device Components Readiness Card */}
+              <div className="studio-card p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-semibold text-xs text-primary">
+                      On-Device Tools
+                    </h3>
+                    <p className="text-[11px] text-muted">
+                      Status of audio and video processors on your machine.
+                    </p>
+                  </div>
+                  {offlineStatus &&
+                    offlineStatus.ffmpeg_ready &&
+                    offlineStatus.yt_dlp_ready && (
+                      <span className="text-[11px] font-medium text-success flex items-center gap-1">
+                        <i className="bx bx-check-circle text-sm" /> Ready
+                      </span>
+                    )}
+                </div>
+
+                <div className="space-y-2 pt-1">
+                  {/* YouTube Downloader */}
+                  <div className="flex items-center justify-between p-2.5 rounded-md bg-surface border border-border">
+                    <div className="flex items-center gap-2">
+                      <i className="bx bxl-youtube text-base text-accent" />
+                      <div>
+                        <p className="font-medium text-primary">YouTube Stream Extractor</p>
+                        <p className="text-[10px] text-muted">Downloads audio streams for instant processing</p>
+                      </div>
+                    </div>
+                    {offlineStatus?.yt_dlp_ready ? (
+                      <span className="text-success text-[11px] font-medium flex items-center gap-1">
+                        <i className="bx bx-check text-sm" /> Ready
+                      </span>
+                    ) : (
+                      <Btn
+                        variant="secondary"
+                        onClick={() => handleDownload("yt_dlp")}
+                        disabled={downloadingComponent === "yt_dlp"}
+                      >
+                        {downloadingComponent === "yt_dlp" ? "Installing…" : "Install (15MB)"}
+                      </Btn>
+                    )}
+                  </div>
+
+                  {/* Video & Audio Engine */}
+                  <div className="flex items-center justify-between p-2.5 rounded-md bg-surface border border-border">
+                    <div className="flex items-center gap-2">
+                      <i className="bx bx-video-recording text-base text-accent" />
+                      <div>
+                        <p className="font-medium text-primary">Clip Rendering Engine</p>
+                        <p className="text-[10px] text-muted">Renders vertical clips and video waveforms</p>
+                      </div>
+                    </div>
+                    {offlineStatus?.ffmpeg_ready ? (
+                      <span className="text-success text-[11px] font-medium flex items-center gap-1">
+                        <i className="bx bx-check text-sm" /> Ready
+                      </span>
+                    ) : (
+                      <Btn
+                        variant="secondary"
+                        onClick={() => handleDownload("ffmpeg")}
+                        disabled={downloadingComponent === "ffmpeg"}
+                      >
+                        {downloadingComponent === "ffmpeg" ? "Installing…" : "Install (40MB)"}
+                      </Btn>
+                    )}
+                  </div>
+
+                  {/* Whisper Speech Model */}
+                  <div className="flex items-center justify-between p-2.5 rounded-md bg-surface border border-border">
+                    <div className="flex items-center gap-2">
+                      <i className="bx bx-microphone text-base text-accent" />
+                      <div>
+                        <p className="font-medium text-primary">
+                          Whisper Model ({settings.offline_model === "tiny" ? "Standard" : "Enhanced"})
+                        </p>
+                        <p className="text-[10px] text-muted">Offline speech recognition model</p>
+                      </div>
+                    </div>
+                    {(settings.offline_model === "tiny" && offlineStatus?.whisper_tiny_ready) ||
+                    (settings.offline_model === "base" && offlineStatus?.whisper_base_ready) ? (
+                      <span className="text-success text-[11px] font-medium flex items-center gap-1">
+                        <i className="bx bx-check text-sm" /> Ready
+                      </span>
+                    ) : (
+                      <Btn
+                        variant="secondary"
+                        onClick={() =>
+                          handleDownload(
+                            settings.offline_model === "tiny" ? "whisper_tiny" : "whisper_base"
+                          )
+                        }
+                        disabled={downloadingComponent?.startsWith("whisper")}
+                      >
+                        {downloadingComponent?.startsWith("whisper")
+                          ? "Downloading…"
+                          : `Download (${settings.offline_model === "tiny" ? "75MB" : "140MB"})`}
+                      </Btn>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Save Mode Button */}
+              <div className="pt-2">
+                <Btn onClick={handleSave} disabled={isSaving}>
+                  <i
+                    className={`bx ${
+                      isSaving ? "bx-loader-alt bx-spin" : "bx-check"
+                    } text-sm`}
+                  />
+                  <span>{isSaving ? "Saving…" : "Save Mode"}</span>
+                </Btn>
+              </div>
             </div>
           )}
 
           {/* Tab 3: Church Vocabulary */}
           {activeTab === "vocabulary" && (
             <form onSubmit={handleSave} className="space-y-4 text-xs">
-              <div className="space-y-1.5">
+              <div className="space-y-1">
                 <label className="font-semibold text-primary block">
-                  Preacher Names, Ministry Terms & Scripture Words
+                  Church Names, Ministers & Vocabulary
                 </label>
-                <textarea
-                  rows={6}
-                  value={settings.custom_vocabulary}
-                  onChange={(e) =>
-                    setSettings({ ...settings, custom_vocabulary: e.target.value })
-                  }
-                  placeholder="Pastor Daniel, Yahweh, Ruach HaKodesh, Gethsemane, Pentecost, Habakkuk, Melchizedek..."
-                  className="field-input leading-relaxed font-mono"
-                />
                 <p className="text-[11px] text-muted">
-                  Comma-separated list of church names and biblical terms. Dabar will automatically spell and format these words correctly in all manuscripts and clips.
+                  Comma-separated names of pastors, church departments, or biblical terms to ensure 100% spelling accuracy.
+                </p>
+              </div>
+
+              <textarea
+                rows={5}
+                value={settings.custom_vocabulary}
+                onChange={(e) =>
+                  setSettings({ ...settings, custom_vocabulary: e.target.value })
+                }
+                placeholder="e.g. Pastor Paul Adefarasin, Apostle Joshua Selman, Dunamis, Koinonia, Shiloh, Covenant"
+                className="w-full rounded-md bg-surface border border-border p-3 text-xs text-primary outline-none focus:border-accent resize-none leading-relaxed font-sans"
+              />
+
+              <div className="p-3 rounded-md bg-surface border border-border space-y-1 text-muted">
+                <p className="font-medium text-secondary">
+                  Included Nigerian Christian Preaching Defaults:
+                </p>
+                <p className="text-[11px]">
+                  Hallelujah, Amen, Jehovah, Apostle, Pastor, Anointing, Prophetic, Deliverance, Yoruba interjections (Ese O, Amin).
                 </p>
               </div>
 
               {savedNotice && (
-                <div className="p-2.5 rounded border border-success/30 bg-success-muted text-success flex items-center gap-2">
+                <div className="p-2.5 rounded-md border border-success/30 bg-success-muted text-success flex items-center gap-2">
                   <i className="bx bxs-check-circle text-base" />
                   <span>Vocabulary saved.</span>
                 </div>
@@ -537,69 +535,9 @@ export default function Settings() {
                     isSaving ? "bx-loader-alt bx-spin" : "bx-check"
                   } text-sm`}
                 />
-                <span>Save Vocabulary</span>
+                <span>{isSaving ? "Saving…" : "Save Vocabulary"}</span>
               </Btn>
             </form>
-          )}
-
-          {/* Tab 4: System Status */}
-          {activeTab === "diagnostics" && (
-            <div className="space-y-4 text-xs">
-              {/* System Profile */}
-              <div className="border border-border bg-surface p-4 rounded-md space-y-2">
-                <h3 className="font-semibold text-primary flex items-center gap-1.5">
-                  <i className="bx bx-chip text-accent text-sm" />
-                  <span>System Hardware</span>
-                </h3>
-                <div className="grid grid-cols-2 gap-2 text-[11px] font-mono">
-                  <div>
-                    <span className="text-muted block">System Memory</span>
-                    <span className="text-primary font-bold">
-                      {hardware?.ram_gb || "16"} GB
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-muted block">Rendering Speed</span>
-                    <span className="text-primary font-bold">
-                      {hardware?.is_low_end ? "Balanced" : "High Performance"}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Status List */}
-              <div className="border border-border rounded-md bg-surface divide-y divide-border overflow-hidden">
-                <div className="p-3 flex items-center justify-between">
-                  <div>
-                    <span className="font-medium text-primary block">
-                      Video Processing Engine
-                    </span>
-                    <span className="text-[10px] text-muted">
-                      {deps?.ffmpeg?.found ? "Ready for video export" : "Not yet installed"}
-                    </span>
-                  </div>
-                  <span className={`status-pill ${deps?.ffmpeg?.found ? "ready" : "failed"}`}>
-                    <i className={`bx ${deps?.ffmpeg?.found ? "bxs-check-circle" : "bx-x-circle"} text-xs`} />
-                    <span>{deps?.ffmpeg?.found ? "Ready" : "Missing"}</span>
-                  </span>
-                </div>
-
-                <div className="p-3 flex items-center justify-between">
-                  <div>
-                    <span className="font-medium text-primary block">
-                      Web Link Downloader
-                    </span>
-                    <span className="text-[10px] text-muted">
-                      {deps?.yt_dlp?.found ? "Ready to import URLs" : "Not yet installed"}
-                    </span>
-                  </div>
-                  <span className={`status-pill ${deps?.yt_dlp?.found ? "ready" : "failed"}`}>
-                    <i className={`bx ${deps?.yt_dlp?.found ? "bxs-check-circle" : "bx-x-circle"} text-xs`} />
-                    <span>{deps?.yt_dlp?.found ? "Ready" : "Missing"}</span>
-                  </span>
-                </div>
-              </div>
-            </div>
           )}
         </div>
       </div>

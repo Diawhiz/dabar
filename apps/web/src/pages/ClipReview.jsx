@@ -1,6 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { listSermons, getSermon, renderClip, openInExplorer, getAssetUrl } from "../lib/api.js";
+import {
+  listSermons,
+  getSermon,
+  renderClip,
+  renderClipRange,
+  retryHighlights,
+  openInExplorer,
+  getAssetUrl,
+  checkDependencies,
+} from "../lib/api.js";
 import ClipCard from "../components/ClipCard.jsx";
 import ExportModal from "../components/ExportModal.jsx";
 import ManuscriptView from "../components/ManuscriptView.jsx";
@@ -28,6 +37,7 @@ export default function ClipReview() {
   const [highlights, setHighlights] = useState([]);
   const [sermonUrl, setSermonUrl] = useState("");
   const [mediaAssetUrl, setMediaAssetUrl] = useState(null);
+  const [isVideoFile, setIsVideoFile] = useState(false);
   const [sermonTitle, setSermonTitle] = useState("");
   const [sermonDuration, setSermonDuration] = useState("");
   const [scriptureRefs, setScriptureRefs] = useState([]);
@@ -35,14 +45,23 @@ export default function ClipReview() {
   const [activeSegment, setActiveSegment] = useState(null);
   const [exportModalClip, setExportModalClip] = useState(null);
   const [renderingClipId, setRenderingClipId] = useState(null);
+  const [renderError, setRenderError] = useState(null);
   const [exportedNotice, setExportedNotice] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [playbackTime, setPlaybackTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [deps, setDeps] = useState(null);
+  const [isRetryingHighlights, setIsRetryingHighlights] = useState(false);
+  const [customRange, setCustomRange] = useState({ start: 0, end: 60, title: "Custom Moment" });
+  const [showCustomRangeModal, setShowCustomRangeModal] = useState(false);
 
   useEffect(() => {
     let mounted = true;
     setIsLoading(true);
+
+    checkDependencies().then((d) => {
+      if (mounted && d) setDeps(d);
+    });
 
     async function loadData() {
       try {
@@ -67,7 +86,7 @@ export default function ClipReview() {
           return;
         }
 
-        let displayTitle = sermon.title || "Sunday Preaching Session";
+        let displayTitle = sermon.title || "Sunday Sermon";
         if (displayTitle.match(/\.(mp4|mp3|wav|m4a|mov|mkv)$/i)) {
           displayTitle = displayTitle.replace(/\.(mp4|mp3|wav|m4a|mov|mkv)$/i, "").replace(/[-_]/g, " ");
         }
@@ -76,6 +95,11 @@ export default function ClipReview() {
         setScriptureRefs(sermon.scripture_references || []);
 
         const sourcePath = sermon.audio_path || sermon.youtube_url || "";
+        const isVideo = Boolean(
+          sourcePath.match(/\.(mp4|mov|mkv|webm|avi)$/i) || extractVideoId(sermon.youtube_url)
+        );
+        setIsVideoFile(isVideo);
+
         if (sourcePath && !sourcePath.startsWith("http://") && !sourcePath.startsWith("https://")) {
           getAssetUrl(sourcePath).then((assetUrl) => {
             if (mounted) setMediaAssetUrl(assetUrl);
@@ -94,7 +118,7 @@ export default function ClipReview() {
           score: hl.score,
           title: hl.title,
           highlight_title: hl.title,
-          why: hl.reason || hl.suggested_hook_text || "Key pastoral teaching moment",
+          why: hl.reason || hl.suggested_hook_text || "Key preaching moment",
           text: hl.reason || hl.title,
           duration: `${formatSeconds(hl.start_time)} – ${formatSeconds(hl.end_time)}`,
           is_highlight: true,
@@ -164,6 +188,8 @@ export default function ClipReview() {
     if (!currentSermonId || !clip) return;
     const clipKey = clip.id || `clip-${clip.start}`;
     setRenderingClipId(clipKey);
+    setRenderError(null);
+
     try {
       const outputPath = await renderClip(
         currentSermonId,
@@ -172,15 +198,68 @@ export default function ClipReview() {
         clip.end,
         fileName || clip.highlight_title || clip.title
       );
+
       setExportedNotice({
         title: clip.highlight_title || clip.title || fileName || "Clip",
         path: outputPath,
       });
       setExportModalClip(null);
     } catch (err) {
-      alert("Clip export failed: " + (err.message || err));
+      const msg = err?.message || String(err);
+      setRenderError(msg);
     } finally {
       setRenderingClipId(null);
+    }
+  }
+
+  async function handleConfirmCustomRangeExport() {
+    if (!currentSermonId) return;
+    setRenderingClipId("custom-range");
+    setRenderError(null);
+    try {
+      const outputPath = await renderClipRange(
+        currentSermonId,
+        customRange.start,
+        customRange.end,
+        customRange.title
+      );
+      setExportedNotice({
+        title: customRange.title || "Custom Clip",
+        path: outputPath,
+      });
+      setShowCustomRangeModal(false);
+    } catch (err) {
+      const msg = err?.message || String(err);
+      setRenderError(msg);
+    } finally {
+      setRenderingClipId(null);
+    }
+  }
+
+  async function handleRetryMoments() {
+    if (!currentSermonId) return;
+    setIsRetryingHighlights(true);
+    try {
+      const newHls = await retryHighlights(currentSermonId);
+      if (newHls && newHls.length > 0) {
+        const formatted = newHls.map((hl) => ({
+          id: hl.id,
+          start: hl.start_time,
+          end: hl.end_time,
+          score: hl.score,
+          title: hl.title,
+          highlight_title: hl.title,
+          why: hl.reason || hl.suggested_hook_text || "Preaching moment",
+          text: hl.reason || hl.title,
+          duration: `${formatSeconds(hl.start_time)} – ${formatSeconds(hl.end_time)}`,
+          is_highlight: true,
+        }));
+        setHighlights(formatted);
+      }
+    } catch (err) {
+      alert("Could not generate moments: " + (err.message || err));
+    } finally {
+      setIsRetryingHighlights(false);
     }
   }
 
@@ -194,136 +273,188 @@ export default function ClipReview() {
   }
 
   return (
-    <div className="space-y-12 pb-32 animate-in fade-in duration-700">
-      {/* ── Macro Header & Spatial Rhythm ────────────────────────────── */}
-      <section className="space-y-3 pt-6">
-        <div className="flex items-center gap-3">
-          <span className="eyebrow-tag">
-            CLIPS & MOMENTS STUDIO
-          </span>
-          <span className="font-mono-code text-xs text-muted">
-            {sermonDuration ? `${sermonDuration} total runtime` : "Ready"}
-          </span>
-          {scriptureRefs.length > 0 && (
-            <span className="scripture-badge text-[10px]">
-              {scriptureRefs.join(", ")}
-            </span>
-          )}
+    <div className="space-y-6 pb-32 animate-in fade-in duration-300">
+      {/* ── Header ─────────────────────────────────────────────────── */}
+      <section className="flex flex-col md:flex-row md:items-end justify-between gap-4 pt-2">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2 text-xs text-secondary">
+            {sermonDuration && <span>{sermonDuration}</span>}
+            {scriptureRefs.length > 0 && (
+              <>
+                <span>·</span>
+                <span className="text-accent font-medium">{scriptureRefs.join(", ")}</span>
+              </>
+            )}
+          </div>
+
+          <h1 className="font-editorial text-2xl sm:text-3xl font-bold tracking-tight text-primary leading-tight">
+            {sermonTitle || "Sermon Clips & Transcript"}
+          </h1>
+          <p className="text-secondary text-xs sm:text-sm font-normal">
+            {highlights.length} key moments found · Ready to share on social media.
+          </p>
         </div>
 
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-          <div>
-            <h1 className="font-editorial text-3xl sm:text-5xl font-bold tracking-tight text-primary leading-tight">
-              {sermonTitle || "Sermon Manuscript & Moments"}
-            </h1>
-            <p className="text-secondary text-xs sm:text-sm mt-2 max-w-xl font-light">
-              {highlights.length} viral teaching moments identified · Aspect-ratio safe 9:16 reels ready for export.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-3 shrink-0">
-            <Btn variant="secondary" icon="bx-left-arrow-alt" onClick={() => navigate("/dashboard")}>
-              Library
-            </Btn>
-            <Btn variant="primary" icon="bx-plus" onClick={() => navigate("/upload")}>
-              New Sermon
-            </Btn>
-          </div>
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          <Btn variant="secondary" icon="bx-time-five" onClick={() => setShowCustomRangeModal(true)}>
+            Custom Clip
+          </Btn>
+          <Btn variant="secondary" icon="bx-arrow-back" onClick={() => navigate("/dashboard")}>
+            Library
+          </Btn>
+          <Btn variant="primary" icon="bx-plus" onClick={() => navigate("/upload")}>
+            New Sermon
+          </Btn>
         </div>
       </section>
 
-      {/* ── Export Success Toast ─────────────────────────────────────── */}
+      {/* ── Dependency Alert Banner if FFmpeg is Missing ───────────── */}
+      {deps && !deps?.ffmpeg?.found && (
+        <div className="p-3.5 rounded-lg border border-accent/40 bg-accent-muted/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2.5">
+            <i className="bx bx-info-circle text-accent text-lg" />
+            <div>
+              <p className="font-semibold text-primary">Video Tools Required for Export</p>
+              <p className="text-xs text-muted">Install the video engine in settings to export finished video clips.</p>
+            </div>
+          </div>
+          <Btn size="xs" variant="primary" icon="bx-download" onClick={() => navigate("/settings")}>
+            Install in Settings
+          </Btn>
+        </div>
+      )}
+
+      {/* ── Export Error Notification Banner ────────────────────────── */}
+      {renderError && !exportModalClip && (
+        <div className="studio-card p-4 border-danger/40 bg-danger-muted flex items-center justify-between gap-4 text-xs">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-danger text-white flex items-center justify-center text-lg shrink-0">
+              <i className="bx bx-error" />
+            </div>
+            <div>
+              <p className="font-semibold text-primary">Video export failed</p>
+              <p className="text-xs text-secondary leading-relaxed max-w-xl">{renderError}</p>
+            </div>
+          </div>
+          <button onClick={() => setRenderError(null)} className="text-muted hover:text-primary p-1">
+            <i className="bx bx-x text-xl" />
+          </button>
+        </div>
+      )}
+
+      {/* ── Export Success Notification ─────────────────────────────── */}
       {exportedNotice && (
-        <div className="doppelrand-shell border-accent/40 bg-accent-muted/20">
-          <div className="doppelrand-core p-4 flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-accent text-accent-fg flex items-center justify-center text-xl shadow-[0_0_12px_var(--accent-glow)]">
-                <i className="bx bxs-check-circle" />
-              </div>
-              <div>
-                <p className="font-editorial text-base font-bold text-primary">
-                  "{exportedNotice.title}" rendered successfully!
-                </p>
-                <p className="text-xs text-muted font-mono-code truncate max-w-lg">
-                  {exportedNotice.path}
-                </p>
-              </div>
+        <div className="studio-card p-4 border-success/40 bg-success-muted flex items-center justify-between gap-4 text-xs">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-8 h-8 rounded-full bg-success text-white flex items-center justify-center text-lg shrink-0">
+              <i className="bx bxs-check-circle" />
             </div>
-            <div className="flex items-center gap-3">
-              <Btn
-                size="sm"
-                variant="secondary"
-                icon="bx-folder-open"
-                onClick={() => openInExplorer(exportedNotice.path)}
-              >
-                Show in Folder
-              </Btn>
-              <button
-                onClick={() => setExportedNotice(null)}
-                className="text-muted hover:text-primary p-1 transition-colors"
-              >
-                <i className="bx bx-x text-2xl" />
-              </button>
+            <div className="min-w-0">
+              <p className="font-semibold text-primary">
+                "{exportedNotice.title}" is ready
+              </p>
+              <p className="text-[11px] text-muted truncate max-w-md">
+                {exportedNotice.path}
+              </p>
             </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <Btn
+              size="xs"
+              variant="primary"
+              icon="bx-folder-open"
+              onClick={() => openInExplorer(exportedNotice.path)}
+            >
+              Open in Folder
+            </Btn>
+            <button
+              onClick={() => setExportedNotice(null)}
+              className="text-muted hover:text-primary p-1"
+            >
+              <i className="bx bx-x text-xl" />
+            </button>
           </div>
         </div>
       )}
 
-      {/* ── Studio Mode Switcher Tabs ─────────────────────────────────── */}
+      {/* ── Mode Switcher Tabs ────────────────────────────────────────── */}
       <div className="flex items-center justify-start">
-        <div className="flex p-1 rounded-full bg-surface border border-white/[0.08] shadow-ambient backdrop-blur-md">
+        <div className="flex p-1 rounded-lg bg-surface border border-border text-xs font-semibold">
           <button
             type="button"
             onClick={() => setActiveTab("clips")}
-            className={`px-6 py-2 rounded-full text-xs font-semibold tracking-tight transition-all duration-500 ease-fluid flex items-center gap-2 ${
+            className={`px-4 py-1.5 rounded-md transition-all flex items-center gap-1.5 ${
               activeTab === "clips"
-                ? "bg-accent text-accent-fg shadow-[0_2px_12px_var(--accent-glow)]"
-                : "text-secondary hover:text-primary"
+                ? "bg-accent text-accent-fg shadow-xs"
+                : "text-secondary hover:text-primary hover:bg-surface-hover"
             }`}
           >
             <i className="bx bx-film text-sm" />
-            <span>Extracted Clips ({highlights.length})</span>
+            <span>Sermon Clips ({highlights.length})</span>
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTab("transcript")}
-            className={`px-6 py-2 rounded-full text-xs font-semibold tracking-tight transition-all duration-500 ease-fluid flex items-center gap-2 ${
+            className={`px-4 py-1.5 rounded-md transition-all flex items-center gap-1.5 ${
               activeTab === "transcript"
-                ? "bg-accent text-accent-fg shadow-[0_2px_12px_var(--accent-glow)]"
-                : "text-secondary hover:text-primary"
+                ? "bg-accent text-accent-fg shadow-xs"
+                : "text-secondary hover:text-primary hover:bg-surface-hover"
             }`}
           >
             <i className="bx bx-book-open text-sm" />
-            <span>Full Manuscript</span>
+            <span>Full Transcript</span>
           </button>
         </div>
       </div>
 
-      {/* ── Studio Stage Body ────────────────────────────────────────── */}
+      {/* ── Studio Content ────────────────────────────────────────────── */}
       {isLoading ? (
-        <div className="doppelrand-shell">
-          <div className="doppelrand-core py-28 text-center space-y-4">
-            <i className="bx bx-loader-alt bx-spin text-4xl text-accent" />
-            <p className="font-editorial text-xl text-secondary">
-              Illuminating sermon manuscript & preaching moments…
-            </p>
-          </div>
+        <div className="studio-card py-20 text-center space-y-2.5">
+          <i className="bx bx-loader-alt bx-spin text-3xl text-accent" />
+          <p className="font-editorial text-lg text-secondary">
+            Loading sermon clips…
+          </p>
         </div>
       ) : activeTab === "clips" ? (
-        <div className="space-y-12">
-          {/* Featured Top Moment (Primary Highlight) */}
-          {topMoment && (
-            <section className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="eyebrow-tag text-[10px]">
-                  <i className="bx bxs-star text-xs" />
-                  Primary Broadcast Moment
-                </span>
-                <span className="text-xs text-muted font-mono-code">
-                  Pre-configured 9:16 Vertical Master
-                </span>
+        <div className="space-y-6">
+          {/* Empty Moments Fallback */}
+          {highlights.length === 0 && (
+            <div className="studio-card p-8 text-center space-y-4 max-w-lg mx-auto">
+              <div className="w-12 h-12 rounded-full bg-surface-elevated border border-border text-accent flex items-center justify-center mx-auto text-2xl">
+                <i className="bx bx-film" />
               </div>
+              <div className="space-y-1">
+                <h3 className="font-editorial text-lg font-bold text-primary">No Moments Extracted Yet</h3>
+                <p className="text-xs text-secondary max-w-md mx-auto leading-relaxed">
+                  You can analyze this sermon to automatically find teaching moments, or create custom clips from the transcript.
+                </p>
+              </div>
+              <div className="flex items-center justify-center gap-2 pt-2 flex-wrap">
+                <Btn
+                  size="sm"
+                  variant="primary"
+                  icon={isRetryingHighlights ? "bx-loader-alt bx-spin" : "bx-brain"}
+                  disabled={isRetryingHighlights}
+                  onClick={handleRetryMoments}
+                >
+                  {isRetryingHighlights ? "Finding Moments…" : "Find Key Moments"}
+                </Btn>
+                <Btn
+                  size="sm"
+                  variant="secondary"
+                  icon="bx-time"
+                  onClick={() => setShowCustomRangeModal(true)}
+                >
+                  Cut Custom Clip
+                </Btn>
+              </div>
+            </div>
+          )}
+
+          {/* Featured Top Moment */}
+          {topMoment && (
+            <section className="space-y-2">
               <ClipCard
                 clip={topMoment}
                 featured={true}
@@ -334,21 +465,14 @@ export default function ClipReview() {
             </section>
           )}
 
-          {/* Secondary Moments Grid (Asymmetrical Layout) */}
+          {/* Secondary Moments Grid */}
           {otherMoments.length > 0 && (
-            <section className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="font-editorial text-2xl sm:text-3xl font-bold text-primary">
-                    More Preaching Moments ({otherMoments.length})
-                  </h2>
-                  <p className="text-xs text-secondary mt-0.5">
-                    Click preview to inspect playback bounds or export directly
-                  </p>
-                </div>
-              </div>
+            <section className="space-y-3">
+              <h2 className="font-editorial text-xl font-bold text-primary">
+                More Preaching Moments ({otherMoments.length})
+              </h2>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {otherMoments.map((moment) => (
                   <ClipCard
                     key={moment.id}
@@ -364,132 +488,142 @@ export default function ClipReview() {
 
           {/* Active Moment In-Page Player */}
           {activeSegment && (
-            <div className="doppelrand-shell animate-in fade-in duration-500">
-              <div className="doppelrand-core space-y-5">
-                <div className="flex items-center justify-between border-b border-white/[0.08] pb-4">
-                  <div className="flex items-center gap-3">
-                    <span className="eyebrow-tag text-[10px]">
-                      LIVE PREVIEW
-                    </span>
-                    <h3 className="font-editorial text-lg font-bold text-primary truncate max-w-md">
-                      {activeSegment.highlight_title || activeSegment.title || "Selected Moment"}
-                    </h3>
-                    <span className="text-xs text-muted font-mono-code">
-                      ({formatSeconds(activeSegment.start)} – {formatSeconds(activeSegment.end)})
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <Btn
-                      size="sm"
-                      variant="primary"
-                      icon="bx-film"
-                      onClick={() => setExportModalClip(activeSegment)}
-                    >
-                      Export Video Reel
-                    </Btn>
-                    <button
-                      onClick={() => setActiveSegment(null)}
-                      className="w-8 h-8 rounded-full bg-white/[0.04] text-muted hover:text-primary flex items-center justify-center transition-colors"
-                      aria-label="Close clip preview"
-                    >
-                      <i className="bx bx-x text-2xl" />
-                    </button>
-                  </div>
+            <div className="studio-card p-5 space-y-4 border-accent/40 animate-in fade-in duration-200">
+              <div className="flex items-center justify-between border-b border-border pb-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <h3 className="font-editorial text-base font-bold text-primary truncate max-w-md">
+                    {activeSegment.highlight_title || activeSegment.title || "Selected Moment"}
+                  </h3>
+                  <span className="text-xs text-muted">
+                    ({formatSeconds(activeSegment.start)} – {formatSeconds(activeSegment.end)})
+                  </span>
                 </div>
 
-                {videoId ? (
-                  <div className="aspect-video w-full rounded-2xl overflow-hidden border border-white/[0.08] bg-black shadow-ambient">
-                    <iframe
-                      src={`https://www.youtube.com/embed/${videoId}?start=${Math.floor(activeSegment.start)}&end=${Math.ceil(activeSegment.end)}&autoplay=1&rel=0`}
-                      title="Clip preview player"
-                      className="h-full w-full"
-                      allow="autoplay; encrypted-media"
-                      allowFullScreen
-                    />
+                <div className="flex items-center gap-2 shrink-0">
+                  <Btn
+                    size="sm"
+                    variant="primary"
+                    icon="bx-film"
+                    onClick={() => setExportModalClip(activeSegment)}
+                  >
+                    Export Video
+                  </Btn>
+                  <button
+                    onClick={() => setActiveSegment(null)}
+                    className="w-7 h-7 rounded-md bg-surface-elevated text-muted hover:text-primary flex items-center justify-center transition-colors"
+                    aria-label="Close preview"
+                  >
+                    <i className="bx bx-x text-xl" />
+                  </button>
+                </div>
+              </div>
+
+              {videoId ? (
+                /* YouTube Video Player */
+                <div className="aspect-video w-full rounded-lg overflow-hidden border border-border bg-black">
+                  <iframe
+                    src={`https://www.youtube.com/embed/${videoId}?start=${Math.floor(activeSegment.start)}&end=${Math.ceil(activeSegment.end)}&autoplay=1&rel=0`}
+                    title="Clip preview player"
+                    className="h-full w-full"
+                    allow="autoplay; encrypted-media"
+                    allowFullScreen
+                  />
+                </div>
+              ) : mediaAssetUrl && isVideoFile ? (
+                /* Local Video Player */
+                <div className="w-full rounded-lg overflow-hidden border border-border bg-black p-4 space-y-3">
+                  <video
+                    controls
+                    autoPlay
+                    src={mediaAssetUrl}
+                    className="w-full max-h-80 rounded-md mx-auto bg-black"
+                    onLoadedMetadata={(e) => {
+                      e.target.currentTime = activeSegment.start || 0;
+                    }}
+                    onTimeUpdate={(e) => {
+                      if (activeSegment.end && e.target.currentTime >= activeSegment.end) {
+                        e.target.pause();
+                        e.target.currentTime = activeSegment.start || 0;
+                      }
+                    }}
+                  />
+                  <div className="flex items-center justify-between text-xs text-secondary font-editorial italic px-1">
+                    <p>"{activeSegment.why || activeSegment.text || "Preaching moment"}"</p>
+                    <span className="text-accent font-semibold shrink-0">
+                      Duration: {Math.round((activeSegment.end || 0) - (activeSegment.start || 0))}s
+                    </span>
                   </div>
-                ) : mediaAssetUrl ? (
-                  <div className="w-full rounded-2xl overflow-hidden border border-white/[0.08] bg-black/90 p-5 space-y-4 shadow-ambient">
-                    <video
+                </div>
+              ) : (
+                /* Audio-only Preaching Quote Card */
+                <div className="p-6 rounded-lg bg-base border border-border space-y-4 text-center">
+                  <div className="w-10 h-10 rounded-full bg-accent/20 text-accent flex items-center justify-center mx-auto text-xl">
+                    <i className="bx bx-volume-full" />
+                  </div>
+                  <div className="max-w-md mx-auto space-y-1">
+                    <p className="font-editorial text-base font-bold text-primary">
+                      "{activeSegment.why || activeSegment.text || activeSegment.highlight_title}"
+                    </p>
+                    <p className="text-xs text-muted">
+                      Audio Moment · {Math.round((activeSegment.end || 0) - (activeSegment.start || 0))}s duration
+                    </p>
+                  </div>
+                  {mediaAssetUrl && (
+                    <audio
                       controls
                       autoPlay
                       src={mediaAssetUrl}
-                      className="w-full max-h-96 rounded-xl mx-auto bg-black"
+                      className="w-full max-w-sm mx-auto h-8"
                       onLoadedMetadata={(e) => {
                         e.target.currentTime = activeSegment.start || 0;
                       }}
-                      onTimeUpdate={(e) => {
-                        if (activeSegment.end && e.target.currentTime >= activeSegment.end) {
-                          e.target.pause();
-                          e.target.currentTime = activeSegment.start || 0;
-                        }
-                      }}
                     />
-                    <div className="flex items-center justify-between text-xs text-secondary font-editorial italic px-2">
-                      <p>"{activeSegment.why || activeSegment.text || "Preaching teaching moment"}"</p>
-                      <span className="font-mono-code text-accent font-bold shrink-0">
-                        Duration: {Math.round((activeSegment.end || 0) - (activeSegment.start || 0))}s
-                      </span>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-center py-14 space-y-3 border border-dashed border-white/[0.08] rounded-2xl bg-white/[0.02]">
-                    <i className="bx bx-film text-4xl text-accent" />
-                    <p className="font-editorial text-lg font-bold text-primary">
-                      {activeSegment.highlight_title || activeSegment.title}
-                    </p>
-                    <p className="text-xs text-secondary max-w-md mx-auto italic font-editorial">
-                      "{activeSegment.why || "High-impact sermon teaching clip."}"
-                    </p>
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>
       ) : (
-        /* ── MANUSCRIPT VIEW ────────────────────────────────────────── */
-        <div className="space-y-6">
+        /* ── Transcript View ───────────────────────────────────────── */
+        <div className="space-y-4">
           <div className="relative w-full max-w-md">
-            <i className="bx bx-search absolute left-4 top-1/2 -translate-y-1/2 text-muted text-base" />
+            <i className="bx bx-search absolute left-3 top-1/2 -translate-y-1/2 text-muted text-sm" />
             <input
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Search sermon words, Scripture citations, or topics…"
-              className="w-full rounded-full bg-white/[0.04] border border-white/[0.08] pl-11 pr-4 py-2.5 text-xs text-primary placeholder:text-muted outline-none focus:border-accent transition-all duration-300"
+              className="w-full rounded-md bg-surface border border-border pl-9 pr-3 py-1.5 text-xs text-primary placeholder:text-muted outline-none focus:border-accent transition-colors"
             />
           </div>
 
-          <div className="doppelrand-shell">
-            <div className="doppelrand-core p-6 sm:p-12">
-              <ManuscriptView
-                segments={filteredSegments}
-                currentTime={playbackTime}
-                isPlaying={isPlaying}
-                onSeek={handleSeek}
-                onTogglePlay={handleTogglePlay}
-                onUpdateSegmentText={handleUpdateSegmentText}
-              />
-            </div>
+          <div className="studio-card p-4 sm:p-8">
+            <ManuscriptView
+              segments={filteredSegments}
+              currentTime={playbackTime}
+              isPlaying={isPlaying}
+              onSeek={handleSeek}
+              onTogglePlay={handleTogglePlay}
+              onUpdateSegmentText={handleUpdateSegmentText}
+            />
           </div>
         </div>
       )}
 
-      {/* ── Floating Equalizer Audio Dock ────────────────────────────── */}
-      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-surface/90 backdrop-blur-2xl border border-white/[0.12] shadow-2xl rounded-full px-6 py-3 flex items-center gap-5 text-xs font-sans animate-in fade-in duration-500">
+      {/* ── Fixed Bottom Audio Scrubber Dock ─────────────────────────── */}
+      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 bg-surface/95 backdrop-blur-md border border-border shadow-md rounded-lg px-4 py-2.5 flex items-center gap-4 text-xs font-sans">
         <button
           type="button"
           onClick={handleTogglePlay}
-          className="w-10 h-10 rounded-full bg-gradient-to-tr from-accent to-[#D49326] text-accent-fg flex items-center justify-center shadow-[0_0_15px_var(--accent-glow)] hover:brightness-110 active:scale-95 transition-all duration-300"
+          className="w-8 h-8 rounded-md btn-studio-primary flex items-center justify-center transition-all active:scale-95 shrink-0"
           aria-label={isPlaying ? "Pause audio" : "Play audio"}
         >
-          <i className={`bx ${isPlaying ? "bx-pause" : "bx-play"} text-2xl`} />
+          <i className={`bx ${isPlaying ? "bx-pause" : "bx-play"} text-xl`} />
         </button>
 
-        <div className="flex items-center gap-2 font-mono-code font-bold text-xs text-primary">
-          <div className="audio-equalizer mr-1">
-            <span className="audio-equalizer-bar" />
+        <div className="flex items-center gap-2 font-semibold text-xs text-primary">
+          <div className="audio-equalizer mr-0.5">
             <span className="audio-equalizer-bar" />
             <span className="audio-equalizer-bar" />
             <span className="audio-equalizer-bar" />
@@ -500,7 +634,7 @@ export default function ClipReview() {
         </div>
 
         <div
-          className="w-32 sm:w-52 h-2 bg-white/[0.08] rounded-full overflow-hidden cursor-pointer shadow-inner-glow"
+          className="w-32 sm:w-48 h-1.5 bg-surface-elevated rounded-full overflow-hidden cursor-pointer border border-border"
           onClick={(e) => {
             const rect = e.currentTarget.getBoundingClientRect();
             const clickX = e.clientX - rect.left;
@@ -509,15 +643,88 @@ export default function ClipReview() {
           }}
         >
           <div
-            className="h-full bg-gradient-to-r from-accent to-[#F59E0B] rounded-full shadow-[0_0_10px_var(--accent-glow)] transition-all duration-300"
+            className="h-full bg-accent rounded-full transition-all"
             style={{ width: `${Math.min(100, (playbackTime / 2700) * 100)}%` }}
           />
         </div>
 
-        <span className="text-[11px] text-muted hidden sm:inline font-mono-code">
-          <kbd className="px-2 py-0.5 rounded-full bg-white/[0.06] border border-white/[0.1] text-[9.5px] text-primary">Space</kbd> Play
+        <span className="text-[11px] text-muted hidden sm:inline">
+          <kbd className="px-1.5 py-0.5 rounded bg-surface-elevated border border-border text-[9px] text-primary">Space</kbd> Play
         </span>
       </div>
+
+      {/* ── Custom Range Clip Modal ───────────────────────────────────── */}
+      {showCustomRangeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="studio-card-elevated max-w-md w-full p-6 space-y-4 bg-surface border-border">
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <h3 className="font-editorial text-lg font-bold text-primary">Cut Custom Clip</h3>
+              <button
+                type="button"
+                onClick={() => setShowCustomRangeModal(false)}
+                className="text-muted hover:text-primary"
+              >
+                <i className="bx bx-x text-xl" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="space-y-1">
+                <label className="font-semibold text-primary block">Clip Title</label>
+                <input
+                  type="text"
+                  value={customRange.title}
+                  onChange={(e) => setCustomRange({ ...customRange, title: e.target.value })}
+                  className="w-full rounded-md bg-surface-elevated border border-border px-3 py-1.5 text-xs text-primary outline-none focus:border-accent"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="font-semibold text-primary block">Start Time (seconds)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={customRange.start}
+                    onChange={(e) => setCustomRange({ ...customRange, start: parseFloat(e.target.value) || 0 })}
+                    className="w-full rounded-md bg-surface-elevated border border-border px-3 py-1.5 text-xs text-primary outline-none focus:border-accent"
+                  />
+                  <span className="text-[10px] text-muted">{formatSeconds(customRange.start)}</span>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-semibold text-primary block">End Time (seconds)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={customRange.end}
+                    onChange={(e) => setCustomRange({ ...customRange, end: parseFloat(e.target.value) || 0 })}
+                    className="w-full rounded-md bg-surface-elevated border border-border px-3 py-1.5 text-xs text-primary outline-none focus:border-accent"
+                  />
+                  <span className="text-[10px] text-muted">{formatSeconds(customRange.end)}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <Btn size="sm" variant="secondary" onClick={() => setShowCustomRangeModal(false)}>
+                Cancel
+              </Btn>
+              <Btn
+                size="sm"
+                variant="primary"
+                icon={renderingClipId === "custom-range" ? "bx-loader-alt bx-spin" : "bx-film"}
+                disabled={renderingClipId === "custom-range"}
+                onClick={handleConfirmCustomRangeExport}
+              >
+                {renderingClipId === "custom-range" ? "Creating…" : "Create Video Clip"}
+              </Btn>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Export Video Modal ────────────────────────────────────────── */}
       {exportModalClip && (
@@ -528,8 +735,9 @@ export default function ClipReview() {
           mediaAssetUrl={mediaAssetUrl}
           onClose={() => setExportModalClip(null)}
           onConfirmExport={handleConfirmExport}
-          isRendering={renderingClipId === exportModalClip.id}
+          isRendering={Boolean(renderingClipId)}
           exportedPath={exportedNotice?.path}
+          renderError={renderError}
         />
       )}
     </div>

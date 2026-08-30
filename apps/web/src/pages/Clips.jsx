@@ -57,7 +57,6 @@ export default function Clips() {
       if (chList.length > 0) {
         setChapters(chList);
       } else if (Array.isArray(data.highlights) && data.highlights.length > 0) {
-        // Adapt legacy highlight moments to chapter format
         setChapters(
           data.highlights.map((hl) => ({
             id: hl.id,
@@ -145,7 +144,7 @@ export default function Clips() {
     statusStr.includes("process");
 
   return (
-    <div className="flex flex-col min-h-screen pb-24">
+    <div className="flex flex-col min-h-screen pb-24 space-y-6">
       {/* Real HTML5 Audio Element */}
       {mediaAssetUrl && (
         <audio
@@ -169,22 +168,20 @@ export default function Clips() {
       )}
 
       {/* ── Page Header ───────────────────────────────────────────── */}
-      <header className="page-header">
-        <div className="space-y-0.5 min-w-0">
-          <div className="flex items-center gap-2 text-[11px] text-secondary font-mono">
-            <span className="text-accent font-semibold">Chapters Studio</span>
-            <span>·</span>
+      <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pt-2">
+        <div className="space-y-1 min-w-0">
+          <div className="flex items-center gap-2 text-xs text-secondary flex-wrap">
             <span>
               {chapters.length} {chapters.length === 1 ? "Chapter" : "Chapters"}
             </span>
             {sermon?.speaker && (
               <>
                 <span>·</span>
-                <span className="text-primary">{sermon.speaker}</span>
+                <span className="text-primary font-medium">{sermon.speaker}</span>
               </>
             )}
           </div>
-          <h1 className="text-base font-semibold text-primary truncate">
+          <h1 className="font-editorial text-2xl sm:text-3xl font-bold text-primary truncate">
             {cleanTitle}
           </h1>
         </div>
@@ -195,29 +192,35 @@ export default function Clips() {
             onClick={() => navigate(`/transcript/${sermonId || sermon?.id}`)}
           >
             <i className="bx bx-file text-sm text-accent" />
-            <span>Full Manuscript</span>
+            <span>Full Transcript</span>
+          </Btn>
+          <Btn
+            variant="primary"
+            onClick={() => navigate(`/clips/${sermonId || sermon?.id}`)}
+          >
+            <i className="bx bx-film text-sm" />
+            <span>Sermon Clips</span>
           </Btn>
         </div>
       </header>
 
       {/* ── Main Content ─────────────────────────────────────────── */}
-      <div className="page-content flex-1 space-y-6">
+      <div className="flex-1 space-y-5">
         {isLoading ? (
-          <div className="py-24 text-center space-y-3">
+          <div className="studio-card py-24 text-center space-y-2.5">
             <i className="bx bx-loader-alt bx-spin text-2xl text-accent" />
-            <p className="text-xs text-secondary">
+            <p className="text-xs text-secondary font-mono">
               Loading sermon chapters…
             </p>
           </div>
         ) : isProcessing ? (
-          /* Processing state */
-          <div className="border border-border rounded-lg bg-surface p-10 text-center space-y-4 max-w-md mx-auto my-12">
-            <div className="w-12 h-12 rounded-full bg-surface-hover text-accent flex items-center justify-center mx-auto text-2xl border border-border">
+          <div className="studio-card p-10 text-center space-y-4 max-w-md mx-auto my-8">
+            <div className="w-10 h-10 rounded-full bg-surface-elevated text-accent flex items-center justify-center mx-auto text-xl border border-border">
               <i className="bx bx-loader-alt bx-spin" />
             </div>
             <div>
               <p className="text-sm font-semibold text-primary">
-                Sermon Chapters Generating…
+                Chapters Generating…
               </p>
               <p className="text-xs text-secondary mt-1 leading-relaxed">
                 Audio is currently being transcribed and segmented into topic chapters.
@@ -233,16 +236,16 @@ export default function Clips() {
           </div>
         ) : chapters.length > 0 ? (
           <>
-            {/* Search Filter & Summary Overview */}
+            {/* Search Filter */}
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
               <div className="relative flex-1 max-w-md">
-                <i className="bx bx-search absolute left-3 top-1/2 -translate-y-1/2 text-secondary text-sm" />
+                <i className="bx bx-search absolute left-3 top-1/2 -translate-y-1/2 text-muted text-sm" />
                 <input
                   type="text"
                   placeholder="Filter chapters by topic or keyword…"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-8 py-1.5 text-xs bg-surface border border-border rounded-md text-primary placeholder:text-muted focus:outline-none focus:border-accent"
+                  className="w-full pl-9 pr-8 py-1.5 text-xs bg-surface border border-border rounded-md text-primary placeholder:text-muted focus:outline-none focus:border-accent font-mono"
                 />
                 {searchQuery && (
                   <button
@@ -255,8 +258,8 @@ export default function Clips() {
                 )}
               </div>
 
-              <div className="text-xs text-secondary font-mono flex items-center gap-2">
-                <span>Showing {filteredChapters.length} of {chapters.length} chapters</span>
+              <div className="text-xs text-secondary font-mono">
+                Showing {filteredChapters.length} of {chapters.length} chapters
               </div>
             </div>
 
@@ -282,9 +285,8 @@ export default function Clips() {
             </div>
           </>
         ) : (
-          /* Empty state */
-          <div className="border border-border rounded-lg bg-surface p-12 text-center space-y-4 max-w-md mx-auto my-12">
-            <div className="w-12 h-12 rounded-full bg-surface-hover text-secondary flex items-center justify-center mx-auto text-2xl border border-border">
+          <div className="studio-card p-10 text-center space-y-4 max-w-md mx-auto my-8">
+            <div className="w-10 h-10 rounded-full bg-surface-elevated text-secondary flex items-center justify-center mx-auto text-xl border border-border">
               <i className="bx bx-book-bookmark" />
             </div>
             <div>
@@ -292,7 +294,7 @@ export default function Clips() {
                 No Chapters Available Yet
               </p>
               <p className="text-xs text-secondary mt-1 leading-relaxed">
-                Configure your Groq API key in Settings to automatically generate topic chapters, sermon summaries, and video clips.
+                Configure your Groq API key in Settings to automatically generate topic chapters and sermon summaries.
               </p>
             </div>
             <div className="flex items-center justify-center gap-2 pt-2">
@@ -306,7 +308,7 @@ export default function Clips() {
                 onClick={() => navigate(`/transcript/${sermonId || sermon?.id}`)}
               >
                 <i className="bx bx-file text-sm" />
-                <span>Read Full Manuscript</span>
+                <span>Read Manuscript</span>
               </Btn>
             </div>
           </div>
@@ -315,41 +317,35 @@ export default function Clips() {
 
       {/* ── Fixed Bottom Audio Player Bar ─────────────────────────── */}
       {mediaAssetUrl && (
-        <div className="fixed bottom-0 left-0 right-0 z-20 bg-surface/95 backdrop-blur border-t border-border px-6 py-3 shadow-lg">
-          <div className="max-w-5xl mx-auto flex items-center gap-4">
-            {/* Play/Pause Button */}
-            <button
-              onClick={handleToggleGlobalPlay}
-              className="w-9 h-9 rounded-full bg-accent text-accent-fg flex items-center justify-center hover:opacity-90 transition-opacity shrink-0 shadow-sm"
-              aria-label={isPlaying ? "Pause audio" : "Play audio"}
-            >
-              <i className={`bx ${isPlaying ? "bx-pause" : "bx-play"} text-xl`} />
-            </button>
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 bg-surface border border-border rounded-lg px-4 py-2 shadow-md flex items-center gap-3 text-xs">
+          <button
+            onClick={handleToggleGlobalPlay}
+            className="w-7 h-7 rounded btn-studio-primary flex items-center justify-center transition-opacity"
+            aria-label={isPlaying ? "Pause audio" : "Play audio"}
+          >
+            <i className={`bx ${isPlaying ? "bx-pause" : "bx-play"} text-base`} />
+          </button>
 
-            {/* Current Timestamp */}
-            <span className="font-mono text-xs text-primary shrink-0 w-12 text-right">
-              {formatSeconds(playbackTime)}
-            </span>
+          <span className="font-mono text-xs text-primary shrink-0">
+            {formatSeconds(playbackTime)}
+          </span>
 
-            {/* Seek Bar */}
-            <div className="flex-1 flex items-center">
-              <input
-                type="range"
-                min="0"
-                max={duration || 100}
-                step="0.1"
-                value={playbackTime}
-                onChange={handleSeek}
-                className="w-full accent-accent h-1.5 bg-surface-hover rounded-lg cursor-pointer"
-                aria-label="Seek audio"
-              />
-            </div>
-
-            {/* Total Duration */}
-            <span className="font-mono text-xs text-secondary shrink-0 w-12">
-              {formatSeconds(duration)}
-            </span>
+          <div className="w-28 sm:w-48 h-1.5 bg-surface-elevated rounded-full overflow-hidden cursor-pointer border border-border">
+            <input
+              type="range"
+              min="0"
+              max={duration || 100}
+              step="0.1"
+              value={playbackTime}
+              onChange={handleSeek}
+              className="w-full accent-accent h-1.5 opacity-0 cursor-pointer"
+              aria-label="Seek audio"
+            />
           </div>
+
+          <span className="font-mono text-xs text-secondary shrink-0">
+            {formatSeconds(duration)}
+          </span>
         </div>
       )}
     </div>

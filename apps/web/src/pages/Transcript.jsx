@@ -356,7 +356,7 @@ export default function Transcript() {
   const isFailed = statusStr.includes("fail") || statusStr.includes("error");
 
   return (
-    <div className="flex flex-col min-h-screen pb-28">
+    <div className="flex flex-col min-h-screen pb-28 space-y-6">
       {/* Real HTML5 Audio Element for Webview Playback */}
       <audio
         ref={audioRef}
@@ -393,20 +393,16 @@ export default function Transcript() {
       />
 
       {/* ── Page Header ───────────────────────────────────────────── */}
-      <header className="page-header">
-        <div className="space-y-0.5 min-w-0">
-          <div className="flex items-center gap-2 text-[11px] text-secondary font-mono">
-            <span className="text-accent font-semibold">Manuscript</span>
+      <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pt-2">
+        <div className="space-y-1 min-w-0">
+          <div className="flex items-center gap-2 text-xs text-secondary flex-wrap">
             {chapters.length > 0 && (
-              <>
-                <span>·</span>
-                <span>{chapters.length} Chapters</span>
-              </>
+              <span>{chapters.length} Chapters</span>
             )}
             {sermon?.speaker && (
               <>
                 <span>·</span>
-                <span className="text-primary">{sermon.speaker}</span>
+                <span className="text-primary font-medium">{sermon.speaker}</span>
               </>
             )}
             {durationStr && (
@@ -416,12 +412,12 @@ export default function Transcript() {
               </>
             )}
           </div>
-          <h1 className="font-editorial text-2xl font-bold text-primary truncate">
+          <h1 className="font-editorial text-2xl sm:text-3xl font-bold text-primary truncate">
             {cleanTitle}
           </h1>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0 relative">
+        <div className="flex items-center gap-2 shrink-0 relative flex-wrap">
           {/* Clip Range Selection Toggle */}
           <Btn
             variant={selectionMode ? "primary" : "secondary"}
@@ -440,7 +436,7 @@ export default function Transcript() {
             }}
           >
             <i className="bx bx-cut text-sm" />
-            <span>{selectionMode ? "Close Clip Selector" : "Select Clip"}</span>
+            <span>{selectionMode ? "Close Selector" : "Select Clip"}</span>
           </Btn>
 
           {/* Download Transcript Dropdown */}
@@ -455,7 +451,7 @@ export default function Transcript() {
             </Btn>
 
             {showDownloadMenu && (
-              <div className="absolute right-0 top-full mt-1 w-48 bg-surface border border-border rounded-md shadow-xl py-1 z-50 text-xs">
+              <div className="absolute right-0 top-full mt-1 w-48 bg-surface border border-border rounded-md shadow-md py-1 z-50 text-xs">
                 <button
                   type="button"
                   onClick={() => handleDownloadTranscript("txt")}
@@ -470,7 +466,7 @@ export default function Transcript() {
                 <button
                   type="button"
                   onClick={() => handleDownloadTranscript("srt")}
-                  className="w-full px-3 py-2 text-left text-primary hover:bg-surface-hover flex items-center gap-2 border-t border-border/40"
+                  className="w-full px-3 py-2 text-left text-primary hover:bg-surface-hover flex items-center gap-2 border-t border-border"
                 >
                   <i className="bx bx-captions text-base text-accent" />
                   <div>
@@ -487,14 +483,14 @@ export default function Transcript() {
             onClick={() => navigate(`/clips/${sermonId || sermon?.id}`)}
           >
             <i className="bx bx-film text-sm text-accent" />
-            <span>Clips & Video Studio</span>
+            <span>Clips Studio</span>
           </Btn>
         </div>
       </header>
 
       {/* ── Audio Load Error Notice ────────────────────────────────── */}
       {audioError && (
-        <div className="mx-6 mt-2 p-2.5 rounded border border-warning/30 bg-warning/10 text-xs text-warning flex items-center justify-between gap-2">
+        <div className="p-2.5 rounded-md border border-warning/30 bg-warning/10 text-xs text-warning flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <i className="bx bx-volume-mute text-base shrink-0" />
             <span>{audioError}</span>
@@ -510,7 +506,7 @@ export default function Transcript() {
 
       {/* ── Clip Render Success Notice ────────────────────────────── */}
       {clipExportSuccess && (
-        <div className="mx-6 mt-3 p-3 rounded-lg border border-success/30 bg-success-muted flex items-center justify-between gap-4 text-xs">
+        <div className="studio-card p-3 border-success/30 bg-success-muted flex items-center justify-between gap-4 text-xs">
           <div className="flex items-center gap-2.5 min-w-0">
             <i className="bx bxs-check-circle text-success text-base shrink-0" />
             <div className="truncate">
@@ -542,7 +538,7 @@ export default function Transcript() {
 
       {/* ── Clip Render Error Notice ──────────────────────────────── */}
       {clipRenderError && (
-        <div className="mx-6 mt-3 p-3 rounded-lg border border-danger/30 bg-danger-muted flex items-center justify-between gap-4 text-xs">
+        <div className="studio-card p-3 border-danger/30 bg-danger-muted flex items-center justify-between gap-4 text-xs">
           <div className="flex items-center gap-2.5 min-w-0">
             <i className="bx bx-error-circle text-danger text-base shrink-0" />
             <div>
@@ -562,9 +558,9 @@ export default function Transcript() {
         </div>
       )}
 
-      {/* ── Floating Clip Range Panel (When in Selection Mode) ────── */}
+      {/* ── Custom Clip Range Panel (When in Selection Mode) ────── */}
       {selectionMode && (
-        <div className="mx-6 mt-3 p-4 rounded-lg border border-accent/40 bg-surface shadow-md space-y-3">
+        <div className="studio-card p-4 border-accent/40 bg-surface shadow-xs space-y-3">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
             <div className="flex items-center gap-2">
               <span className="font-semibold text-accent flex items-center gap-1">
@@ -581,20 +577,18 @@ export default function Transcript() {
                   : "00:00"}
               </span>
               {clipDurationSec !== null && (
-                <span className="px-1.5 py-0.5 rounded bg-accent-muted text-accent font-mono text-[10px] font-semibold">
+                <span className="meta-chip text-[10.5px]">
                   {Math.floor(clipDurationSec)}s duration
                 </span>
               )}
             </div>
 
-            <div className="text-[11px] text-muted">
-              Click <span className="font-mono text-secondary">Set Start</span> /{" "}
-              <span className="font-mono text-secondary">Set End</span> on any
-              manuscript line
+            <div className="text-[11px] text-muted font-mono">
+              Click <span className="text-secondary">Start</span> / <span className="text-secondary">End</span> on any manuscript line
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-center">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 items-center">
             {/* Title Input */}
             <div className="sm:col-span-2">
               <input
@@ -602,7 +596,7 @@ export default function Transcript() {
                 value={clipTitle}
                 onChange={(e) => setClipTitle(e.target.value)}
                 placeholder="Clip title (e.g. Powerful illustration on faith)"
-                className="w-full bg-base border border-border rounded px-3 py-1.5 text-xs text-primary placeholder:text-muted outline-none focus:border-accent"
+                className="w-full bg-surface-elevated border border-border rounded px-3 py-1.5 text-xs text-primary placeholder:text-muted outline-none focus:border-accent font-mono"
               />
             </div>
 
@@ -641,7 +635,7 @@ export default function Transcript() {
                   } text-sm`}
                 />
                 <span>
-                  {isRenderingClip ? "Rendering…" : "Export as Video"}
+                  {isRenderingClip ? "Rendering…" : "Export Clip"}
                 </span>
               </Btn>
 
@@ -660,9 +654,9 @@ export default function Transcript() {
 
       {/* ── Chapter Pills Navigation Bar ──────────────────────────── */}
       {chapters.length > 0 && (
-        <div className="px-6 py-2 border-b border-border bg-surface/60 overflow-x-auto flex items-center gap-2 no-scrollbar">
-          <span className="text-[11px] font-semibold text-muted uppercase tracking-wider shrink-0 mr-1">
-            Jump to:
+        <div className="py-1 overflow-x-auto flex items-center gap-2 no-scrollbar">
+          <span className="text-[11px] font-semibold text-muted uppercase tracking-wider shrink-0 mr-1 font-mono">
+            Chapters:
           </span>
           {chapters.map((ch, idx) => {
             const isThisActive = activeChapter?.id === ch.id;
@@ -670,9 +664,9 @@ export default function Transcript() {
               <button
                 key={ch.id || idx}
                 onClick={() => handleSeek(ch.start_time)}
-                className={`px-3 py-1 rounded-full text-xs font-mono whitespace-nowrap transition-colors flex items-center gap-1.5 shrink-0 border ${
+                className={`px-3 py-1 rounded-md text-xs font-mono whitespace-nowrap transition-colors flex items-center gap-1.5 shrink-0 border ${
                   isThisActive
-                    ? "bg-accent text-accent-fg border-accent font-semibold shadow-sm"
+                    ? "bg-accent text-accent-fg border-accent font-semibold shadow-xs"
                     : "bg-surface text-secondary hover:text-primary border-border hover:border-border-strong"
                 }`}
                 title={ch.summary || ch.title}
@@ -693,15 +687,15 @@ export default function Transcript() {
 
       {/* ── Search Toolbar ────────────────────────────────────────── */}
       {segments.length > 0 && (
-        <div className="px-6 py-2.5 border-b border-border bg-surface/40 flex items-center justify-between gap-4">
+        <div className="flex items-center justify-between gap-4">
           <div className="relative flex-1 max-w-md">
-            <i className="bx bx-search absolute left-2.5 top-1/2 -translate-y-1/2 text-muted text-sm" />
+            <i className="bx bx-search absolute left-3 top-1/2 -translate-y-1/2 text-muted text-sm" />
             <input
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Search chapters, transcript, or Scripture references…"
-              className="w-full bg-surface border border-border rounded pl-8 pr-3 py-1 text-xs text-primary placeholder:text-muted outline-none focus:border-accent"
+              className="w-full bg-surface border border-border rounded-md pl-9 pr-3 py-1.5 text-xs text-primary placeholder:text-muted outline-none focus:border-accent"
             />
           </div>
           {searchTerm && (
@@ -709,8 +703,7 @@ export default function Transcript() {
               onClick={() => setSearchTerm("")}
               className="text-xs text-secondary hover:text-primary font-mono"
             >
-              Clear ({filteredSegments.length} segments,{" "}
-              {matchingChapters.length} chapters)
+              Clear filter ({filteredSegments.length} matches)
             </button>
           )}
         </div>
@@ -718,8 +711,8 @@ export default function Transcript() {
 
       {/* ── Matching Chapters Search Results ──────────────────────── */}
       {matchingChapters.length > 0 && (
-        <div className="px-6 pt-4 pb-2 space-y-2 bg-surface-hover/30 border-b border-border">
-          <p className="text-[11px] font-semibold text-accent uppercase tracking-wider">
+        <div className="p-3 space-y-2 rounded-lg bg-surface border border-border">
+          <p className="text-[11px] font-semibold text-accent uppercase tracking-wider font-mono">
             Matching Chapters ({matchingChapters.length})
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
@@ -727,7 +720,7 @@ export default function Transcript() {
               <div
                 key={ch.id}
                 onClick={() => handleSeek(ch.start_time)}
-                className="p-2.5 rounded border border-border bg-surface hover:border-accent cursor-pointer transition-colors space-y-1"
+                className="p-2.5 rounded border border-border bg-surface-elevated hover:border-accent cursor-pointer transition-colors space-y-1"
               >
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-semibold text-primary">{ch.title}</span>
@@ -748,7 +741,7 @@ export default function Transcript() {
       )}
 
       {/* ── Manuscript Column ─────────────────────────────────────── */}
-      <div className="page-content flex-1">
+      <div className="studio-card p-5 sm:p-8 flex-1">
         {isLoading ? (
           <div className="py-20 text-center space-y-2">
             <i className="bx bx-loader-alt bx-spin text-xl text-accent" />
@@ -768,9 +761,8 @@ export default function Transcript() {
             onUpdateSegmentText={handleUpdateSegmentText}
           />
         ) : isProcessing ? (
-          /* Processing state */
-          <div className="border border-border rounded-md bg-surface p-10 text-center space-y-4 max-w-md mx-auto my-8">
-            <div className="w-10 h-10 rounded-full bg-surface-hover text-accent flex items-center justify-center mx-auto text-xl border border-border">
+          <div className="p-10 text-center space-y-4 max-w-md mx-auto my-8">
+            <div className="w-10 h-10 rounded-full bg-surface-elevated text-accent flex items-center justify-center mx-auto text-xl border border-border">
               <i className="bx bx-loader-alt bx-spin" />
             </div>
             <div>
@@ -790,7 +782,6 @@ export default function Transcript() {
             </Btn>
           </div>
         ) : isFailed ? (
-          /* Failed state */
           <div className="border border-danger/30 bg-danger-muted p-8 rounded-md text-center space-y-3 max-w-md mx-auto my-8">
             <i className="bx bx-error-circle text-2xl text-danger" />
             <div>
@@ -811,9 +802,8 @@ export default function Transcript() {
             </Btn>
           </div>
         ) : (
-          /* Empty ready state */
-          <div className="border border-border rounded-md bg-surface p-10 text-center space-y-3 max-w-md mx-auto my-8">
-            <div className="w-8 h-8 rounded bg-surface-hover text-accent flex items-center justify-center mx-auto text-base border border-border">
+          <div className="p-10 text-center space-y-3 max-w-md mx-auto my-8">
+            <div className="w-8 h-8 rounded bg-surface-elevated text-accent flex items-center justify-center mx-auto text-base border border-border">
               <i className="bx bx-file" />
             </div>
             <div>
@@ -833,11 +823,11 @@ export default function Transcript() {
 
       {/* ── Fixed Bottom Audio Bar (only if segments exist) ───────── */}
       {segments.length > 0 && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 bg-surface border border-border rounded-full px-4 py-1.5 shadow-lg flex items-center gap-3 text-xs">
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 bg-surface border border-border rounded-lg px-4 py-2 shadow-md flex items-center gap-3 text-xs">
           <button
             type="button"
             onClick={handleTogglePlay}
-            className="w-6 h-6 rounded-full bg-accent text-accent-fg flex items-center justify-center hover:opacity-90 transition-opacity"
+            className="w-7 h-7 rounded btn-studio-primary flex items-center justify-center transition-opacity"
             aria-label={isPlaying ? "Pause audio" : "Play audio"}
           >
             <i
@@ -858,7 +848,7 @@ export default function Transcript() {
           </div>
 
           <div
-            className="w-28 sm:w-48 h-1 bg-surface-hover rounded-full overflow-hidden cursor-pointer"
+            className="w-28 sm:w-48 h-1.5 bg-surface-elevated rounded-full overflow-hidden cursor-pointer border border-border"
             onClick={(e) => {
               const rect = e.currentTarget.getBoundingClientRect();
               const ratio = Math.max(
@@ -881,7 +871,7 @@ export default function Transcript() {
           </div>
 
           <span className="text-[10px] text-muted hidden sm:inline font-mono">
-            [Space] Play/Pause
+            [Space] Play
           </span>
         </div>
       )}

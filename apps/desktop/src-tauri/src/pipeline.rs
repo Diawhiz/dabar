@@ -361,6 +361,7 @@ pub async fn run_pipeline(
 }
 
 /// Saves sermon results when highlight detection is skipped (no API key / no Ollama configured).
+#[allow(dead_code)]
 async fn save_no_highlights(
     app: &AppHandle,
     db: &Db,

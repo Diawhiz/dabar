@@ -502,6 +502,18 @@ pub fn run() {
                 )
                 .init();
 
+            // Automatically load .env environment variables from workspace/current dir
+            dotenvy::dotenv().ok();
+            if let Ok(cwd) = std::env::current_dir() {
+                for ancestor in cwd.ancestors() {
+                    let env_path = ancestor.join(".env");
+                    if env_path.exists() {
+                        let _ = dotenvy::from_path(&env_path);
+                        break;
+                    }
+                }
+            }
+
             // Resolve the app data directory for this user
             let app_data_dir = app
                 .path()

@@ -27,3 +27,7 @@ cookies.txt
 *.cookies.txt
 *.cookies
 
+# Local Agent Customizations
+.agents/
+
+

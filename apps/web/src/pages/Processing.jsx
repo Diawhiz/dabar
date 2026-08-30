@@ -58,6 +58,7 @@ export default function Processing() {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [tickerIndex, setTickerIndex] = useState(0);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [showCancelModal, setShowCancelModal] = useState(false);
   const [progressState, setProgressState] = useState({
     stage: "downloading",
     percent: 15,
@@ -150,8 +151,12 @@ export default function Processing() {
     };
   }, [sermonId]);
 
-  async function handleCancel() {
-    if (!window.confirm("Are you sure you want to cancel processing this sermon?")) return;
+  function promptCancel() {
+    setShowCancelModal(true);
+  }
+
+  async function handleConfirmCancel() {
+    setShowCancelModal(false);
     setIsCancelling(true);
     try {
       await cancelPipeline(sermonId);
@@ -197,7 +202,7 @@ export default function Processing() {
         {!isComplete && !isCancelled && (
           <button
             type="button"
-            onClick={handleCancel}
+            onClick={promptCancel}
             disabled={isCancelling}
             className="self-start sm:self-auto px-3.5 py-1.5 rounded-lg border border-danger/30 text-danger hover:bg-danger/10 text-xs font-semibold flex items-center gap-1.5 transition-colors active:scale-[0.98] disabled:opacity-50"
           >
@@ -416,9 +421,9 @@ export default function Processing() {
 
               <button
                 type="button"
-                onClick={handleCancel}
+                onClick={promptCancel}
                 disabled={isCancelling}
-                className="text-danger hover:underline transition-colors font-medium"
+                className="text-danger hover:underline transition-colors font-medium cursor-pointer"
               >
                 Cancel Process
               </button>
@@ -426,6 +431,68 @@ export default function Processing() {
           ) : null}
         </div>
       </div>
+
+      {/* ── Custom Confirmation Modal ─────────────────────────────── */}
+      {showCancelModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="cancel-modal-title"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200"
+          onClick={() => setShowCancelModal(false)}
+        >
+          <div
+            className="w-full max-w-md bg-surface border border-border rounded-xl shadow-2xl p-6 space-y-5 animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-4">
+              <div className="w-10 h-10 rounded-full bg-danger/10 border border-danger/20 text-danger flex items-center justify-center shrink-0 text-xl">
+                <i className="bx bx-error-circle" />
+              </div>
+              <div className="space-y-1">
+                <h3
+                  id="cancel-modal-title"
+                  className="font-editorial text-lg font-bold text-primary"
+                >
+                  Are you sure you want to cancel?
+                </h3>
+                <p className="text-xs text-secondary leading-relaxed">
+                  Stopping the process will cancel the ongoing transcription, chapter detection, and clip extraction for this sermon.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-border/60">
+              <button
+                type="button"
+                onClick={() => setShowCancelModal(false)}
+                className="px-4 py-2 rounded-lg text-xs font-semibold text-secondary hover:text-primary bg-surface-elevated hover:bg-surface-hover border border-border transition-colors"
+              >
+                Keep Processing
+              </button>
+
+              <button
+                type="button"
+                onClick={handleConfirmCancel}
+                disabled={isCancelling}
+                className="px-4 py-2 rounded-lg text-xs font-semibold text-white bg-danger hover:bg-danger/90 active:scale-[0.98] transition-all flex items-center gap-1.5 shadow-xs"
+              >
+                {isCancelling ? (
+                  <>
+                    <i className="bx bx-loader-alt bx-spin" />
+                    <span>Cancelling…</span>
+                  </>
+                ) : (
+                  <>
+                    <i className="bx bx-stop-circle" />
+                    <span>Yes, Cancel Process</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

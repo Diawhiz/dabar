@@ -513,6 +513,7 @@ pub fn status_to_str(status: &SermonStatus) -> &'static str {
         SermonStatus::Processing => "processing",
         SermonStatus::Ready => "ready",
         SermonStatus::Failed => "failed",
+        SermonStatus::Cancelled => "cancelled",
     }
 }
 
@@ -524,6 +525,7 @@ pub fn status_from_str(status: &str) -> SermonStatus {
         "processing" => SermonStatus::Processing,
         "ready" => SermonStatus::Ready,
         "failed" => SermonStatus::Failed,
+        "cancelled" => SermonStatus::Cancelled,
         _ => SermonStatus::Queued,
     }
 }

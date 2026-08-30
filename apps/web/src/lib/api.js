@@ -95,6 +95,17 @@ export async function createSermon(source) {
 }
 
 /**
+ * Cancel an in-flight sermon processing pipeline.
+ */
+export async function cancelPipeline(sermonId) {
+  const core = await getTauriCore();
+  if (core) {
+    return await core.invoke("cancel_pipeline", { sermonId });
+  }
+  return true;
+}
+
+/**
  * Render a vertical clip to disk and return the output file path.
  */
 export async function renderClip(sermonId, clipId, startTime, endTime, clipTitle) {

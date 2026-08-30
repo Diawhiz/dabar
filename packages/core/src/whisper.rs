@@ -250,17 +250,16 @@ async fn transcribe_local_chunked(
         cb(0.15);
     }
 
-    // Determine concurrency — use 2-3 parallel whisper processes
-    // Each gets a fair share of CPU threads
+    // Use 1 whisper process with all CPU threads to avoid duplicate model instances in RAM
     let total_cores = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(4);
-    let max_parallel = if total_cores >= 8 { 3 } else { 2 };
-    let threads_per_process = (total_cores / max_parallel).max(2);
+    let max_parallel = 1;
+    let threads_per_process = total_cores.clamp(2, 8);
 
     tracing::info!(
-        "Running {} parallel whisper-cli processes with {} threads each ({} total cores)",
-        max_parallel, threads_per_process, total_cores
+        "Running whisper-cli with {} threads (single-process mode for low RAM footprint)",
+        threads_per_process
     );
 
     // Process chunks with bounded concurrency

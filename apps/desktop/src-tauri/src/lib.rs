@@ -10,12 +10,18 @@ use std::path::PathBuf;
 use tauri::{AppHandle, Emitter, Manager, State};
 use uuid::Uuid;
 
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use tokio::task::AbortHandle;
+
 // ── App state ─────────────────────────────────────────────────────────────────
 
 /// Shared application state injected into all Tauri commands.
 pub struct AppState {
     pub db: Db,
     pub app_data_dir: PathBuf,
+    pub active_tasks: Arc<Mutex<HashMap<Uuid, AbortHandle>>>,
 }
 
 // ── IPC Commands ──────────────────────────────────────────────────────────────
@@ -111,7 +117,8 @@ async fn start_pipeline(
     let db_clone = state.db.clone();
     let app_clone = app.clone();
     let app_data_dir_clone = state.app_data_dir.clone();
-    tokio::spawn(async move {
+    let active_tasks_clone = state.active_tasks.clone();
+    let task = tokio::spawn(async move {
         let result = pipeline::run_pipeline(
             app_clone.clone(),
             db_clone.clone(),
@@ -123,12 +130,58 @@ async fn start_pipeline(
         )
         .await;
 
+        active_tasks_clone.lock().await.remove(&sermon_id);
+
         if let Err(err) = result {
             pipeline::handle_pipeline_failure(&app_clone, &db_clone, sermon_id, err).await;
         }
     });
 
+    state
+        .active_tasks
+        .lock()
+        .await
+        .insert(sermon_id, task.abort_handle());
+
     Ok(sermon_id.to_string())
+}
+
+/// Cancel an in-flight sermon processing pipeline.
+#[tauri::command]
+async fn cancel_pipeline(
+    app: AppHandle,
+    sermon_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let id = Uuid::parse_str(&sermon_id).map_err(|e| e.to_string())?;
+
+    // Abort active Tokio background task if currently executing
+    if let Some(handle) = state.active_tasks.lock().await.remove(&id) {
+        handle.abort();
+        tracing::info!("Aborted pipeline background task for sermon {}", id);
+    }
+
+    // Update DB status to Cancelled
+    state
+        .db
+        .update_status(id, dabar_core::SermonStatus::Cancelled)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Emit cancellation event to UI
+    let _ = app.emit(
+        "pipeline-progress",
+        pipeline::PipelineEvent {
+            sermon_id: sermon_id.clone(),
+            stage: "cancelled".to_string(),
+            progress: 0,
+            detail: "Sermon processing was cancelled.".to_string(),
+            is_error: true,
+            is_complete: false,
+        },
+    );
+
+    Ok(())
 }
 
 /// Retry highlight detection for a sermon that has already been transcribed.
@@ -502,6 +555,18 @@ pub fn run() {
                 )
                 .init();
 
+            // Automatically load .env environment variables from workspace/current dir
+            dotenvy::dotenv().ok();
+            if let Ok(cwd) = std::env::current_dir() {
+                for ancestor in cwd.ancestors() {
+                    let env_path = ancestor.join(".env");
+                    if env_path.exists() {
+                        let _ = dotenvy::from_path(&env_path);
+                        break;
+                    }
+                }
+            }
+
             // Resolve the app data directory for this user
             let app_data_dir = app
                 .path()
@@ -536,6 +601,7 @@ pub fn run() {
             let state = AppState {
                 db,
                 app_data_dir,
+                active_tasks: Arc::new(Mutex::new(HashMap::new())),
             };
             app.manage(state);
 
@@ -546,6 +612,7 @@ pub fn run() {
             list_sermons,
             get_sermon,
             start_pipeline,
+            cancel_pipeline,
             render_clip,
             render_clip_range,
             get_settings,

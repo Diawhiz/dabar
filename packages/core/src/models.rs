@@ -12,6 +12,7 @@ pub enum SermonStatus {
     Processing,
     Ready,
     Failed,
+    Cancelled,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

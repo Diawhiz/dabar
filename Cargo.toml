@@ -26,3 +26,7 @@ opt-level = "s"
 lto = true
 strip = true
 codegen-units = 1
+
+[profile.dev]
+debug = 0
+strip = true
